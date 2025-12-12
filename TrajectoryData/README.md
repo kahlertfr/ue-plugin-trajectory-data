@@ -66,73 +66,93 @@ Each dataset (FTrajectoryDatasetInfo) contains:
 
 ### Shard Metadata Structure
 
-Each shard (FTrajectoryShardMetadata) contains:
-- **Shard Id**: Unique identifier within the dataset
-- **Num Trajectories**: Number of trajectories in this shard
-- **Num Samples**: Number of time samples per trajectory
-- **Time Step Start**: Starting time step index
-- **Time Step End**: Ending time step index
-- **Origin**: Spatial origin coordinates (FVector)
-- **Data Type**: Type of data (e.g., "particle", "bubble")
-- **Version**: Format version
-- **Metadata File Path**: Path to the JSON metadata file
-- **Data File Path**: Path to the binary data file
+Each shard (FTrajectoryShardMetadata) contains metadata from the shard-manifest.json file:
+- **Shard Name**: Name identifier for the shard
+- **Format Version**: Format version (currently 1)
+- **Trajectory Count**: Number of trajectories in this shard
+- **Time Step Interval Size**: Number of time steps per trajectory
+- **Time Interval Seconds**: Time duration per interval in seconds
+- **Bounding Box Min/Max**: Spatial bounds of the data
+- **First/Last Trajectory Id**: Range of trajectory IDs
+- **Coordinate Units**: Units for spatial coordinates (e.g., "millimeters")
+- **Created At**: Timestamp when the shard was created
+- **Converter Version**: Git commit hash of the converter tool
+- **Manifest File Path**: Path to the shard-manifest.json file
+- **Shard Directory**: Directory containing all shard files
 
 ### Calculating Display Points
 
 To determine if a dataset can be visualized:
 
-- **Calculate Max Display Points** - Returns total sample points for a dataset (num_trajectories × num_samples across all shards)
+- **Calculate Max Display Points** - Returns total sample points for a dataset (trajectory_count × time_step_interval_size across all shards)
 - **Calculate Shard Display Points** - Returns sample points for a single shard
 
 ## Directory Structure
 
-Trajectory datasets should be organized as follows:
+Trajectory datasets should be organized with each shard in its own subdirectory:
 
 ```
 DatasetsDirectory/
 ├── dataset_A/
-│   ├── dataset_A_0.tds
-│   ├── dataset_A_0.json
-│   ├── dataset_A_1.tds
-│   └── dataset_A_1.json
-├── dataset_B/
-│   ├── dataset_B_0.tds
-│   └── dataset_B_0.json
-└── flotation_simulation/
-    ├── flotation_simulation_bubbles_0.tds
-    ├── flotation_simulation_bubbles_0.json
-    ├── flotation_simulation_particles_0.tds
-    └── flotation_simulation_particles_0.json
+│   ├── shard_0/
+│   │   ├── shard-manifest.json
+│   │   ├── shard-meta.bin
+│   │   ├── shard-trajmeta.bin
+│   │   └── shard-data.bin
+│   └── shard_1/
+│       ├── shard-manifest.json
+│       ├── shard-meta.bin
+│       ├── shard-trajmeta.bin
+│       └── shard-data.bin
+└── dataset_B/
+    └── shard_0/
+        ├── shard-manifest.json
+        ├── shard-meta.bin
+        ├── shard-trajmeta.bin
+        └── shard-data.bin
 ```
 
-Each dataset is a subdirectory containing:
-- Binary data files (`.tds`)
-- Metadata JSON files (`.json`)
+Each shard subdirectory contains:
+- `shard-manifest.json` - Human-readable JSON manifest
+- `shard-meta.bin` - Binary metadata summary
+- `shard-trajmeta.bin` - Per-trajectory metadata
+- `shard-data.bin` - Actual trajectory position data
 
-## Metadata File Format
+## Manifest File Format
 
-Each shard requires a JSON metadata file with the following structure:
+Each shard requires a `shard-manifest.json` file with the following structure:
 
 ```json
 {
-  "shard_id": 0,
-  "num_trajectories": 1000,
-  "num_samples": 500,
-  "time_step_start": 0,
-  "time_step_end": 499,
-  "origin": [0.0, 0.0, 0.0],
-  "dataset_name": "example_dataset",
-  "data_type": "particle",
-  "version": "1.0"
+  "shard_name": "shard_0",
+  "format_version": 1,
+  "endianness": "little",
+  "coordinate_units": "millimeters",
+  "float_precision": "float32",
+  "time_units": "seconds",
+  "time_step_interval_size": 50,
+  "time_interval_seconds": 0.1,
+  "entry_size_bytes": 616,
+  "bounding_box": {
+    "min": [-1000.0, -1000.0, -1000.0],
+    "max": [1000.0, 1000.0, 1000.0]
+  },
+  "trajectory_count": 1000,
+  "first_trajectory_id": 1,
+  "last_trajectory_id": 1000,
+  "created_at": "2025-12-12T12:00:00Z",
+  "converter_version": "b95b7d2"
 }
 ```
 
-See `trajectory-converter/specification-trajectory-data-shard.md` for the complete specification.
+See `specification-trajectory-data-shard.md` for the complete specification.
 
-## Spatially Correlated Data
+## Shard Organization
 
-Multiple shards in the same dataset directory with the same origin coordinates are considered spatially correlated. This is useful for representing different particle types (e.g., bubbles and particles) that share the same coordinate system.
+Multiple shards within a dataset can represent:
+- Different time ranges of the same simulation
+- Different spatial regions
+- Different types of particles (when bounding boxes overlap)
 
 ## Example Blueprint Usage
 

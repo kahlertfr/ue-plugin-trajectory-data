@@ -97,52 +97,52 @@ bool UTrajectoryDataManager::ScanDatasetDirectory(const FString& DatasetDirector
 	OutDatasetInfo.DatasetPath = DatasetDirectory;
 	OutDatasetInfo.Shards.Empty();
 	OutDatasetInfo.TotalTrajectories = 0;
-	OutDatasetInfo.TotalSamples = 0;
 
-	// Find all JSON metadata files in the directory
-	TArray<FString> MetadataFiles;
-	PlatformFile.IterateDirectory(*DatasetDirectory, [&MetadataFiles](const TCHAR* FilenameOrDirectory, bool bIsDirectory) -> bool
+	// Find all shard-manifest.json files in subdirectories
+	TArray<FString> ManifestFiles;
+	PlatformFile.IterateDirectory(*DatasetDirectory, [&ManifestFiles, &PlatformFile](const TCHAR* FilenameOrDirectory, bool bIsDirectory) -> bool
 	{
-		if (!bIsDirectory)
+		if (bIsDirectory)
 		{
-			FString Filename(FilenameOrDirectory);
-			if (Filename.EndsWith(TEXT(".json")))
+			// Check if this subdirectory contains a shard-manifest.json
+			FString SubDir(FilenameOrDirectory);
+			FString ManifestPath = FPaths::Combine(SubDir, TEXT("shard-manifest.json"));
+			if (PlatformFile.FileExists(*ManifestPath))
 			{
-				MetadataFiles.Add(Filename);
+				ManifestFiles.Add(ManifestPath);
 			}
 		}
 		return true; // Continue iteration
 	});
 
-	if (MetadataFiles.Num() == 0)
+	if (ManifestFiles.Num() == 0)
 	{
-		return false; // No metadata files found
+		return false; // No manifest files found
 	}
 
 	UTrajectoryDataSettings* Settings = UTrajectoryDataSettings::Get();
 
-	// Parse each metadata file
-	for (const FString& MetadataFile : MetadataFiles)
+	// Parse each manifest file
+	for (const FString& ManifestFile : ManifestFiles)
 	{
 		FTrajectoryShardMetadata ShardMetadata;
-		if (ParseMetadataFile(MetadataFile, ShardMetadata))
+		if (ParseMetadataFile(ManifestFile, ShardMetadata))
 		{
 			OutDatasetInfo.Shards.Add(ShardMetadata);
-			OutDatasetInfo.TotalTrajectories += ShardMetadata.NumTrajectories;
-			OutDatasetInfo.TotalSamples += ShardMetadata.NumSamples;
+			OutDatasetInfo.TotalTrajectories += ShardMetadata.TrajectoryCount;
 
 			if (Settings && Settings->bDebugLogging)
 			{
-				UE_LOG(LogTemp, Log, TEXT("  Shard %d: %d trajectories, %d samples"),
-					ShardMetadata.ShardId, ShardMetadata.NumTrajectories, ShardMetadata.NumSamples);
+				UE_LOG(LogTemp, Log, TEXT("  Shard '%s': %lld trajectories"),
+					*ShardMetadata.ShardName, ShardMetadata.TrajectoryCount);
 			}
 		}
 	}
 
-	// Sort shards by shard ID
+	// Sort shards by shard name
 	OutDatasetInfo.Shards.Sort([](const FTrajectoryShardMetadata& A, const FTrajectoryShardMetadata& B)
 	{
-		return A.ShardId < B.ShardId;
+		return A.ShardName < B.ShardName;
 	});
 
 	return OutDatasetInfo.Shards.Num() > 0;
@@ -154,7 +154,7 @@ bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, 
 	FString JsonString;
 	if (!FFileHelper::LoadFileToString(JsonString, *MetadataFilePath))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataManager: Failed to read metadata file: %s"), *MetadataFilePath);
+		UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataManager: Failed to read manifest file: %s"), *MetadataFilePath);
 		return false;
 	}
 
@@ -167,57 +167,70 @@ bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, 
 		return false;
 	}
 
-	// JSON field name constants
-	static const FString JsonExtension = TEXT(".json");
-	static const FString DataExtension = TEXT(".tds");
-	static const FString FieldShardId = TEXT("shard_id");
-	static const FString FieldNumTrajectories = TEXT("num_trajectories");
-	static const FString FieldNumSamples = TEXT("num_samples");
-	static const FString FieldTimeStepStart = TEXT("time_step_start");
-	static const FString FieldTimeStepEnd = TEXT("time_step_end");
-	static const FString FieldDataType = TEXT("data_type");
-	static const FString FieldVersion = TEXT("version");
-	static const FString FieldOrigin = TEXT("origin");
+	// Store paths
+	OutShardMetadata.ManifestFilePath = MetadataFilePath;
+	OutShardMetadata.ShardDirectory = FPaths::GetPath(MetadataFilePath);
 
-	// Extract fields
-	OutShardMetadata.MetadataFilePath = MetadataFilePath;
+	// Parse all fields from shard-manifest.json according to specification
+	JsonObject->TryGetStringField(TEXT("shard_name"), OutShardMetadata.ShardName);
 	
-	// Construct data file path by replacing .json with .tds
-	if (MetadataFilePath.EndsWith(JsonExtension))
+	int32 TempFormatVersion = 1;
+	JsonObject->TryGetNumberField(TEXT("format_version"), TempFormatVersion);
+	OutShardMetadata.FormatVersion = TempFormatVersion;
+	
+	JsonObject->TryGetStringField(TEXT("endianness"), OutShardMetadata.Endianness);
+	JsonObject->TryGetStringField(TEXT("coordinate_units"), OutShardMetadata.CoordinateUnits);
+	JsonObject->TryGetStringField(TEXT("float_precision"), OutShardMetadata.FloatPrecision);
+	JsonObject->TryGetStringField(TEXT("time_units"), OutShardMetadata.TimeUnits);
+	
+	JsonObject->TryGetNumberField(TEXT("time_step_interval_size"), OutShardMetadata.TimeStepIntervalSize);
+	
+	double TempTimeInterval = 0.0;
+	JsonObject->TryGetNumberField(TEXT("time_interval_seconds"), TempTimeInterval);
+	OutShardMetadata.TimeIntervalSeconds = (float)TempTimeInterval;
+	
+	JsonObject->TryGetNumberField(TEXT("entry_size_bytes"), OutShardMetadata.EntrySizeBytes);
+	
+	// Parse bounding_box object
+	const TSharedPtr<FJsonObject>* BBoxObject;
+	if (JsonObject->TryGetObjectField(TEXT("bounding_box"), BBoxObject))
 	{
-		OutShardMetadata.DataFilePath = MetadataFilePath.LeftChop(JsonExtension.Len()) + DataExtension;
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataManager: Metadata file doesn't end with .json: %s"), *MetadataFilePath);
-		OutShardMetadata.DataFilePath = MetadataFilePath + DataExtension;
-	}
-
-	JsonObject->TryGetNumberField(FieldShardId, OutShardMetadata.ShardId);
-	JsonObject->TryGetNumberField(FieldNumTrajectories, OutShardMetadata.NumTrajectories);
-	JsonObject->TryGetNumberField(FieldNumSamples, OutShardMetadata.NumSamples);
-	JsonObject->TryGetNumberField(FieldTimeStepStart, OutShardMetadata.TimeStepStart);
-	JsonObject->TryGetNumberField(FieldTimeStepEnd, OutShardMetadata.TimeStepEnd);
-	JsonObject->TryGetStringField(FieldDataType, OutShardMetadata.DataType);
-	JsonObject->TryGetStringField(FieldVersion, OutShardMetadata.Version);
-
-	// Parse origin array
-	const TArray<TSharedPtr<FJsonValue>>* OriginArray;
-	if (JsonObject->TryGetArrayField(FieldOrigin, OriginArray))
-	{
-		if (OriginArray->Num() == 3)
+		// Parse min array
+		const TArray<TSharedPtr<FJsonValue>>* MinArray;
+		if ((*BBoxObject)->TryGetArrayField(TEXT("min"), MinArray) && MinArray->Num() == 3)
 		{
-			double X = (*OriginArray)[0]->AsNumber();
-			double Y = (*OriginArray)[1]->AsNumber();
-			double Z = (*OriginArray)[2]->AsNumber();
-			OutShardMetadata.Origin = FVector(X, Y, Z);
+			double X = (*MinArray)[0]->AsNumber();
+			double Y = (*MinArray)[1]->AsNumber();
+			double Z = (*MinArray)[2]->AsNumber();
+			OutShardMetadata.BoundingBoxMin = FVector(X, Y, Z);
 		}
-		else
+		
+		// Parse max array
+		const TArray<TSharedPtr<FJsonValue>>* MaxArray;
+		if ((*BBoxObject)->TryGetArrayField(TEXT("max"), MaxArray) && MaxArray->Num() == 3)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataManager: Origin array has %d elements (expected 3) in file: %s"), 
-				OriginArray->Num(), *MetadataFilePath);
+			double X = (*MaxArray)[0]->AsNumber();
+			double Y = (*MaxArray)[1]->AsNumber();
+			double Z = (*MaxArray)[2]->AsNumber();
+			OutShardMetadata.BoundingBoxMax = FVector(X, Y, Z);
 		}
 	}
+	
+	// Parse trajectory counts as 64-bit integers
+	int64 TempTrajectoryCount = 0;
+	JsonObject->TryGetNumberField(TEXT("trajectory_count"), TempTrajectoryCount);
+	OutShardMetadata.TrajectoryCount = TempTrajectoryCount;
+	
+	int64 TempFirstId = 0;
+	JsonObject->TryGetNumberField(TEXT("first_trajectory_id"), TempFirstId);
+	OutShardMetadata.FirstTrajectoryId = TempFirstId;
+	
+	int64 TempLastId = 0;
+	JsonObject->TryGetNumberField(TEXT("last_trajectory_id"), TempLastId);
+	OutShardMetadata.LastTrajectoryId = TempLastId;
+	
+	JsonObject->TryGetStringField(TEXT("created_at"), OutShardMetadata.CreatedAt);
+	JsonObject->TryGetStringField(TEXT("converter_version"), OutShardMetadata.ConverterVersion);
 
 	return true;
 }

@@ -1,0 +1,20 @@
+{
+  "shard_name": "shard_1",
+  "format_version": 1,
+  "endianness": "little",
+  "coordinate_units": "millimeters",
+  "float_precision": "float32",
+  "time_units": "seconds",
+  "time_step_interval_size": 50,
+  "time_interval_seconds": 0.1,
+  "entry_size_bytes": 616,
+  "bounding_box": {
+    "min": [-1000.0, -1000.0, -1000.0],
+    "max": [1000.0, 1000.0, 1000.0]
+  },
+  "trajectory_count": 1000,
+  "first_trajectory_id": 1001,
+  "last_trajectory_id": 2000,
+  "created_at": "2025-12-12T12:00:00Z",
+  "converter_version": "b95b7d2"
+}

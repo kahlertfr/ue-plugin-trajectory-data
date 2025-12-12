@@ -31,8 +31,10 @@ This guide will help you get started with the Trajectory Data plugin in 5 minute
    ```
    C:/TestData/
    └── sample_dataset/
-       ├── sample_dataset_0.json
-       └── sample_dataset_1.json
+       ├── shard_0/
+       │   └── shard-manifest.json
+       └── shard_1/
+           └── shard-manifest.json
    ```
 
 ## Step 3: Configure the Plugin
@@ -132,8 +134,9 @@ Get Available Datasets
 **Check:**
 1. Is `DatasetsDirectory` pointing to the correct parent directory?
 2. Does the directory contain subdirectories (one per dataset)?
-3. Do those subdirectories contain `.json` files?
-4. Are the `.json` files valid JSON?
+3. Do those dataset subdirectories contain shard subdirectories?
+4. Do the shard subdirectories contain `shard-manifest.json` files?
+5. Are the `shard-manifest.json` files valid JSON?
 
 **Enable debug logging:**
 ```ini
@@ -181,7 +184,7 @@ Check if datasets share the same origin to identify spatially correlated data (e
 
 For detailed documentation:
 - Plugin API: `TrajectoryData/README.md`
-- Data Format: `trajectory-converter/specification-trajectory-data-shard.md`
+- Data Format: `specification-trajectory-data-shard.md`
 - Implementation: `IMPLEMENTATION.md`
 
 For issues, check the Output Log with `bDebugLogging=True` enabled.

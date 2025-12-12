@@ -30,19 +30,25 @@ This repository contains an Unreal Engine 5.6 plugin for loading and managing tr
 ## Documentation
 
 - [Plugin Documentation](TrajectoryData/README.md) - Detailed usage guide and API reference
-- [Trajectory Data Shard Specification](trajectory-converter/specification-trajectory-data-shard.md) - File format specification
+- [Trajectory Data Shard Specification](specification-trajectory-data-shard.md) - File format specification
 
 ## Dataset Structure
 
-Datasets should be organized as directories containing trajectory data shards:
+Datasets should be organized with each shard in its own subdirectory:
 
 ```
 DatasetsDirectory/
 ├── dataset_name/
-│   ├── dataset_name_0.tds    # Binary data file
-│   ├── dataset_name_0.json   # Metadata file
-│   ├── dataset_name_1.tds
-│   └── dataset_name_1.json
+│   ├── shard_0/
+│   │   ├── shard-manifest.json  # Human-readable manifest
+│   │   ├── shard-meta.bin       # Binary metadata
+│   │   ├── shard-trajmeta.bin   # Per-trajectory metadata
+│   │   └── shard-data.bin       # Trajectory position data
+│   └── shard_1/
+│       ├── shard-manifest.json
+│       ├── shard-meta.bin
+│       ├── shard-trajmeta.bin
+│       └── shard-data.bin
 ```
 
 See the specification document for complete details on the file format.
