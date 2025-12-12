@@ -12,24 +12,25 @@ Store many trajectories (3D positions over time) in fixed-size, mmap-friendly bi
 
 ### High-level components
 
-- shard-manifest.json (human readable) (JSON): describes shard-level metadata (version, endianness, ranges)
-- shard-meta.bin (binary): compact binary summary used by tools for fast lookup
-- shard-trajmeta.bin (binary): one fixed-size record per trajectory with per-trajectory metadata
-- shard-data-<start-time-step>.bin (binary): one or more data files, each covering a consecutive time-interval block (optional chunking parameter), where `<start-time-step>` is the first time step covered by that interval
+- **shard-manifest.json** (human readable) (JSON): describes shard-level metadata (version, endianness, ranges)
+- **shard-meta.bin** (binary): compact binary summary used by tools for fast lookup
+- **shard-trajmeta.bin** (binary): one fixed-size record per trajectory with per-trajectory metadata
+- **shard-data.bin** (binary): one or more data files, each covering a consecutive time-interval block (optional chunking parameter), where `<start-time-step>` is the first time step covered by that interval
 
 ### Common conventions
 
-- Endianness: little-endian for all binary files (documented explicitly in manifest)
-- Floating point: IEEE-754 single-precision (float32) unless specified otherwise
-- Coordinate units: stored in original units from source data; unit type is documented in the manifest's "coordinate_units" field (e.g., "millimeters", "meters")
-- Time: store absolute times in seconds as float64 in manifest and trajectory-meta; internal per-entry time step indices are integers (int32).
-- Struct packing: all binary structs are packed (no implicit padding). pragma pack(1) for C/C++.
-- Versioning: every file starts with a 4-byte magic + 1-byte format version. The manifest includes a "converter_version" field containing the git commit hash of the converter tool used to generate the shard.
+- **Endianness**: little-endian for all binary files (documented explicitly in manifest)
+- **Floating point**: IEEE-754 single-precision (float32) unless specified otherwise
+- **Coordinate units**: stored in original units from source data; unit type is documented in the manifest's "coordinate_units" field (e.g., "millimeters", "meters")
+- **Time**: store absolute times in seconds as float64 in manifest and trajectory-meta; internal per-entry time step indices are integers (int32).
+- **Struct packing**: all binary structs are packed (no implicit padding). pragma pack(1) for C/C++.
+- **Versioning**: every file starts with a 4-byte magic + 1-byte format version. The manifest includes a "converter_version" field containing the git commit hash of the converter tool used to generate the shard.
 
 ## File Descriptions
 
 ### Manifest (JSON) — Example (human readable)
-```JSON
+
+```json
 {
   "shard_name": "shard-name",
   "format_version": 1,
@@ -50,6 +51,7 @@ Store many trajectories (3D positions over time) in fixed-size, mmap-friendly bi
 ```
 
 ### Shard-Meta (binary)
+
 Purpose: quick programmatic access to global shard parameters.
 
 Layout (packed, little-endian):
@@ -70,6 +72,7 @@ Layout (packed, little-endian):
 - total size: 76 bytes
 
 ### Trajectory-Meta (binary) — one fixed-size record per trajectory
+
 Purpose: store per-trajectory immutable metadata for quick filtering.
 
 Layout (packed, little-endian):
@@ -78,7 +81,7 @@ Layout (packed, little-endian):
 - offset 8: int32 start_time_step
 - offset 12: int32 end_time_step
 - offset 16: float32 extent[3] (object half-extent in meters; default 0.1 -> 10 cm)
-- offset 28: uint32 data_file_index (which shard-data-<start-time-step> file contains this trajectory's entries for first interval)
+- offset 28: uint32 data_file_index (which shard-data file contains this trajectory's entries for first interval)
 - offset 32: uint64 entry_offset_index (index of entry within the data file block for direct seek)
 - total size: 40 bytes
 
@@ -87,6 +90,7 @@ Notes:
 - All entries are present and Trajectory-Meta must be sorted ascending by trajectory_id.
 
 ### Trajectory Data file (binary) — layout for a single time-interval block
+
 Purpose: store position samples for a set of trajectories for a fixed set of consecutive time steps (time_step_interval_size).
 
 File header (packed):
@@ -119,7 +123,6 @@ Entry layout (per-trajectory) — fixed size for fast mmap:
 
 - Store positions as float32 x,y,z per sample. Invalid samples are represented by IEEE-754 NaN for x,y and z
 
-
 #### Byte offsets and example calculation
 
 - Example: time_step_interval_size = 50
@@ -128,10 +131,9 @@ Entry layout (per-trajectory) — fixed size for fast mmap:
   - entry_size_bytes = 16 + 600 = 616
   - Document entry_size_bytes in shard-meta to avoid ambiguity.
 
-
 ### Examples: C/C++ struct definitions (packed, little-endian)
 
-```C++
+```cpp
 /* shard-meta.bin */
 #pragma pack(push,1)
 struct ShardMeta {
@@ -163,7 +165,7 @@ struct TrajectoryMeta {
 };
 #pragma pack(pop)
 
-/* shard-data-<start-time-step>.bin header */
+/* shard-data.bin header */
 #pragma pack(push,1)
 struct DataBlockHeader {
   char magic[4];                  // "TDDB"
@@ -191,4 +193,5 @@ struct TrajEntryNaN {
 ```
 
 ## Change log
+
 - format_version = 1: initial stable definition for the project.

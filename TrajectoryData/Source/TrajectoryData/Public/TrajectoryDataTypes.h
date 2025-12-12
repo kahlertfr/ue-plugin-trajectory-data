@@ -1,0 +1,142 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "TrajectoryDataTypes.generated.h"
+
+/**
+ * Structure representing metadata for a single trajectory data shard
+ * Based on the Trajectory Data Shard specification (shard-manifest.json format)
+ */
+USTRUCT(BlueprintType)
+struct TRAJECTORYDATA_API FTrajectoryShardMetadata
+{
+	GENERATED_BODY()
+
+	/** Name of the shard */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString ShardName;
+
+	/** Format version */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	int32 FormatVersion;
+
+	/** Endianness (little or big) */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString Endianness;
+
+	/** Coordinate units (e.g., millimeters, meters) */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString CoordinateUnits;
+
+	/** Floating point precision (e.g., float32) */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString FloatPrecision;
+
+	/** Time units (e.g., seconds) */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString TimeUnits;
+
+	/** Time step interval size */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	int32 TimeStepIntervalSize;
+
+	/** Time interval in seconds */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	float TimeIntervalSeconds;
+
+	/** Entry size in bytes */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	int32 EntrySizeBytes;
+
+	/** Bounding box minimum */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FVector BoundingBoxMin;
+
+	/** Bounding box maximum */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FVector BoundingBoxMax;
+
+	/** Total number of trajectories in this shard */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	int64 TrajectoryCount;
+
+	/** First trajectory ID */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	int64 FirstTrajectoryId;
+
+	/** Last trajectory ID */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	int64 LastTrajectoryId;
+
+	/** Creation timestamp */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString CreatedAt;
+
+	/** Converter version (git commit hash) */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString ConverterVersion;
+
+	/** Full path to the manifest JSON file */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString ManifestFilePath;
+
+	/** Directory path containing all shard files */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString ShardDirectory;
+
+	FTrajectoryShardMetadata()
+		: ShardName(TEXT(""))
+		, FormatVersion(1)
+		, Endianness(TEXT("little"))
+		, CoordinateUnits(TEXT(""))
+		, FloatPrecision(TEXT("float32"))
+		, TimeUnits(TEXT("seconds"))
+		, TimeStepIntervalSize(0)
+		, TimeIntervalSeconds(0.0f)
+		, EntrySizeBytes(0)
+		, BoundingBoxMin(FVector::ZeroVector)
+		, BoundingBoxMax(FVector::ZeroVector)
+		, TrajectoryCount(0)
+		, FirstTrajectoryId(0)
+		, LastTrajectoryId(0)
+		, CreatedAt(TEXT(""))
+		, ConverterVersion(TEXT(""))
+		, ManifestFilePath(TEXT(""))
+		, ShardDirectory(TEXT(""))
+	{
+	}
+};
+
+/**
+ * Structure representing a complete trajectory dataset with all its shards
+ */
+USTRUCT(BlueprintType)
+struct TRAJECTORYDATA_API FTrajectoryDatasetInfo
+{
+	GENERATED_BODY()
+
+	/** Name of the dataset */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString DatasetName;
+
+	/** Directory path containing the dataset */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString DatasetPath;
+
+	/** Array of all shards in this dataset */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	TArray<FTrajectoryShardMetadata> Shards;
+
+	/** Total number of trajectories across all shards */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	int64 TotalTrajectories;
+
+	FTrajectoryDatasetInfo()
+		: DatasetName(TEXT(""))
+		, DatasetPath(TEXT(""))
+		, TotalTrajectories(0)
+	{
+	}
+};
