@@ -4,20 +4,32 @@ This guide will help you get started with the Trajectory Data plugin in 5 minute
 
 ## Step 1: Installation
 
-1. Copy the `TrajectoryData` folder to your Unreal Engine project's `Plugins` directory:
+### Option A: Git Submodule (Recommended)
+
+1. Add this plugin as a git submodule to your project's `Plugins` directory:
+   ```bash
+   cd YourProject/Plugins
+   git submodule add https://github.com/kahlertfr/ue-plugin-trajectory-data.git
+   ```
+
+2. Regenerate project files:
+   - Windows: Right-click on your `.uproject` file → "Generate Visual Studio project files"
+   - Mac: Right-click on your `.uproject` file → "Generate Xcode project"
+
+3. Open your project in Unreal Engine. The plugin will be automatically detected and compiled.
+
+### Option B: Manual Copy
+
+1. Copy the entire repository to your Unreal Engine project's `Plugins` directory:
    ```
    YourProject/
    └── Plugins/
-       └── TrajectoryData/  <-- Copy here
+       └── ue-plugin-trajectory-data/  <-- Copy here
    ```
 
 2. If your project doesn't have a `Plugins` folder, create one at the project root level.
 
-3. Regenerate project files:
-   - Windows: Right-click on your `.uproject` file → "Generate Visual Studio project files"
-   - Mac: Right-click on your `.uproject` file → "Generate Xcode project"
-
-4. Open your project in Unreal Engine. The plugin will be automatically detected and compiled.
+3. Follow steps 2-3 from Option A above.
 
 ## Step 2: Prepare Test Data
 
@@ -183,7 +195,7 @@ Check if datasets share the same origin to identify spatially correlated data (e
 ## Support
 
 For detailed documentation:
-- Plugin API: `TrajectoryData/README.md`
+- Plugin API: See main `README.md`
 - Data Format: `specification-trajectory-data-shard.md`
 - Implementation: `IMPLEMENTATION.md`
 
