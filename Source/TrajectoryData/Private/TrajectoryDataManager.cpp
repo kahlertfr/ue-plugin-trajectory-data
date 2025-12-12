@@ -77,8 +77,8 @@ bool UTrajectoryDataManager::ScanDatasets()
 			
 			if (Settings->bDebugLogging)
 			{
-				UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Found dataset '%s' with %d shards, %d trajectories, %d samples"),
-					*DatasetInfo.DatasetName, DatasetInfo.Shards.Num(), DatasetInfo.TotalTrajectories, DatasetInfo.TotalSamples);
+				UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Found dataset '%s' with %d shards, %d trajectories"),
+					*DatasetInfo.DatasetName, DatasetInfo.Shards.Num(), DatasetInfo.TotalTrajectories);
 			}
 		}
 	}
