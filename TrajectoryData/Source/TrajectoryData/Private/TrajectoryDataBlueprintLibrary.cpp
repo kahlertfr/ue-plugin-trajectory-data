@@ -69,6 +69,8 @@ void UTrajectoryDataBlueprintLibrary::SetDatasetsDirectory(const FString& NewPat
 	if (Settings)
 	{
 		Settings->DatasetsDirectory = NewPath;
+		// Note: SaveConfig is called explicitly here. Consider calling SaveConfig manually
+		// after multiple setting changes if you're updating multiple properties at once.
 		Settings->SaveConfig();
 	}
 }

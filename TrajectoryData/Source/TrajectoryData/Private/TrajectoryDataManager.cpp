@@ -19,7 +19,7 @@ UTrajectoryDataManager* UTrajectoryDataManager::Get()
 {
 	if (!Instance)
 	{
-		Instance = NewObject<UTrajectoryDataManager>();
+		Instance = NewObject<UTrajectoryDataManager>(GetTransientPackage());
 		Instance->AddToRoot(); // Prevent garbage collection
 	}
 	return Instance;
@@ -167,28 +167,56 @@ bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, 
 		return false;
 	}
 
+	// JSON field name constants
+	static const FString JsonExtension = TEXT(".json");
+	static const FString DataExtension = TEXT(".tds");
+	static const FString FieldShardId = TEXT("shard_id");
+	static const FString FieldNumTrajectories = TEXT("num_trajectories");
+	static const FString FieldNumSamples = TEXT("num_samples");
+	static const FString FieldTimeStepStart = TEXT("time_step_start");
+	static const FString FieldTimeStepEnd = TEXT("time_step_end");
+	static const FString FieldDataType = TEXT("data_type");
+	static const FString FieldVersion = TEXT("version");
+	static const FString FieldOrigin = TEXT("origin");
+
 	// Extract fields
 	OutShardMetadata.MetadataFilePath = MetadataFilePath;
 	
 	// Construct data file path by replacing .json with .tds
-	OutShardMetadata.DataFilePath = MetadataFilePath.LeftChop(5) + TEXT(".tds");
+	if (MetadataFilePath.EndsWith(JsonExtension))
+	{
+		OutShardMetadata.DataFilePath = MetadataFilePath.LeftChop(JsonExtension.Len()) + DataExtension;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataManager: Metadata file doesn't end with .json: %s"), *MetadataFilePath);
+		OutShardMetadata.DataFilePath = MetadataFilePath + DataExtension;
+	}
 
-	JsonObject->TryGetNumberField(TEXT("shard_id"), OutShardMetadata.ShardId);
-	JsonObject->TryGetNumberField(TEXT("num_trajectories"), OutShardMetadata.NumTrajectories);
-	JsonObject->TryGetNumberField(TEXT("num_samples"), OutShardMetadata.NumSamples);
-	JsonObject->TryGetNumberField(TEXT("time_step_start"), OutShardMetadata.TimeStepStart);
-	JsonObject->TryGetNumberField(TEXT("time_step_end"), OutShardMetadata.TimeStepEnd);
-	JsonObject->TryGetStringField(TEXT("data_type"), OutShardMetadata.DataType);
-	JsonObject->TryGetStringField(TEXT("version"), OutShardMetadata.Version);
+	JsonObject->TryGetNumberField(FieldShardId, OutShardMetadata.ShardId);
+	JsonObject->TryGetNumberField(FieldNumTrajectories, OutShardMetadata.NumTrajectories);
+	JsonObject->TryGetNumberField(FieldNumSamples, OutShardMetadata.NumSamples);
+	JsonObject->TryGetNumberField(FieldTimeStepStart, OutShardMetadata.TimeStepStart);
+	JsonObject->TryGetNumberField(FieldTimeStepEnd, OutShardMetadata.TimeStepEnd);
+	JsonObject->TryGetStringField(FieldDataType, OutShardMetadata.DataType);
+	JsonObject->TryGetStringField(FieldVersion, OutShardMetadata.Version);
 
 	// Parse origin array
 	const TArray<TSharedPtr<FJsonValue>>* OriginArray;
-	if (JsonObject->TryGetArrayField(TEXT("origin"), OriginArray) && OriginArray->Num() == 3)
+	if (JsonObject->TryGetArrayField(FieldOrigin, OriginArray))
 	{
-		double X = (*OriginArray)[0]->AsNumber();
-		double Y = (*OriginArray)[1]->AsNumber();
-		double Z = (*OriginArray)[2]->AsNumber();
-		OutShardMetadata.Origin = FVector(X, Y, Z);
+		if (OriginArray->Num() == 3)
+		{
+			double X = (*OriginArray)[0]->AsNumber();
+			double Y = (*OriginArray)[1]->AsNumber();
+			double Z = (*OriginArray)[2]->AsNumber();
+			OutShardMetadata.Origin = FVector(X, Y, Z);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataManager: Origin array has %d elements (expected 3) in file: %s"), 
+				OriginArray->Num(), *MetadataFilePath);
+		}
 	}
 
 	return true;
