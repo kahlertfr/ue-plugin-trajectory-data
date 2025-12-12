@@ -18,7 +18,7 @@ The task was to implement the initial phase of a UE plugin that:
 - **Plugin Descriptor**: `TrajectoryData.uplugin` - Defines the plugin for UE
 - **Build Configuration**: `TrajectoryData.Build.cs` - Specifies dependencies (Core, Engine, Json, JsonUtilities)
 - **Module Files**: Header and implementation files for the main module
-- **Directory Structure**: Proper UE plugin layout with Source, Config, and Resources directories
+- **Directory Structure**: Proper UE plugin layout with Source and Config directories at repository root
 
 ### 2. Configuration System ✅
 **Files:**
@@ -31,6 +31,8 @@ The task was to implement the initial phase of a UE plugin that:
 - Debug logging toggle
 - Runtime access and modification via Blueprint
 - Persistent storage using UE's config system
+
+**Note:** The repository is structured to be used directly as a git submodule in a UE project's Plugins folder.
 
 ### 3. Data Structures ✅
 **File:** `TrajectoryDataTypes.h`
@@ -195,29 +197,29 @@ These are intentionally left for future phases as the current task focuses on "s
 7. `TrajectoryDataBlueprintLibrary.h/cpp` - Blueprint API
 8. `DefaultTrajectoryData.ini` - Config file
 
-### Documentation (5 files)
-9. `README.md` - Updated main readme
-10. `TrajectoryData/README.md` - Plugin documentation
-11. `QUICKSTART.md` - Quick start guide
-12. `IMPLEMENTATION.md` - Technical details
-13. `trajectory-converter/specification-trajectory-data-shard.md` - Format spec
+### Documentation (4 files)
+9. `README.md` - Complete plugin documentation and API reference
+10. `QUICKSTART.md` - Quick start guide
+11. `IMPLEMENTATION.md` - Technical details
+12. `specification-trajectory-data-shard.md` - Format spec
 
 ### Examples (3 files)
-14. `examples/README.md` - Example explanation
-15. `examples/sample_dataset/sample_dataset_0.json` - Example metadata
-16. `examples/sample_dataset/sample_dataset_1.json` - Example metadata
+13. `examples/README.md` - Example explanation
+14. `examples/sample_dataset/shard_0/shard-manifest.json` - Example shard 0
+15. `examples/sample_dataset/shard_1/shard-manifest.json` - Example shard 1
 
 ## How to Use
 
 ### For Plugin Users
-1. Read `QUICKSTART.md` for step-by-step instructions
-2. Configure `Config/DefaultTrajectoryData.ini`
-3. Create Blueprint to call scanning functions
-4. Build UI to display dataset information
+1. Add as git submodule or copy to your project's Plugins folder
+2. Read `QUICKSTART.md` for step-by-step instructions
+3. Configure `Config/DefaultTrajectoryData.ini`
+4. Create Blueprint to call scanning functions
+5. Build UI to display dataset information
 
 ### For Developers
 1. Read `IMPLEMENTATION.md` for architecture
-2. Read `TrajectoryData/README.md` for API reference
+2. Read `README.md` for complete API reference
 3. Review source code with inline comments
 4. Extend functionality by adding to existing classes
 
