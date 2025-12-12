@@ -173,10 +173,7 @@ bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, 
 
 	// Parse all fields from shard-manifest.json according to specification
 	JsonObject->TryGetStringField(TEXT("shard_name"), OutShardMetadata.ShardName);
-	
-	int32 TempFormatVersion = 1;
-	JsonObject->TryGetNumberField(TEXT("format_version"), TempFormatVersion);
-	OutShardMetadata.FormatVersion = TempFormatVersion;
+	JsonObject->TryGetNumberField(TEXT("format_version"), OutShardMetadata.FormatVersion);
 	
 	JsonObject->TryGetStringField(TEXT("endianness"), OutShardMetadata.Endianness);
 	JsonObject->TryGetStringField(TEXT("coordinate_units"), OutShardMetadata.CoordinateUnits);
