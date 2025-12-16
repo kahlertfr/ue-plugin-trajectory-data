@@ -15,6 +15,7 @@ The Trajectory Data plugin provides C++ classes and Blueprint-callable functions
 - **Configuration Management**: Specify the location of trajectory datasets via a config file
 - **Dataset Discovery**: Automatically scan directories to find available trajectory datasets
 - **Metadata Reading**: Parse and access metadata from trajectory data shards (number of trajectories, samples, time steps, etc.)
+- **Memory Monitoring**: Real-time memory estimation and capacity monitoring for trajectory data loading
 - **Blueprint Integration**: Full Blueprint support with easy-to-use functions for building UIs and visualizations
 - **Spatially Correlated Data**: Support for multiple related shards with the same spatial origin
 
@@ -114,6 +115,46 @@ To determine if a dataset can be visualized:
 
 - **Calculate Max Display Points** - Returns total sample points for a dataset (trajectory_count × time_step_interval_size across all shards)
 - **Calculate Shard Display Points** - Returns sample points for a single shard
+
+### Memory Monitoring
+
+The plugin provides real-time memory monitoring to prevent loading data that exceeds system capacity:
+
+#### Memory Information Functions:
+- **Get Total Physical Memory** - Returns total system memory in bytes
+- **Get Max Trajectory Data Memory** - Returns maximum memory for trajectory data (75% of total)
+- **Get Memory Info** - Returns complete memory usage information structure
+- **Format Memory Size** - Converts bytes to human-readable format (e.g., "1.5 GB")
+
+#### Memory Calculation Functions:
+- **Calculate Shard Memory Requirement** - Calculates memory needed for a shard
+- **Calculate Dataset Memory Requirement** - Calculates memory needed for a dataset
+
+Memory is calculated based on the Trajectory Data Shard specification:
+- Shard Meta: 76 bytes
+- Trajectory Meta: 40 bytes per trajectory
+- Data Block Header: 32 bytes
+- Data Entries: entry_size_bytes per trajectory
+
+#### Capacity Management Functions:
+- **Add Estimated Usage** - Add memory to usage estimate (for immediate feedback)
+- **Remove Estimated Usage** - Remove memory from usage estimate
+- **Reset Estimated Usage** - Clear all usage estimates
+- **Can Load Shard** - Check if a shard fits in remaining capacity
+- **Can Load Dataset** - Check if a dataset fits in remaining capacity
+
+#### Example Usage:
+```
+1. User selects datasets to load
+2. For each selection:
+   - Calculate memory requirement
+   - Add to estimated usage
+   - Update UI to show remaining capacity
+3. User sees immediate feedback before loading
+4. Check Can Load Dataset before actual loading
+```
+
+See [examples/MEMORY_MONITORING_BLUEPRINT.md](examples/MEMORY_MONITORING_BLUEPRINT.md) for a complete Blueprint example.
 
 ## Dataset Structure
 
@@ -232,15 +273,16 @@ for (const FTrajectoryDatasetInfo& Dataset : Datasets)
 - [Trajectory Data Shard Specification](specification-trajectory-data-shard.md) - File format specification
 - [Quick Start Guide](QUICKSTART.md) - Getting started guide
 - [Implementation Details](IMPLEMENTATION.md) - Technical implementation details
+- [Memory Monitoring Blueprint Example](examples/MEMORY_MONITORING_BLUEPRINT.md) - Complete example for creating memory monitoring UI
 
 ## Future Enhancements
 
 Planned features include:
+- Binary data loading (actual trajectory data)
 - Data streaming for large datasets
 - Time window filtering
 - Spatial filtering
 - Visualization helpers
-- Binary data loading
 
 ## License
 
