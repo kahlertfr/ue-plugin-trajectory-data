@@ -47,8 +47,11 @@ This guide will help you get started with the Trajectory Data plugin in 5 minute
            ├── dataset-manifest.json
            ├── dataset-meta.bin
            ├── dataset-trajmeta.bin
-           └── shard.bin
+           ├── shard-0.bin
+           └── shard-1.bin
    ```
+   
+   Note: A dataset can have one or more shard files (e.g., `shard-0.bin`, `shard-1.bin`) for different time intervals.
 
 ## Step 3: Configure the Plugin
 

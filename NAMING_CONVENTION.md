@@ -21,8 +21,9 @@ The plugin implements a **Scenario → Dataset** hierarchy for organizing trajec
   - `dataset-manifest.json` (required)
   - `dataset-meta.bin` (optional)
   - `dataset-trajmeta.bin` (optional)
-  - `shard.bin` (optional)
+  - `shard-<interval>.bin` (optional, one or more files for different time intervals)
 - **Example**: `bubbles`, `particles`, `debris`, `combined`
+- **Note**: A dataset can contain multiple shard files (e.g., `shard-0.bin`, `shard-1.bin`, `shard-2.bin`) representing different time intervals
 
 ## Directory Structure Example
 
@@ -33,18 +34,21 @@ ScenariosDirectory/                         ← Root configuration setting
 │   │   ├── dataset-manifest.json
 │   │   ├── dataset-meta.bin
 │   │   ├── dataset-trajmeta.bin
-│   │   └── shard.bin
+│   │   ├── shard-0.bin                     ← Time interval 0
+│   │   ├── shard-1.bin                     ← Time interval 1
+│   │   └── shard-2.bin                     ← Time interval 2
 │   └── dataset_particles/                  ← Dataset (related to bubbles)
 │       ├── dataset-manifest.json
 │       ├── dataset-meta.bin
 │       ├── dataset-trajmeta.bin
-│       └── shard.bin
+│       └── shard-0.bin                     ← Single time interval
 └── scenario_wind_tunnel_test_03/           ← Scenario
     └── dataset_combined/                   ← Dataset
         ├── dataset-manifest.json
         ├── dataset-meta.bin
         ├── dataset-trajmeta.bin
-        └── shard.bin
+        ├── shard-0.bin
+        └── shard-1.bin
 ```
 
 ## Configuration
@@ -121,18 +125,20 @@ While the plugin doesn't enforce specific naming patterns for scenario/dataset d
 
 If you were using an earlier version with shard subdirectories:
 
-### Old Structure
+### Old Structure (with shard subdirectories)
 ```
 ScenariosDirectory/
 └── scenario_name/
     └── dataset_A/
         ├── shard_0/
-        │   └── shard-manifest.json
+        │   ├── shard-manifest.json
+        │   └── shard-data-0.bin
         └── shard_1/
-            └── shard-manifest.json
+            ├── shard-manifest.json
+            └── shard-data-0.bin
 ```
 
-### New Structure
+### New Structure (files directly in dataset)
 ```
 ScenariosDirectory/
 └── scenario_name/
@@ -140,8 +146,17 @@ ScenariosDirectory/
         ├── dataset-manifest.json
         ├── dataset-meta.bin
         ├── dataset-trajmeta.bin
-        └── shard.bin
+        ├── shard-0.bin              ← Was shard-data-0.bin
+        ├── shard-1.bin              ← Was shard-data-1.bin
+        └── shard-2.bin
 ```
+
+**Key Changes:**
+- Removed shard subdirectories - all files now in dataset directory
+- Renamed `shard-data-*.bin` to `shard-*.bin` (removed "data" from filename)
+- Renamed `shard-manifest.json` to `dataset-manifest.json`
+- Renamed `shard-meta.bin` to `dataset-meta.bin`
+- Renamed `shard-trajmeta.bin` to `dataset-trajmeta.bin`
 
 ### Configuration Change
 Update your `DefaultTrajectoryData.ini`:

@@ -9,8 +9,9 @@ The plugin uses a two-level naming hierarchy:
 **Scenario → Dataset**
 
 - **Scenario**: Top-level directory representing a simulation scenario or experiment
-- **Dataset**: Contains the actual trajectory data files (manifest, metadata, and binary data)
+- **Dataset**: Contains the actual trajectory data files (manifest, metadata, and binary shard files)
   - Multiple datasets in the same scenario are spatially and temporally related
+  - Each dataset can contain multiple shard files for different time intervals
 
 Example:
 ```
@@ -20,12 +21,13 @@ ScenariosDirectory/
     │   ├── dataset-manifest.json
     │   ├── dataset-meta.bin
     │   ├── dataset-trajmeta.bin
-    │   └── shard.bin
+    │   ├── shard-0.bin          ← Time interval 0
+    │   └── shard-1.bin          ← Time interval 1
     └── particles/                ← Dataset (contains files directly)
         ├── dataset-manifest.json
         ├── dataset-meta.bin
         ├── dataset-trajmeta.bin
-        └── shard.bin
+        └── shard-0.bin          ← Single time interval
 ```
 
 ## Overview
@@ -200,25 +202,28 @@ ScenariosDirectory/
 │   │   ├── dataset-manifest.json
 │   │   ├── dataset-meta.bin
 │   │   ├── dataset-trajmeta.bin
-│   │   └── shard.bin
+│   │   ├── shard-0.bin
+│   │   ├── shard-1.bin
+│   │   └── shard-2.bin
 │   └── dataset_particles/
 │       ├── dataset-manifest.json
 │       ├── dataset-meta.bin
 │       ├── dataset-trajmeta.bin
-│       └── shard.bin
+│       └── shard-0.bin
 └── scenario_B/
     └── dataset_combined/
         ├── dataset-manifest.json
         ├── dataset-meta.bin
         ├── dataset-trajmeta.bin
-        └── shard.bin
+        ├── shard-0.bin
+        └── shard-1.bin
 ```
 
 Each dataset directory contains:
 - `dataset-manifest.json` - Human-readable JSON manifest
 - `dataset-meta.bin` - Binary metadata summary
 - `dataset-trajmeta.bin` - Per-trajectory metadata
-- `shard.bin` - Actual trajectory position data
+- `shard-<interval>.bin` - One or more shard files containing actual trajectory position data for different time intervals (e.g., `shard-0.bin`, `shard-1.bin`, etc.)
 
 ## Manifest File Format
 
@@ -260,6 +265,13 @@ A dataset within a scenario contains trajectory data for a specific type or subs
 - These datasets share the same spatial origin and time reference
 - A scenario can have a single dataset or multiple related datasets
 - Each dataset directory contains the manifest and data files directly (no subdirectories)
+
+### Shard Files
+Each dataset can contain **one or more shard files** representing different time intervals:
+- Files are named `shard-<interval>.bin` where `<interval>` is the time interval index
+- Examples: `shard-0.bin`, `shard-1.bin`, `shard-2.bin`, etc.
+- Each shard file covers a consecutive time-interval block as specified in the dataset manifest
+- This allows datasets to be split across multiple files for manageable file sizes or different time ranges
 
 ## Example Blueprint Usage
 

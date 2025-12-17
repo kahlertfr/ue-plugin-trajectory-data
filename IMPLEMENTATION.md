@@ -206,7 +206,7 @@ File naming within each dataset directory:
 - `dataset-manifest.json` - Human-readable metadata
 - `dataset-meta.bin` - Binary metadata summary
 - `dataset-trajmeta.bin` - Per-trajectory metadata
-- `shard.bin` - Actual trajectory position data
+- `shard-<interval>.bin` - One or more shard files containing actual trajectory position data for different time intervals (e.g., `shard-0.bin`, `shard-1.bin`, etc.)
 
 Multiple datasets within the same scenario are spatially and temporally related to each other.
 

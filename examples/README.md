@@ -11,7 +11,7 @@ The plugin uses a two-level hierarchy: **Scenario → Dataset**
 - `sample_dataset/` - Example dataset directory (should be placed inside a scenario folder)
   - `dataset-manifest.json` - Manifest with metadata (1000 trajectories, IDs 1-1000)
 
-Note: The binary data files (`dataset-meta.bin`, `dataset-trajmeta.bin`, `shard.bin`) are not included in this example. These would contain the actual trajectory data according to the specification in `specification-trajectory-data-shard.md`.
+Note: The binary data files (`dataset-meta.bin`, `dataset-trajmeta.bin`, `shard-*.bin`) are not included in this example. These would contain the actual trajectory data according to the specification in `specification-trajectory-data-shard.md`.
 
 ## File Structure
 
@@ -19,7 +19,7 @@ According to the specification, each dataset directory contains files directly (
 - `dataset-manifest.json` - Human-readable JSON manifest with metadata
 - `dataset-meta.bin` - Binary summary for fast lookup (not included in example)
 - `dataset-trajmeta.bin` - Per-trajectory metadata (not included in example)
-- `shard.bin` - Actual trajectory position data (not included in example)
+- `shard-<interval>.bin` - One or more shard files containing actual trajectory position data for different time intervals (e.g., `shard-0.bin`, `shard-1.bin`, etc.) (not included in example)
 
 ## Using This Example
 
@@ -39,7 +39,9 @@ C:/Data/TrajectoryScenarios/          ← ScenariosDirectory (root)
         ├── dataset-manifest.json
         ├── dataset-meta.bin
         ├── dataset-trajmeta.bin
-        └── shard.bin
+        ├── shard-0.bin                ← Time interval 0
+        ├── shard-1.bin                ← Time interval 1
+        └── shard-2.bin                ← Time interval 2
 ```
 
 ## Testing Without Binary Data
