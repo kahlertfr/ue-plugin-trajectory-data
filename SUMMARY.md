@@ -38,22 +38,22 @@ The task was to implement the initial phase of a UE plugin that:
 **File:** `TrajectoryDataTypes.h`
 
 **Structures:**
-- `FTrajectoryShardMetadata` - Contains all metadata for a single shard:
-  - Shard ID
+- `FTrajectoryShardMetadata` - Contains all metadata for a single dataset:
+  - Dataset name
   - Number of trajectories
-  - Number of samples per trajectory
-  - Time step range (start, end)
-  - Spatial origin (FVector)
-  - Data type (e.g., "particle", "bubble")
+  - Time step interval size
+  - Time interval in seconds
+  - Bounding box (min/max)
+  - Trajectory ID range
   - File paths (metadata and data)
   - Format version
 
-- `FTrajectoryDatasetInfo` - Aggregates multiple shards into a dataset:
+- `FTrajectoryDatasetInfo` - Represents a complete dataset:
   - Dataset name (from directory)
   - Dataset path
   - Scenario name (parent scenario)
-  - Array of all shards
-  - Total trajectories across all shards
+  - Metadata (single FTrajectoryShardMetadata object)
+  - Total trajectories in the dataset
 
 Both structures are `BlueprintType` with `BlueprintReadOnly` properties.
 
@@ -61,16 +61,16 @@ Both structures are `BlueprintType` with `BlueprintReadOnly` properties.
 **File:** `TrajectoryDataManager.h/cpp` (270+ lines)
 
 **Core Functionality:**
-- **Directory Scanning**: Implements three-level hierarchy (scenario → dataset → shard)
+- **Directory Scanning**: Implements two-level hierarchy (scenario → dataset)
 - **Metadata Parsing**: Reads and parses JSON manifest files using Unreal's JSON utilities
-- **Data Aggregation**: Groups shards into datasets, associates datasets with scenarios
+- **Data Association**: Associates datasets with their parent scenarios
 - **Caching**: Stores all discovered data in memory for fast access
 - **Query API**: Provides functions to access cached data
 
 **Key Methods:**
 - `ScanDatasets()` - Main scanning function (scans all scenarios)
 - `ScanScenarioDirectory()` - Scans a single scenario for datasets
-- `ScanDatasetDirectory()` - Scans a single dataset for shards
+- `ScanDatasetDirectory()` - Scans a single dataset for manifest file
 - `GetAvailableDatasets()` - Returns all datasets from all scenarios
 - `GetDatasetInfo()` - Gets specific dataset by name
 - `GetNumDatasets()` - Returns total count across all scenarios
@@ -80,7 +80,7 @@ Both structures are `BlueprintType` with `BlueprintReadOnly` properties.
 - Uses `IPlatformFile` for cross-platform file system access
 - Uses `FJsonSerializer` for JSON parsing
 - Handles malformed JSON gracefully with logging
-- Sorts shards by name within each dataset
+- Looks for `dataset-manifest.json` directly in dataset directories
 - Associates each dataset with its parent scenario name
 
 ### 5. Blueprint Integration ✅
@@ -161,8 +161,8 @@ These provide working examples of the metadata format for testing and reference.
 
 ### Manual Testing Procedure
 1. Copy plugin to UE project's Plugins directory
-2. Create test scenario directory with dataset subdirectories containing shard subdirectories
-3. Place JSON manifest files in each shard subdirectory
+2. Create test scenario directory with dataset subdirectories
+3. Place `dataset-manifest.json` directly in each dataset subdirectory
 4. Configure `DefaultTrajectoryData.ini` with scenarios root path
 5. Create Blueprint actor that calls scanning functions
 6. Verify output in console logs and print strings
@@ -172,7 +172,7 @@ These provide working examples of the metadata format for testing and reference.
 - Scans configured scenarios directory successfully
 - Finds all scenario directories
 - Within each scenario, finds all dataset directories
-- Within each dataset, finds all shard directories and parses manifest files
+- Parses `dataset-manifest.json` from each dataset directory
 - Returns correct counts and metadata
 - All data accessible from Blueprints with proper scenario associations
 
@@ -207,10 +207,9 @@ These are intentionally left for future phases as the current task focuses on "s
 11. `IMPLEMENTATION.md` - Technical details
 12. `specification-trajectory-data-shard.md` - Format spec
 
-### Examples (3 files)
+### Examples (2 files)
 13. `examples/README.md` - Example explanation
-14. `examples/sample_dataset/shard_0/shard-manifest.json` - Example shard 0
-15. `examples/sample_dataset/shard_1/shard-manifest.json` - Example shard 1
+14. `examples/sample_dataset/dataset-manifest.json` - Example dataset manifest
 
 ## How to Use
 

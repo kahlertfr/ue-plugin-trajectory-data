@@ -41,7 +41,7 @@ The plugin consists of several key components:
 
 **Key Features:**
 - Singleton pattern for global access
-- Scans the three-level hierarchy: scenarios → datasets → shards
+- Scans the two-level hierarchy: scenarios → datasets
 - Parses JSON metadata files using Unreal's JSON utilities
 - Caches all discovered datasets in memory with their parent scenario names
 - Provides query functions for accessing dataset information
@@ -52,12 +52,10 @@ The plugin consists of several key components:
 3. For each scenario:
    - Iterate through dataset subdirectories
    - For each dataset:
-     - Find all shard subdirectories containing `shard-manifest.json` files
-     - Parse each manifest file to extract shard metadata
-     - Aggregate shards into a dataset
+     - Look for `dataset-manifest.json` directly in the dataset directory
+     - Parse the manifest file to extract dataset metadata
      - Associate dataset with its parent scenario
-4. Sort shards by name within each dataset
-5. Return all discovered datasets across all scenarios
+4. Return all discovered datasets across all scenarios
 
 ### 4. Blueprint Function Library
 
@@ -111,11 +109,11 @@ Scan scenarios directory for scenario folders
     ↓
 For each scenario, scan for dataset folders
     ↓
-For each dataset, scan for shard folders
+For each dataset, look for dataset-manifest.json
     ↓
-Parse shard-manifest.json files in each shard folder
+Parse dataset-manifest.json files
     ↓
-Build FTrajectoryDatasetInfo structures (with scenario name)
+Build FTrajectoryDatasetInfo structures (with scenario name and metadata)
     ↓
 Cache in manager
     ↓
@@ -193,24 +191,22 @@ To test the plugin:
 3. **Expected Results**
    - Should find one dataset named "sample_dataset"
    - Dataset should belong to scenario "test_scenario"
-   - Should have 2 shards
-   - Total trajectories: 2000
+   - Total trajectories: 1000
 
 ## Directory Naming Convention
 
-The plugin expects a three-level hierarchy:
+The plugin expects a two-level hierarchy:
 
-**Scenario → Dataset → Shard**
+**Scenario → Dataset**
 
 - **Scenario**: Top-level directory representing a simulation run
-- **Dataset**: Subdirectory within a scenario containing related trajectory data
-- **Shard**: Subdirectory containing manifest and data files
+- **Dataset**: Subdirectory within a scenario containing trajectory data files directly
 
-File naming within each shard directory:
-- `shard-manifest.json` - Human-readable metadata
-- `shard-meta.bin` - Binary metadata summary
-- `shard-trajmeta.bin` - Per-trajectory metadata
-- `shard-data.bin` - Actual trajectory position data
+File naming within each dataset directory:
+- `dataset-manifest.json` - Human-readable metadata
+- `dataset-meta.bin` - Binary metadata summary
+- `dataset-trajmeta.bin` - Per-trajectory metadata
+- `shard.bin` - Actual trajectory position data
 
 Multiple datasets within the same scenario are spatially and temporally related to each other.
 

@@ -81,7 +81,7 @@ Layout (packed, little-endian):
 - offset 8: int32 start_time_step
 - offset 12: int32 end_time_step
 - offset 16: float32 extent[3] (object half-extent in meters; default 0.1 -> 10 cm)
-- offset 28: uint32 data_file_index (which shard-data file contains this trajectory's entries for first interval)
+- offset 28: uint32 data_file_index (which shard file contains this trajectory's entries for first interval)
 - offset 32: uint64 entry_offset_index (index of entry within the data file block for direct seek)
 - total size: 40 bytes
 
