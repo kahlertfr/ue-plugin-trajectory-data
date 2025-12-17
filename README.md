@@ -231,6 +231,7 @@ Each dataset requires a `dataset-manifest.json` file with the following structur
 
 ```json
 {
+  "scenario_name": "scenario_A",
   "dataset_name": "bubbles",
   "format_version": 1,
   "endianness": "little",
