@@ -46,7 +46,7 @@ int64 UTrajectoryDataMemoryEstimator::CalculateDatasetMemoryFromMetadata(const F
 	const int64 TrajectoryMetaSize = 40 * DatasetMetadata.TrajectoryCount;
 	
 	// 3. Data Block Header: 32 bytes per data file
-	// For simplicity, assume one data file per shard
+	// For simplicity, assume one data file per dataset
 	const int64 DataBlockHeaderSize = 32;
 	
 	// 4. Data entries: entry_size_bytes per trajectory
