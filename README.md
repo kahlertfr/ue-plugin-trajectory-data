@@ -41,9 +41,9 @@ Then regenerate project files and compile your project. You can now edit the plu
 
 ## Configuration
 
-### Setting the Datasets Directory
+### Setting the Scenarios Directory
 
-The plugin reads its configuration from `Config/DefaultTrajectoryData.ini`. You can specify the datasets directory in one of two ways:
+The plugin reads its configuration from `Config/DefaultTrajectoryData.ini`. You can specify the scenarios directory in one of two ways:
 
 #### Option 1: Edit the Config File
 
@@ -51,19 +51,19 @@ Edit `Config/DefaultTrajectoryData.ini`:
 
 ```ini
 [/Script/TrajectoryData.TrajectoryDataSettings]
-DatasetsDirectory=C:/Data/TrajectoryDatasets
+ScenariosDirectory=C:/Data/TrajectoryScenarios
 bAutoScanOnStartup=True
 bDebugLogging=False
 ```
 
 #### Option 2: Use Blueprint Functions
 
-You can also set the datasets directory at runtime using the Blueprint function:
-- **Set Datasets Directory** - Sets the path to the datasets directory
+You can also set the scenarios directory at runtime using the Blueprint function:
+- **Set Scenarios Directory** - Sets the path to the scenarios directory
 
 ### Configuration Options
 
-- **DatasetsDirectory**: Path to the root directory containing trajectory datasets
+- **ScenariosDirectory**: Path to the root directory containing scenario folders
 - **bAutoScanOnStartup**: Whether to automatically scan for datasets when the plugin loads
 - **bDebugLogging**: Enable detailed logging for debugging
 
@@ -87,11 +87,11 @@ Once datasets are scanned, you can access their information:
 ### Dataset Information Structure
 
 Each dataset (FTrajectoryDatasetInfo) contains:
-- **Dataset Name**: Name derived from the directory
+- **Dataset Name**: Name derived from the dataset directory
 - **Dataset Path**: Full path to the dataset directory
+- **Scenario Name**: Name of the parent scenario this dataset belongs to
 - **Shards**: Array of shard metadata
 - **Total Trajectories**: Sum of trajectories across all shards
-- **Total Samples**: Sum of samples across all shards
 
 ### Shard Metadata Structure
 
@@ -156,29 +156,44 @@ Memory is calculated based on the Trajectory Data Shard specification:
 
 See [examples/MEMORY_MONITORING_BLUEPRINT.md](examples/MEMORY_MONITORING_BLUEPRINT.md) for a complete Blueprint example.
 
-## Dataset Structure
+## Data Structure
 
-Trajectory datasets should be organized with each shard in its own subdirectory:
+### Directory Hierarchy
+
+The plugin follows a three-level hierarchy: **Scenario → Dataset → Shard**
+
+- **Scenario**: A directory representing a simulation scenario (e.g., "experiment_2025_01")
+- **Dataset**: A subdirectory within a scenario containing related trajectory data (e.g., "bubbles", "particles")
+  - Multiple datasets within the same scenario are spatially and temporally related
+- **Shard**: A subdirectory containing the actual trajectory data files
 
 ```
-DatasetsDirectory/
-├── dataset_A/
-│   ├── shard_0/
-│   │   ├── shard-manifest.json
-│   │   ├── shard-meta.bin
-│   │   ├── shard-trajmeta.bin
-│   │   └── shard-data.bin
-│   └── shard_1/
-│       ├── shard-manifest.json
-│       ├── shard-meta.bin
-│       ├── shard-trajmeta.bin
-│       └── shard-data.bin
-└── dataset_B/
-    └── shard_0/
-        ├── shard-manifest.json
-        ├── shard-meta.bin
-        ├── shard-trajmeta.bin
-        └── shard-data.bin
+ScenariosDirectory/
+├── scenario_A/
+│   ├── dataset_bubbles/
+│   │   ├── shard_0/
+│   │   │   ├── shard-manifest.json
+│   │   │   ├── shard-meta.bin
+│   │   │   ├── shard-trajmeta.bin
+│   │   │   └── shard-data.bin
+│   │   └── shard_1/
+│   │       ├── shard-manifest.json
+│   │       ├── shard-meta.bin
+│   │       ├── shard-trajmeta.bin
+│   │       └── shard-data.bin
+│   └── dataset_particles/
+│       └── shard_0/
+│           ├── shard-manifest.json
+│           ├── shard-meta.bin
+│           ├── shard-trajmeta.bin
+│           └── shard-data.bin
+└── scenario_B/
+    └── dataset_combined/
+        └── shard_0/
+            ├── shard-manifest.json
+            ├── shard-meta.bin
+            ├── shard-trajmeta.bin
+            └── shard-data.bin
 ```
 
 Each shard subdirectory contains:
@@ -216,12 +231,22 @@ Each shard requires a `shard-manifest.json` file with the following structure:
 
 See [specification-trajectory-data-shard.md](specification-trajectory-data-shard.md) for the complete specification.
 
-## Shard Organization
+## Naming Convention Details
 
+### Scenario Level
+A scenario represents a complete simulation run or experiment. All datasets within a scenario are spatially and temporally related to each other.
+
+### Dataset Level
+A dataset within a scenario contains trajectory data for a specific type or subset of entities. For example:
+- A scenario might have separate datasets for "bubbles" and "particles"
+- These datasets share the same spatial origin and time reference
+- A scenario can have a single dataset or multiple related datasets
+
+### Shard Level
 Multiple shards within a dataset can represent:
 - Different time ranges of the same simulation
 - Different spatial regions
-- Different types of particles (when bounding boxes overlap)
+- Subdivisions for manageable file sizes
 
 ## Example Blueprint Usage
 

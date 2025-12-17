@@ -33,20 +33,21 @@ This guide will help you get started with the Trajectory Data plugin in 5 minute
 
 ## Step 2: Prepare Test Data
 
-1. Copy the example dataset to a location on your computer:
+1. Create a scenario directory structure with the example dataset:
    ```
-   examples/sample_dataset/  →  C:/TestData/sample_dataset/
+   examples/sample_dataset/  →  C:/TestData/sample_scenario/sample_dataset/
    ```
    (Or any directory you prefer)
 
-2. Your directory structure should look like:
+2. Your directory structure should follow the **scenario → dataset → shard** hierarchy:
    ```
    C:/TestData/
-   └── sample_dataset/
-       ├── shard_0/
-       │   └── shard-manifest.json
-       └── shard_1/
-           └── shard-manifest.json
+   └── sample_scenario/
+       └── sample_dataset/
+           ├── shard_0/
+           │   └── shard-manifest.json
+           └── shard_1/
+               └── shard-manifest.json
    ```
 
 ## Step 3: Configure the Plugin
@@ -56,12 +57,12 @@ This guide will help you get started with the Trajectory Data plugin in 5 minute
 3. Add the following:
    ```ini
    [/Script/TrajectoryData.TrajectoryDataSettings]
-   DatasetsDirectory=C:/TestData
+   ScenariosDirectory=C:/TestData
    bAutoScanOnStartup=True
    bDebugLogging=True
    ```
 
-   **Important:** Set `DatasetsDirectory` to the **parent** directory containing your datasets.
+   **Important:** Set `ScenariosDirectory` to the **root** directory containing your scenario folders.
 
 ## Step 4: Create a Test Blueprint
 
@@ -101,12 +102,12 @@ Event Begin Play
 
 ### Expected Output:
 ```
-LogTemp: TrajectoryDataManager: Scanning datasets directory: C:/TestData
-LogTemp: TrajectoryDataManager: Found dataset 'sample_dataset' with 2 shards, 2000 trajectories, 1000 samples
-LogTemp: TrajectoryDataManager: Scan complete. Found 1 datasets
+LogTemp: TrajectoryDataManager: Scanning scenarios directory: C:/TestData
+LogTemp: TrajectoryDataManager: Found dataset 'sample_dataset' in scenario 'sample_scenario' with 2 shards, 2000 trajectories
+LogTemp: TrajectoryDataManager: Found 1 dataset(s) in scenario 'sample_scenario'
+LogTemp: TrajectoryDataManager: Scan complete. Found 1 datasets across all scenarios
 LogBlueprintUserMessages: Dataset: sample_dataset
 LogBlueprintUserMessages: Trajectories: 2000
-LogBlueprintUserMessages: Samples: 1000
 LogBlueprintUserMessages: Shards: 2
 ```
 
@@ -132,8 +133,8 @@ Get Available Datasets
 - **Get Number of Datasets**: Count of available datasets
 
 ### Configuration
-- **Get Datasets Directory**: Current configured path
-- **Set Datasets Directory**: Change path at runtime
+- **Get Scenarios Directory**: Current configured path
+- **Set Scenarios Directory**: Change path at runtime
 
 ### Utilities
 - **Calculate Max Display Points**: Total sample points (trajectories × samples)
@@ -144,11 +145,12 @@ Get Available Datasets
 ### "Found 0 datasets"
 
 **Check:**
-1. Is `DatasetsDirectory` pointing to the correct parent directory?
-2. Does the directory contain subdirectories (one per dataset)?
-3. Do those dataset subdirectories contain shard subdirectories?
-4. Do the shard subdirectories contain `shard-manifest.json` files?
-5. Are the `shard-manifest.json` files valid JSON?
+1. Is `ScenariosDirectory` pointing to the correct root directory?
+2. Does the directory contain scenario subdirectories?
+3. Do those scenario subdirectories contain dataset subdirectories?
+4. Do the dataset subdirectories contain shard subdirectories?
+5. Do the shard subdirectories contain `shard-manifest.json` files?
+6. Are the `shard-manifest.json` files valid JSON?
 
 **Enable debug logging:**
 ```ini

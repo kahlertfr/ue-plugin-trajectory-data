@@ -12,7 +12,7 @@ The plugin consists of several key components:
 - `Config/DefaultTrajectoryData.ini` - Configuration file
 - `TrajectoryDataSettings.h/cpp` - Settings class
 
-**Purpose:** Manages plugin settings including the datasets directory path.
+**Purpose:** Manages plugin settings including the scenarios directory path.
 
 **Key Features:**
 - Uses Unreal Engine's config system (`UCLASS(config=TrajectoryData)`)
@@ -41,21 +41,23 @@ The plugin consists of several key components:
 
 **Key Features:**
 - Singleton pattern for global access
-- Scans subdirectories of the configured datasets directory
+- Scans the three-level hierarchy: scenarios → datasets → shards
 - Parses JSON metadata files using Unreal's JSON utilities
-- Caches all discovered datasets in memory
+- Caches all discovered datasets in memory with their parent scenario names
 - Provides query functions for accessing dataset information
 
 **Algorithm:**
-1. Read datasets directory from settings
-2. Iterate through all subdirectories
-3. For each subdirectory:
-   - Find all `.json` files
-   - Parse each JSON file to extract shard metadata
-   - Construct the corresponding `.tds` file path
-   - Aggregate shards into a dataset
-4. Sort shards by ID within each dataset
-5. Return all discovered datasets
+1. Read scenarios directory from settings
+2. Iterate through all scenario subdirectories
+3. For each scenario:
+   - Iterate through dataset subdirectories
+   - For each dataset:
+     - Find all shard subdirectories containing `shard-manifest.json` files
+     - Parse each manifest file to extract shard metadata
+     - Aggregate shards into a dataset
+     - Associate dataset with its parent scenario
+4. Sort shards by name within each dataset
+5. Return all discovered datasets across all scenarios
 
 ### 4. Blueprint Function Library
 
@@ -65,12 +67,12 @@ The plugin consists of several key components:
 **Purpose:** Provides Blueprint-callable static functions.
 
 **Functions:**
-- `ScanTrajectoryDatasets()` - Triggers dataset scanning
-- `GetAvailableDatasets()` - Returns all datasets
+- `ScanTrajectoryDatasets()` - Triggers dataset scanning across all scenarios
+- `GetAvailableDatasets()` - Returns all datasets from all scenarios
 - `GetDatasetInfo()` - Gets specific dataset by name
-- `GetNumDatasets()` - Returns dataset count
+- `GetNumDatasets()` - Returns total dataset count across all scenarios
 - `ClearDatasets()` - Clears cached data
-- `GetDatasetsDirectory()` / `SetDatasetsDirectory()` - Config access
+- `GetScenariosDirectory()` / `SetScenariosDirectory()` - Config access
 - `CalculateMaxDisplayPoints()` - Utility for visualization planning
 
 **Key Features:**
@@ -97,7 +99,7 @@ The plugin consists of several key components:
 ## Data Flow
 
 ```
-User Configuration (INI file)
+User Configuration (INI file - ScenariosDirectory)
     ↓
 UTrajectoryDataSettings (reads config)
     ↓
@@ -105,11 +107,15 @@ Blueprint calls ScanTrajectoryDatasets()
     ↓
 UTrajectoryDataManager::ScanDatasets()
     ↓
-Scan filesystem for directories
+Scan scenarios directory for scenario folders
     ↓
-For each directory, parse .json files
+For each scenario, scan for dataset folders
     ↓
-Build FTrajectoryDatasetInfo structures
+For each dataset, scan for shard folders
+    ↓
+Parse shard-manifest.json files in each shard folder
+    ↓
+Build FTrajectoryDatasetInfo structures (with scenario name)
     ↓
 Cache in manager
     ↓
@@ -175,8 +181,9 @@ The plugin is designed to be extended:
 To test the plugin:
 
 1. **Setup Test Data**
-   - Copy the `examples/sample_dataset` directory to a test location
-   - Update `Config/DefaultTrajectoryData.ini` with the path
+   - Create a scenario directory (e.g., `test_scenario`)
+   - Copy the `examples/sample_dataset` directory inside it
+   - Update `Config/DefaultTrajectoryData.ini` with the scenarios root path
 
 2. **Blueprint Testing**
    - Create a test Blueprint actor
@@ -185,17 +192,27 @@ To test the plugin:
 
 3. **Expected Results**
    - Should find one dataset named "sample_dataset"
+   - Dataset should belong to scenario "test_scenario"
    - Should have 2 shards
    - Total trajectories: 2000
-   - Total samples: 1000
 
-## File Naming Convention
+## Directory Naming Convention
 
-The plugin expects specific file naming:
-- Metadata: `{dataset_name}_{shard_id}.json`
-- Data: `{dataset_name}_{shard_id}.tds`
+The plugin expects a three-level hierarchy:
 
-The shard ID is extracted from the JSON metadata, not the filename, but keeping them consistent is recommended.
+**Scenario → Dataset → Shard**
+
+- **Scenario**: Top-level directory representing a simulation run
+- **Dataset**: Subdirectory within a scenario containing related trajectory data
+- **Shard**: Subdirectory containing manifest and data files
+
+File naming within each shard directory:
+- `shard-manifest.json` - Human-readable metadata
+- `shard-meta.bin` - Binary metadata summary
+- `shard-trajmeta.bin` - Per-trajectory metadata
+- `shard-data.bin` - Actual trajectory position data
+
+Multiple datasets within the same scenario are spatially and temporally related to each other.
 
 ## Platform Compatibility
 
