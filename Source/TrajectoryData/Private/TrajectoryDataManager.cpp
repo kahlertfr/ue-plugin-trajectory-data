@@ -140,7 +140,7 @@ bool UTrajectoryDataManager::ScanDatasetDirectory(const FString& DatasetDirector
 	UTrajectoryDataSettings* Settings = UTrajectoryDataSettings::Get();
 
 	// Parse the manifest file
-	FTrajectoryShardMetadata DatasetMetadata;
+	FTrajectoryDatasetMetadata DatasetMetadata;
 	if (ParseMetadataFile(ManifestPath, DatasetMetadata))
 	{
 		OutDatasetInfo.Metadata = DatasetMetadata;
@@ -157,7 +157,7 @@ bool UTrajectoryDataManager::ScanDatasetDirectory(const FString& DatasetDirector
 	return false;
 }
 
-bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, FTrajectoryShardMetadata& OutShardMetadata)
+bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, FTrajectoryDatasetMetadata& OutDatasetMetadata)
 {
 	// Read the JSON file
 	FString JsonString;
@@ -177,25 +177,25 @@ bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, 
 	}
 
 	// Store paths
-	OutShardMetadata.ManifestFilePath = MetadataFilePath;
-	OutShardMetadata.ShardDirectory = FPaths::GetPath(MetadataFilePath);
+	OutDatasetMetadata.ManifestFilePath = MetadataFilePath;
+	OutDatasetMetadata.DatasetDirectory = FPaths::GetPath(MetadataFilePath);
 
 	// Parse all fields from dataset-manifest.json according to specification
-	JsonObject->TryGetStringField(TEXT("dataset_name"), OutShardMetadata.ShardName);
-	JsonObject->TryGetNumberField(TEXT("format_version"), OutShardMetadata.FormatVersion);
+	JsonObject->TryGetStringField(TEXT("dataset_name"), OutDatasetMetadata.DatasetName);
+	JsonObject->TryGetNumberField(TEXT("format_version"), OutDatasetMetadata.FormatVersion);
 	
-	JsonObject->TryGetStringField(TEXT("endianness"), OutShardMetadata.Endianness);
-	JsonObject->TryGetStringField(TEXT("coordinate_units"), OutShardMetadata.CoordinateUnits);
-	JsonObject->TryGetStringField(TEXT("float_precision"), OutShardMetadata.FloatPrecision);
-	JsonObject->TryGetStringField(TEXT("time_units"), OutShardMetadata.TimeUnits);
+	JsonObject->TryGetStringField(TEXT("endianness"), OutDatasetMetadata.Endianness);
+	JsonObject->TryGetStringField(TEXT("coordinate_units"), OutDatasetMetadata.CoordinateUnits);
+	JsonObject->TryGetStringField(TEXT("float_precision"), OutDatasetMetadata.FloatPrecision);
+	JsonObject->TryGetStringField(TEXT("time_units"), OutDatasetMetadata.TimeUnits);
 	
-	JsonObject->TryGetNumberField(TEXT("time_step_interval_size"), OutShardMetadata.TimeStepIntervalSize);
+	JsonObject->TryGetNumberField(TEXT("time_step_interval_size"), OutDatasetMetadata.TimeStepIntervalSize);
 	
 	double TempTimeInterval = 0.0;
 	JsonObject->TryGetNumberField(TEXT("time_interval_seconds"), TempTimeInterval);
-	OutShardMetadata.TimeIntervalSeconds = (float)TempTimeInterval;
+	OutDatasetMetadata.TimeIntervalSeconds = (float)TempTimeInterval;
 	
-	JsonObject->TryGetNumberField(TEXT("entry_size_bytes"), OutShardMetadata.EntrySizeBytes);
+	JsonObject->TryGetNumberField(TEXT("entry_size_bytes"), OutDatasetMetadata.EntrySizeBytes);
 	
 	// Parse bounding_box object
 	const TSharedPtr<FJsonObject>* BBoxObject;
@@ -208,7 +208,7 @@ bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, 
 			double X = (*MinArray)[0]->AsNumber();
 			double Y = (*MinArray)[1]->AsNumber();
 			double Z = (*MinArray)[2]->AsNumber();
-			OutShardMetadata.BoundingBoxMin = FVector(X, Y, Z);
+			OutDatasetMetadata.BoundingBoxMin = FVector(X, Y, Z);
 		}
 		
 		// Parse max array
@@ -218,25 +218,25 @@ bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, 
 			double X = (*MaxArray)[0]->AsNumber();
 			double Y = (*MaxArray)[1]->AsNumber();
 			double Z = (*MaxArray)[2]->AsNumber();
-			OutShardMetadata.BoundingBoxMax = FVector(X, Y, Z);
+			OutDatasetMetadata.BoundingBoxMax = FVector(X, Y, Z);
 		}
 	}
 	
 	// Parse trajectory counts as 64-bit integers
 	int64 TempTrajectoryCount = 0;
 	JsonObject->TryGetNumberField(TEXT("trajectory_count"), TempTrajectoryCount);
-	OutShardMetadata.TrajectoryCount = TempTrajectoryCount;
+	OutDatasetMetadata.TrajectoryCount = TempTrajectoryCount;
 	
 	int64 TempFirstId = 0;
 	JsonObject->TryGetNumberField(TEXT("first_trajectory_id"), TempFirstId);
-	OutShardMetadata.FirstTrajectoryId = TempFirstId;
+	OutDatasetMetadata.FirstTrajectoryId = TempFirstId;
 	
 	int64 TempLastId = 0;
 	JsonObject->TryGetNumberField(TEXT("last_trajectory_id"), TempLastId);
-	OutShardMetadata.LastTrajectoryId = TempLastId;
+	OutDatasetMetadata.LastTrajectoryId = TempLastId;
 	
-	JsonObject->TryGetStringField(TEXT("created_at"), OutShardMetadata.CreatedAt);
-	JsonObject->TryGetStringField(TEXT("converter_version"), OutShardMetadata.ConverterVersion);
+	JsonObject->TryGetStringField(TEXT("created_at"), OutDatasetMetadata.CreatedAt);
+	JsonObject->TryGetStringField(TEXT("converter_version"), OutDatasetMetadata.ConverterVersion);
 
 	return true;
 }

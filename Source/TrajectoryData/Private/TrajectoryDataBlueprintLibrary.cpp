@@ -84,9 +84,9 @@ int32 UTrajectoryDataBlueprintLibrary::CalculateMaxDisplayPoints(const FTrajecto
 	return (int32)FMath::Min(TotalPoints, (int64)MAX_int32);
 }
 
-int32 UTrajectoryDataBlueprintLibrary::CalculateShardDisplayPoints(const FTrajectoryShardMetadata& ShardMetadata)
+int32 UTrajectoryDataBlueprintLibrary::CalculateDatasetDisplayPoints(const FTrajectoryDatasetMetadata& DatasetMetadata)
 {
-	int64 TotalPoints = ShardMetadata.TrajectoryCount * ShardMetadata.TimeStepIntervalSize;
+	int64 TotalPoints = DatasetMetadata.TrajectoryCount * DatasetMetadata.TimeStepIntervalSize;
 	// Clamp to int32 range for Blueprint compatibility
 	return (int32)FMath::Min(TotalPoints, (int64)MAX_int32);
 }
@@ -103,9 +103,9 @@ int64 UTrajectoryDataBlueprintLibrary::GetMaxTrajectoryDataMemory()
 	return UTrajectoryDataMemoryEstimator::GetMaxTrajectoryDataMemory();
 }
 
-int64 UTrajectoryDataBlueprintLibrary::CalculateShardMemoryRequirement(const FTrajectoryShardMetadata& ShardMetadata)
+int64 UTrajectoryDataBlueprintLibrary::CalculateDatasetMemoryFromMetadata(const FTrajectoryDatasetMetadata& DatasetMetadata)
 {
-	return UTrajectoryDataMemoryEstimator::CalculateShardMemoryRequirement(ShardMetadata);
+	return UTrajectoryDataMemoryEstimator::CalculateDatasetMemoryFromMetadata(DatasetMetadata);
 }
 
 int64 UTrajectoryDataBlueprintLibrary::CalculateDatasetMemoryRequirement(const FTrajectoryDatasetInfo& DatasetInfo)
@@ -150,12 +150,12 @@ void UTrajectoryDataBlueprintLibrary::ResetEstimatedUsage()
 	}
 }
 
-bool UTrajectoryDataBlueprintLibrary::CanLoadShard(const FTrajectoryShardMetadata& ShardMetadata)
+bool UTrajectoryDataBlueprintLibrary::CanLoadDatasetFromMetadata(const FTrajectoryDatasetMetadata& DatasetMetadata)
 {
 	UTrajectoryDataMemoryEstimator* Estimator = UTrajectoryDataMemoryEstimator::Get();
 	if (Estimator)
 	{
-		return Estimator->CanLoadShard(ShardMetadata);
+		return Estimator->CanLoadDatasetFromMetadata(DatasetMetadata);
 	}
 	return false;
 }

@@ -83,10 +83,10 @@ private:
 	/**
 	 * Parse a metadata JSON file
 	 * @param MetadataFilePath Path to the metadata file
-	 * @param OutShardMetadata Output parameter containing the parsed metadata
+	 * @param OutDatasetMetadata Output parameter containing the parsed metadata
 	 * @return True if parsing succeeded
 	 */
-	bool ParseMetadataFile(const FString& MetadataFilePath, FTrajectoryShardMetadata& OutShardMetadata);
+	bool ParseMetadataFile(const FString& MetadataFilePath, FTrajectoryDatasetMetadata& OutDatasetMetadata);
 
 	/** Singleton instance */
 	static UTrajectoryDataManager* Instance;

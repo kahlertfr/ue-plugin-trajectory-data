@@ -35,26 +35,26 @@ int64 UTrajectoryDataMemoryEstimator::GetMaxTrajectoryDataMemory()
 	return static_cast<int64>(TotalMemory * 0.75);
 }
 
-int64 UTrajectoryDataMemoryEstimator::CalculateShardMemoryRequirement(const FTrajectoryShardMetadata& ShardMetadata)
+int64 UTrajectoryDataMemoryEstimator::CalculateDatasetMemoryFromMetadata(const FTrajectoryDatasetMetadata& DatasetMetadata)
 {
-	// Based on the Trajectory Data Shard specification:
+	// Based on the Trajectory Dataset specification:
 	
-	// 1. Shard Meta: 76 bytes (fixed size)
-	const int64 ShardMetaSize = 76;
+	// 1. Dataset Meta: 76 bytes (fixed size)
+	const int64 DatasetMetaSize = 76;
 	
 	// 2. Trajectory Meta: 40 bytes per trajectory
-	const int64 TrajectoryMetaSize = 40 * ShardMetadata.TrajectoryCount;
+	const int64 TrajectoryMetaSize = 40 * DatasetMetadata.TrajectoryCount;
 	
 	// 3. Data Block Header: 32 bytes per data file
 	// For simplicity, assume one data file per shard
 	const int64 DataBlockHeaderSize = 32;
 	
 	// 4. Data entries: entry_size_bytes per trajectory
-	// entry_size_bytes is stored in the shard metadata
-	const int64 DataEntriesSize = static_cast<int64>(ShardMetadata.EntrySizeBytes) * ShardMetadata.TrajectoryCount;
+	// entry_size_bytes is stored in the dataset metadata
+	const int64 DataEntriesSize = static_cast<int64>(DatasetMetadata.EntrySizeBytes) * DatasetMetadata.TrajectoryCount;
 	
 	// Total memory required
-	const int64 TotalMemory = ShardMetaSize + TrajectoryMetaSize + DataBlockHeaderSize + DataEntriesSize;
+	const int64 TotalMemory = DatasetMetaSize + TrajectoryMetaSize + DataBlockHeaderSize + DataEntriesSize;
 	
 	return TotalMemory;
 }
@@ -62,7 +62,7 @@ int64 UTrajectoryDataMemoryEstimator::CalculateShardMemoryRequirement(const FTra
 int64 UTrajectoryDataMemoryEstimator::CalculateDatasetMemoryRequirement(const FTrajectoryDatasetInfo& DatasetInfo)
 {
 	// Calculate memory requirement for the single dataset
-	return CalculateShardMemoryRequirement(DatasetInfo.Metadata);
+	return CalculateDatasetMemoryFromMetadata(DatasetInfo.Metadata);
 }
 
 FTrajectoryDataMemoryInfo UTrajectoryDataMemoryEstimator::GetMemoryInfo() const
@@ -115,9 +115,9 @@ void UTrajectoryDataMemoryEstimator::ResetEstimatedUsage()
 	EstimatedMemoryUsage = 0;
 }
 
-bool UTrajectoryDataMemoryEstimator::CanLoadShard(const FTrajectoryShardMetadata& ShardMetadata) const
+bool UTrajectoryDataMemoryEstimator::CanLoadDatasetFromMetadata(const FTrajectoryDatasetMetadata& DatasetMetadata) const
 {
-	int64 RequiredMemory = CalculateShardMemoryRequirement(ShardMetadata);
+	int64 RequiredMemory = CalculateDatasetMemoryFromMetadata(DatasetMetadata);
 	int64 MaxMemory = GetMaxTrajectoryDataMemory();
 	int64 RemainingCapacity = MaxMemory - EstimatedMemoryUsage;
 	

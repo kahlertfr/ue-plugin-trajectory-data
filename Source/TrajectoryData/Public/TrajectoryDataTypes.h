@@ -10,13 +10,13 @@
  * Based on the Trajectory Dataset specification (dataset-manifest.json format)
  */
 USTRUCT(BlueprintType)
-struct TRAJECTORYDATA_API FTrajectoryShardMetadata
+struct TRAJECTORYDATA_API FTrajectoryDatasetMetadata
 {
 	GENERATED_BODY()
 
 	/** Name of the dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	FString ShardName;
+	FString DatasetName;
 
 	/** Format version */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
@@ -84,10 +84,10 @@ struct TRAJECTORYDATA_API FTrajectoryShardMetadata
 
 	/** Directory path containing all dataset files */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	FString ShardDirectory;
+	FString DatasetDirectory;
 
-	FTrajectoryShardMetadata()
-		: ShardName(TEXT(""))
+	FTrajectoryDatasetMetadata()
+		: DatasetName(TEXT(""))
 		, FormatVersion(1)
 		, Endianness(TEXT("little"))
 		, CoordinateUnits(TEXT(""))
@@ -104,7 +104,7 @@ struct TRAJECTORYDATA_API FTrajectoryShardMetadata
 		, CreatedAt(TEXT(""))
 		, ConverterVersion(TEXT(""))
 		, ManifestFilePath(TEXT(""))
-		, ShardDirectory(TEXT(""))
+		, DatasetDirectory(TEXT(""))
 	{
 	}
 };
@@ -132,7 +132,7 @@ struct TRAJECTORYDATA_API FTrajectoryDatasetInfo
 
 	/** Metadata for this dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	FTrajectoryShardMetadata Metadata;
+	FTrajectoryDatasetMetadata Metadata;
 
 	/** Total number of trajectories in this dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
