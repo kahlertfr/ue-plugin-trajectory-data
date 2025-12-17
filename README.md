@@ -223,7 +223,7 @@ Each dataset directory contains:
 - `dataset-manifest.json` - Human-readable JSON manifest
 - `dataset-meta.bin` - Binary metadata summary
 - `dataset-trajmeta.bin` - Per-trajectory metadata
-- `shard-<interval>.bin` - One or more shard files containing actual trajectory position data for different time intervals (e.g., `shard-0.bin`, `shard-1.bin`, etc.)
+- `shard-<interval>.bin` - Shard files containing trajectory position data for time intervals (e.g., `shard-0.bin`, `shard-1.bin`, etc.)
 
 ## Manifest File Format
 

@@ -15,7 +15,7 @@ Store many trajectories (3D positions over time) in fixed-size, mmap-friendly bi
 - **dataset-manifest.json** (human readable) (JSON): describes dataset-level metadata (version, endianness, ranges)
 - **dataset-meta.bin** (binary): compact binary summary used by tools for fast lookup
 - **dataset-trajmeta.bin** (binary): one fixed-size record per trajectory with per-trajectory metadata
-- **shard-\<interval\>.bin** (binary): one or more data files, each covering a consecutive time-interval block (optional chunking parameter), where `<interval>` is the global_interval_index (e.g., `shard-0.bin`, `shard-1.bin`, etc.)
+- **shard-<interval>.bin** (binary): one or more data files, each covering a consecutive time-interval block (optional chunking parameter), where `<interval>` is the global_interval_index (e.g., `shard-0.bin`, `shard-1.bin`, etc.)
 
 ### Common conventions
 
