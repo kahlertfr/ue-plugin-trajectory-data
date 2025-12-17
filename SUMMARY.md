@@ -26,7 +26,7 @@ The task was to implement the initial phase of a UE plugin that:
 - `TrajectoryDataSettings.h/cpp` - C++ class that reads the config
 
 **Features:**
-- Specifies datasets directory path
+- Specifies scenarios directory path (root of the hierarchy)
 - Auto-scan on startup option
 - Debug logging toggle
 - Runtime access and modification via Blueprint
@@ -38,22 +38,22 @@ The task was to implement the initial phase of a UE plugin that:
 **File:** `TrajectoryDataTypes.h`
 
 **Structures:**
-- `FTrajectoryShardMetadata` - Contains all metadata for a single shard:
-  - Shard ID
+- `FTrajectoryShardMetadata` - Contains all metadata for a single dataset:
+  - Dataset name
   - Number of trajectories
-  - Number of samples per trajectory
-  - Time step range (start, end)
-  - Spatial origin (FVector)
-  - Data type (e.g., "particle", "bubble")
+  - Time step interval size
+  - Time interval in seconds
+  - Bounding box (min/max)
+  - Trajectory ID range
   - File paths (metadata and data)
   - Format version
 
-- `FTrajectoryDatasetInfo` - Aggregates multiple shards into a dataset:
+- `FTrajectoryDatasetInfo` - Represents a complete dataset:
   - Dataset name (from directory)
   - Dataset path
-  - Array of all shards
-  - Total trajectories across all shards
-  - Total samples across all shards
+  - Scenario name (parent scenario)
+  - Metadata (single FTrajectoryShardMetadata object)
+  - Total trajectories in the dataset
 
 Both structures are `BlueprintType` with `BlueprintReadOnly` properties.
 
@@ -61,25 +61,27 @@ Both structures are `BlueprintType` with `BlueprintReadOnly` properties.
 **File:** `TrajectoryDataManager.h/cpp` (270+ lines)
 
 **Core Functionality:**
-- **Directory Scanning**: Iterates through subdirectories of configured path
-- **Metadata Parsing**: Reads and parses JSON files using Unreal's JSON utilities
-- **Data Aggregation**: Groups shards by directory into datasets
+- **Directory Scanning**: Implements two-level hierarchy (scenario → dataset)
+- **Metadata Parsing**: Reads and parses JSON manifest files using Unreal's JSON utilities
+- **Data Association**: Associates datasets with their parent scenarios
 - **Caching**: Stores all discovered data in memory for fast access
 - **Query API**: Provides functions to access cached data
 
 **Key Methods:**
-- `ScanDatasets()` - Main scanning function
-- `GetAvailableDatasets()` - Returns all datasets
+- `ScanDatasets()` - Main scanning function (scans all scenarios)
+- `ScanScenarioDirectory()` - Scans a single scenario for datasets
+- `ScanDatasetDirectory()` - Scans a single dataset for manifest file
+- `GetAvailableDatasets()` - Returns all datasets from all scenarios
 - `GetDatasetInfo()` - Gets specific dataset by name
-- `GetNumDatasets()` - Returns count
+- `GetNumDatasets()` - Returns total count across all scenarios
 - `ClearDatasets()` - Clears cache
 
 **Implementation Details:**
 - Uses `IPlatformFile` for cross-platform file system access
 - Uses `FJsonSerializer` for JSON parsing
-- Validates origin array has 3 elements
 - Handles malformed JSON gracefully with logging
-- Sorts shards by ID within each dataset
+- Looks for `dataset-manifest.json` directly in dataset directories
+- Associates each dataset with its parent scenario name
 
 ### 5. Blueprint Integration ✅
 **File:** `TrajectoryDataBlueprintLibrary.h/cpp`
@@ -94,8 +96,8 @@ Both structures are `BlueprintType` with `BlueprintReadOnly` properties.
 - `ClearDatasets()` - Clears cache
 
 **Configuration:**
-- `GetDatasetsDirectory()` - Gets current path
-- `SetDatasetsDirectory()` - Sets new path
+- `GetScenariosDirectory()` - Gets current path
+- `SetScenariosDirectory()` - Sets new path
 
 **Utilities:**
 - `CalculateMaxDisplayPoints()` - Total sample points for a dataset
@@ -159,18 +161,20 @@ These provide working examples of the metadata format for testing and reference.
 
 ### Manual Testing Procedure
 1. Copy plugin to UE project's Plugins directory
-2. Create test dataset with JSON metadata files
-3. Configure `DefaultTrajectoryData.ini` with dataset path
-4. Create Blueprint actor that calls scanning functions
-5. Verify output in console logs and print strings
+2. Create test scenario directory with dataset subdirectories
+3. Place `dataset-manifest.json` directly in each dataset subdirectory
+4. Configure `DefaultTrajectoryData.ini` with scenarios root path
+5. Create Blueprint actor that calls scanning functions
+6. Verify output in console logs and print strings
 
 ### Expected Behavior
 - Plugin loads without errors
-- Scans configured directory successfully
-- Finds all subdirectories as datasets
-- Parses all .json files as shards
+- Scans configured scenarios directory successfully
+- Finds all scenario directories
+- Within each scenario, finds all dataset directories
+- Parses `dataset-manifest.json` from each dataset directory
 - Returns correct counts and metadata
-- All data accessible from Blueprints
+- All data accessible from Blueprints with proper scenario associations
 
 ## What's NOT Implemented (Future Work)
 
@@ -203,10 +207,9 @@ These are intentionally left for future phases as the current task focuses on "s
 11. `IMPLEMENTATION.md` - Technical details
 12. `specification-trajectory-data-shard.md` - Format spec
 
-### Examples (3 files)
+### Examples (2 files)
 13. `examples/README.md` - Example explanation
-14. `examples/sample_dataset/shard_0/shard-manifest.json` - Example shard 0
-15. `examples/sample_dataset/shard_1/shard-manifest.json` - Example shard 1
+14. `examples/sample_dataset/dataset-manifest.json` - Example dataset manifest
 
 ## How to Use
 
@@ -227,11 +230,11 @@ These are intentionally left for future phases as the current task focuses on "s
 
 From the original problem statement:
 
-✅ **"Create config file"** - Done: `Config/DefaultTrajectoryData.ini`
+✅ **"Create config file"** - Done: `Config/DefaultTrajectoryData.ini` with ScenariosDirectory setting
 
 ✅ **"Implement reading from config file in C++"** - Done: `UTrajectoryDataSettings`
 
-✅ **"Scan given directory"** - Done: `UTrajectoryDataManager::ScanDatasets()`
+✅ **"Scan given directory"** - Done: `UTrajectoryDataManager::ScanDatasets()` with three-level hierarchy support
 
 ✅ **"Gather all relevant data from datasets"** - Done: Reads all .json metadata files, extracts all fields
 

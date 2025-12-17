@@ -20,7 +20,7 @@ public:
 	UTrajectoryDataManager();
 
 	/**
-	 * Scan the configured datasets directory and gather all available datasets
+	 * Scan the configured scenarios directory and gather all available datasets from all scenarios
 	 * @return True if scanning succeeded, false otherwise
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Trajectory Data")
@@ -64,20 +64,29 @@ private:
 	TArray<FTrajectoryDatasetInfo> Datasets;
 
 	/**
-	 * Scan a single directory for trajectory data shards
+	 * Scan a single scenario directory for datasets
+	 * @param ScenarioDirectory Path to the scenario directory
+	 * @param OutDatasets Output array to append discovered datasets to
+	 * @return Number of datasets found in the scenario
+	 */
+	int32 ScanScenarioDirectory(const FString& ScenarioDirectory, TArray<FTrajectoryDatasetInfo>& OutDatasets);
+
+	/**
+	 * Scan a single dataset directory for trajectory data shards
 	 * @param DatasetDirectory Path to the dataset directory
+	 * @param ScenarioName Name of the parent scenario
 	 * @param OutDatasetInfo Output parameter containing the scanned dataset info
 	 * @return True if scanning succeeded and shards were found
 	 */
-	bool ScanDatasetDirectory(const FString& DatasetDirectory, FTrajectoryDatasetInfo& OutDatasetInfo);
+	bool ScanDatasetDirectory(const FString& DatasetDirectory, const FString& ScenarioName, FTrajectoryDatasetInfo& OutDatasetInfo);
 
 	/**
 	 * Parse a metadata JSON file
 	 * @param MetadataFilePath Path to the metadata file
-	 * @param OutShardMetadata Output parameter containing the parsed metadata
+	 * @param OutDatasetMetadata Output parameter containing the parsed metadata
 	 * @return True if parsing succeeded
 	 */
-	bool ParseMetadataFile(const FString& MetadataFilePath, FTrajectoryShardMetadata& OutShardMetadata);
+	bool ParseMetadataFile(const FString& MetadataFilePath, FTrajectoryDatasetMetadata& OutDatasetMetadata);
 
 	/** Singleton instance */
 	static UTrajectoryDataManager* Instance;

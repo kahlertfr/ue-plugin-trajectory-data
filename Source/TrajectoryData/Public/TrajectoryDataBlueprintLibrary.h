@@ -19,7 +19,7 @@ class TRAJECTORYDATA_API UTrajectoryDataBlueprintLibrary : public UBlueprintFunc
 
 public:
 	/**
-	 * Scan the configured datasets directory and gather all available datasets
+	 * Scan the configured scenarios directory and gather all available datasets from all scenarios
 	 * Call this before accessing dataset information
 	 * @return True if scanning succeeded, false otherwise
 	 */
@@ -56,18 +56,18 @@ public:
 	static void ClearDatasets();
 
 	/**
-	 * Get the configured datasets directory path
-	 * @return Path to the datasets directory
+	 * Get the configured scenarios directory path
+	 * @return Path to the scenarios directory
 	 */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data", meta = (DisplayName = "Get Datasets Directory"))
-	static FString GetDatasetsDirectory();
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data", meta = (DisplayName = "Get Scenarios Directory"))
+	static FString GetScenariosDirectory();
 
 	/**
-	 * Set the datasets directory path
-	 * @param NewPath New path to the datasets directory
+	 * Set the scenarios directory path
+	 * @param NewPath New path to the scenarios directory
 	 */
-	UFUNCTION(BlueprintCallable, Category = "Trajectory Data", meta = (DisplayName = "Set Datasets Directory"))
-	static void SetDatasetsDirectory(const FString& NewPath);
+	UFUNCTION(BlueprintCallable, Category = "Trajectory Data", meta = (DisplayName = "Set Scenarios Directory"))
+	static void SetScenariosDirectory(const FString& NewPath);
 
 	/**
 	 * Calculate the maximum displayable sample points for a dataset
@@ -79,13 +79,13 @@ public:
 	static int32 CalculateMaxDisplayPoints(const FTrajectoryDatasetInfo& DatasetInfo);
 
 	/**
-	 * Calculate the maximum displayable sample points for a specific shard
-	 * This is num_trajectories * num_samples for the shard
-	 * @param ShardMetadata The shard to calculate for
+	 * Calculate the maximum displayable sample points for a specific dataset
+	 * This is num_trajectories * num_samples for the dataset
+	 * @param DatasetMetadata The dataset metadata to calculate for
 	 * @return Total number of sample points
 	 */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data", meta = (DisplayName = "Calculate Shard Display Points"))
-	static int32 CalculateShardDisplayPoints(const FTrajectoryShardMetadata& ShardMetadata);
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data", meta = (DisplayName = "Calculate Dataset Display Points"))
+	static int32 CalculateDatasetDisplayPoints(const FTrajectoryDatasetMetadata& DatasetMetadata);
 
 	// Memory Monitoring Functions
 
@@ -104,12 +104,12 @@ public:
 	static int64 GetMaxTrajectoryDataMemory();
 
 	/**
-	 * Calculate memory required for a single shard
-	 * @param ShardMetadata The shard to calculate memory for
+	 * Calculate memory required for a dataset from its metadata
+	 * @param DatasetMetadata The dataset metadata to calculate memory for
 	 * @return Estimated memory required in bytes
 	 */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Memory", meta = (DisplayName = "Calculate Shard Memory Requirement"))
-	static int64 CalculateShardMemoryRequirement(const FTrajectoryShardMetadata& ShardMetadata);
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Memory", meta = (DisplayName = "Calculate Dataset Memory From Metadata"))
+	static int64 CalculateDatasetMemoryFromMetadata(const FTrajectoryDatasetMetadata& DatasetMetadata);
 
 	/**
 	 * Calculate memory required for an entire dataset
@@ -148,12 +148,12 @@ public:
 	static void ResetEstimatedUsage();
 
 	/**
-	 * Check if loading a shard would exceed available capacity
-	 * @param ShardMetadata The shard to check
-	 * @return True if the shard can fit in remaining capacity
+	 * Check if loading a dataset would exceed available capacity (using metadata)
+	 * @param DatasetMetadata The dataset metadata to check
+	 * @return True if the dataset can fit in remaining capacity
 	 */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Memory", meta = (DisplayName = "Can Load Shard"))
-	static bool CanLoadShard(const FTrajectoryShardMetadata& ShardMetadata);
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Memory", meta = (DisplayName = "Can Load Dataset From Metadata"))
+	static bool CanLoadDatasetFromMetadata(const FTrajectoryDatasetMetadata& DatasetMetadata);
 
 	/**
 	 * Check if loading a dataset would exceed available capacity

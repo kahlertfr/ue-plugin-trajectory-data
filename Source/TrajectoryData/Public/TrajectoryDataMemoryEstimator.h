@@ -73,16 +73,16 @@ public:
 	static int64 GetMaxTrajectoryDataMemory();
 
 	/**
-	 * Calculate memory required for a single shard
+	 * Calculate memory required for a single dataset from its metadata
 	 * Based on the specification:
-	 * - Shard Meta: 76 bytes
+	 * - Dataset Meta: 76 bytes
 	 * - Trajectory Meta: 40 bytes per trajectory
 	 * - Data entries: entry_size_bytes per trajectory
-	 * @param ShardMetadata The shard to calculate memory for
+	 * @param DatasetMetadata The dataset metadata to calculate memory for
 	 * @return Estimated memory required in bytes
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Memory")
-	static int64 CalculateShardMemoryRequirement(const FTrajectoryShardMetadata& ShardMetadata);
+	static int64 CalculateDatasetMemoryFromMetadata(const FTrajectoryDatasetMetadata& DatasetMetadata);
 
 	/**
 	 * Calculate memory required for an entire dataset
@@ -122,12 +122,12 @@ public:
 	void ResetEstimatedUsage();
 
 	/**
-	 * Check if loading a shard would exceed available capacity
-	 * @param ShardMetadata The shard to check
-	 * @return True if the shard can fit in remaining capacity
+	 * Check if loading a dataset would exceed available capacity (from metadata)
+	 * @param DatasetMetadata The dataset metadata to check
+	 * @return True if the dataset can fit in remaining capacity
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Memory")
-	bool CanLoadShard(const FTrajectoryShardMetadata& ShardMetadata) const;
+	bool CanLoadDatasetFromMetadata(const FTrajectoryDatasetMetadata& DatasetMetadata) const;
 
 	/**
 	 * Check if loading a dataset would exceed available capacity

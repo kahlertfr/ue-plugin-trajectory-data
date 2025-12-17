@@ -54,22 +54,22 @@ void UTrajectoryDataBlueprintLibrary::ClearDatasets()
 	}
 }
 
-FString UTrajectoryDataBlueprintLibrary::GetDatasetsDirectory()
+FString UTrajectoryDataBlueprintLibrary::GetScenariosDirectory()
 {
 	UTrajectoryDataSettings* Settings = UTrajectoryDataSettings::Get();
 	if (Settings)
 	{
-		return Settings->DatasetsDirectory;
+		return Settings->ScenariosDirectory;
 	}
 	return FString();
 }
 
-void UTrajectoryDataBlueprintLibrary::SetDatasetsDirectory(const FString& NewPath)
+void UTrajectoryDataBlueprintLibrary::SetScenariosDirectory(const FString& NewPath)
 {
 	UTrajectoryDataSettings* Settings = UTrajectoryDataSettings::Get();
 	if (Settings)
 	{
-		Settings->DatasetsDirectory = NewPath;
+		Settings->ScenariosDirectory = NewPath;
 		// Note: SaveConfig is called explicitly here. Consider calling SaveConfig manually
 		// after multiple setting changes if you're updating multiple properties at once.
 		Settings->SaveConfig();
@@ -78,19 +78,15 @@ void UTrajectoryDataBlueprintLibrary::SetDatasetsDirectory(const FString& NewPat
 
 int32 UTrajectoryDataBlueprintLibrary::CalculateMaxDisplayPoints(const FTrajectoryDatasetInfo& DatasetInfo)
 {
-	int64 TotalPoints = 0;
-	for (const FTrajectoryShardMetadata& Shard : DatasetInfo.Shards)
-	{
-		// Each trajectory has TimeStepIntervalSize samples
-		TotalPoints += Shard.TrajectoryCount * Shard.TimeStepIntervalSize;
-	}
+	// Each trajectory has TimeStepIntervalSize samples
+	int64 TotalPoints = DatasetInfo.Metadata.TrajectoryCount * DatasetInfo.Metadata.TimeStepIntervalSize;
 	// Clamp to int32 range for Blueprint compatibility
 	return (int32)FMath::Min(TotalPoints, (int64)MAX_int32);
 }
 
-int32 UTrajectoryDataBlueprintLibrary::CalculateShardDisplayPoints(const FTrajectoryShardMetadata& ShardMetadata)
+int32 UTrajectoryDataBlueprintLibrary::CalculateDatasetDisplayPoints(const FTrajectoryDatasetMetadata& DatasetMetadata)
 {
-	int64 TotalPoints = ShardMetadata.TrajectoryCount * ShardMetadata.TimeStepIntervalSize;
+	int64 TotalPoints = DatasetMetadata.TrajectoryCount * DatasetMetadata.TimeStepIntervalSize;
 	// Clamp to int32 range for Blueprint compatibility
 	return (int32)FMath::Min(TotalPoints, (int64)MAX_int32);
 }
@@ -107,9 +103,9 @@ int64 UTrajectoryDataBlueprintLibrary::GetMaxTrajectoryDataMemory()
 	return UTrajectoryDataMemoryEstimator::GetMaxTrajectoryDataMemory();
 }
 
-int64 UTrajectoryDataBlueprintLibrary::CalculateShardMemoryRequirement(const FTrajectoryShardMetadata& ShardMetadata)
+int64 UTrajectoryDataBlueprintLibrary::CalculateDatasetMemoryFromMetadata(const FTrajectoryDatasetMetadata& DatasetMetadata)
 {
-	return UTrajectoryDataMemoryEstimator::CalculateShardMemoryRequirement(ShardMetadata);
+	return UTrajectoryDataMemoryEstimator::CalculateDatasetMemoryFromMetadata(DatasetMetadata);
 }
 
 int64 UTrajectoryDataBlueprintLibrary::CalculateDatasetMemoryRequirement(const FTrajectoryDatasetInfo& DatasetInfo)
@@ -154,12 +150,12 @@ void UTrajectoryDataBlueprintLibrary::ResetEstimatedUsage()
 	}
 }
 
-bool UTrajectoryDataBlueprintLibrary::CanLoadShard(const FTrajectoryShardMetadata& ShardMetadata)
+bool UTrajectoryDataBlueprintLibrary::CanLoadDatasetFromMetadata(const FTrajectoryDatasetMetadata& DatasetMetadata)
 {
 	UTrajectoryDataMemoryEstimator* Estimator = UTrajectoryDataMemoryEstimator::Get();
 	if (Estimator)
 	{
-		return Estimator->CanLoadShard(ShardMetadata);
+		return Estimator->CanLoadDatasetFromMetadata(DatasetMetadata);
 	}
 	return false;
 }

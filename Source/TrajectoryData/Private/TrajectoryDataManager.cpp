@@ -36,58 +36,90 @@ bool UTrajectoryDataManager::ScanDatasets()
 		return false;
 	}
 
-	FString DatasetsDir = Settings->DatasetsDirectory;
-	if (DatasetsDir.IsEmpty())
+	FString ScenariosDir = Settings->ScenariosDirectory;
+	if (ScenariosDir.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataManager: Datasets directory is not configured"));
+		UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataManager: Scenarios directory is not configured"));
 		return false;
 	}
 
 	// Check if directory exists
 	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
-	if (!PlatformFile.DirectoryExists(*DatasetsDir))
+	if (!PlatformFile.DirectoryExists(*ScenariosDir))
 	{
-		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataManager: Datasets directory does not exist: %s"), *DatasetsDir);
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataManager: Scenarios directory does not exist: %s"), *ScenariosDir);
 		return false;
 	}
 
 	if (Settings->bDebugLogging)
 	{
-		UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Scanning datasets directory: %s"), *DatasetsDir);
+		UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Scanning scenarios directory: %s"), *ScenariosDir);
 	}
 
-	// Get all subdirectories
-	TArray<FString> SubDirectories;
-	PlatformFile.IterateDirectory(*DatasetsDir, [&SubDirectories](const TCHAR* FilenameOrDirectory, bool bIsDirectory) -> bool
+	// Get all scenario subdirectories
+	TArray<FString> ScenarioDirectories;
+	PlatformFile.IterateDirectory(*ScenariosDir, [&ScenarioDirectories](const TCHAR* FilenameOrDirectory, bool bIsDirectory) -> bool
 	{
 		if (bIsDirectory)
 		{
-			SubDirectories.Add(FilenameOrDirectory);
+			ScenarioDirectories.Add(FilenameOrDirectory);
 		}
 		return true; // Continue iteration
 	});
 
-	// Scan each subdirectory
-	for (const FString& SubDir : SubDirectories)
+	// Scan each scenario directory for datasets
+	for (const FString& ScenarioDir : ScenarioDirectories)
 	{
-		FTrajectoryDatasetInfo DatasetInfo;
-		if (ScanDatasetDirectory(SubDir, DatasetInfo))
+		int32 DatasetsFound = ScanScenarioDirectory(ScenarioDir, Datasets);
+		
+		if (Settings->bDebugLogging && DatasetsFound > 0)
 		{
-			Datasets.Add(DatasetInfo);
-			
-			if (Settings->bDebugLogging)
-			{
-				UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Found dataset '%s' with %d shards, %d trajectories"),
-					*DatasetInfo.DatasetName, DatasetInfo.Shards.Num(), DatasetInfo.TotalTrajectories);
-			}
+			FString ScenarioName = FPaths::GetCleanFilename(ScenarioDir);
+			UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Found %d dataset(s) in scenario '%s'"),
+				DatasetsFound, *ScenarioName);
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Scan complete. Found %d datasets"), Datasets.Num());
+	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Scan complete. Found %d datasets across all scenarios"), Datasets.Num());
 	return true;
 }
 
-bool UTrajectoryDataManager::ScanDatasetDirectory(const FString& DatasetDirectory, FTrajectoryDatasetInfo& OutDatasetInfo)
+int32 UTrajectoryDataManager::ScanScenarioDirectory(const FString& ScenarioDirectory, TArray<FTrajectoryDatasetInfo>& OutDatasets)
+{
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	UTrajectoryDataSettings* Settings = UTrajectoryDataSettings::Get();
+	
+	FString ScenarioName = FPaths::GetCleanFilename(ScenarioDirectory);
+	int32 InitialCount = OutDatasets.Num();
+
+	// Get all dataset subdirectories in this scenario
+	TArray<FString> DatasetDirectories;
+	PlatformFile.IterateDirectory(*ScenarioDirectory, [&DatasetDirectories](const TCHAR* FilenameOrDirectory, bool bIsDirectory) -> bool
+	{
+		if (bIsDirectory)
+		{
+			DatasetDirectories.Add(FilenameOrDirectory);
+		}
+		return true; // Continue iteration
+	});
+
+	// Scan each dataset directory
+	bool bDebugLogging = Settings && Settings->bDebugLogging;
+	for (const FString& DatasetDir : DatasetDirectories)
+	{
+		FTrajectoryDatasetInfo DatasetInfo;
+		if (ScanDatasetDirectory(DatasetDir, ScenarioName, DatasetInfo))
+		{
+			OutDatasets.Add(DatasetInfo);
+			
+			// Logging moved to ScanDatasetDirectory
+		}
+	}
+
+	return OutDatasets.Num() - InitialCount;
+}
+
+bool UTrajectoryDataManager::ScanDatasetDirectory(const FString& DatasetDirectory, const FString& ScenarioName, FTrajectoryDatasetInfo& OutDatasetInfo)
 {
 	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
 	
@@ -95,60 +127,37 @@ bool UTrajectoryDataManager::ScanDatasetDirectory(const FString& DatasetDirector
 	FString DatasetName = FPaths::GetCleanFilename(DatasetDirectory);
 	OutDatasetInfo.DatasetName = DatasetName;
 	OutDatasetInfo.DatasetPath = DatasetDirectory;
-	OutDatasetInfo.Shards.Empty();
+	OutDatasetInfo.ScenarioName = ScenarioName;
 	OutDatasetInfo.TotalTrajectories = 0;
 
-	// Find all shard-manifest.json files in subdirectories
-	TArray<FString> ManifestFiles;
-	PlatformFile.IterateDirectory(*DatasetDirectory, [&ManifestFiles, &PlatformFile](const TCHAR* FilenameOrDirectory, bool bIsDirectory) -> bool
+	// Look for dataset-manifest.json directly in the dataset directory
+	FString ManifestPath = FPaths::Combine(DatasetDirectory, TEXT("dataset-manifest.json"));
+	if (!PlatformFile.FileExists(*ManifestPath))
 	{
-		if (bIsDirectory)
-		{
-			// Check if this subdirectory contains a shard-manifest.json
-			FString SubDir(FilenameOrDirectory);
-			FString ManifestPath = FPaths::Combine(SubDir, TEXT("shard-manifest.json"));
-			if (PlatformFile.FileExists(*ManifestPath))
-			{
-				ManifestFiles.Add(ManifestPath);
-			}
-		}
-		return true; // Continue iteration
-	});
-
-	if (ManifestFiles.Num() == 0)
-	{
-		return false; // No manifest files found
+		return false; // No manifest file found
 	}
 
 	UTrajectoryDataSettings* Settings = UTrajectoryDataSettings::Get();
 
-	// Parse each manifest file
-	for (const FString& ManifestFile : ManifestFiles)
+	// Parse the manifest file
+	FTrajectoryDatasetMetadata DatasetMetadata;
+	if (ParseMetadataFile(ManifestPath, DatasetMetadata))
 	{
-		FTrajectoryShardMetadata ShardMetadata;
-		if (ParseMetadataFile(ManifestFile, ShardMetadata))
-		{
-			OutDatasetInfo.Shards.Add(ShardMetadata);
-			OutDatasetInfo.TotalTrajectories += ShardMetadata.TrajectoryCount;
+		OutDatasetInfo.Metadata = DatasetMetadata;
+		OutDatasetInfo.TotalTrajectories = DatasetMetadata.TrajectoryCount;
 
-			if (Settings && Settings->bDebugLogging)
-			{
-				UE_LOG(LogTemp, Log, TEXT("  Shard '%s': %lld trajectories"),
-					*ShardMetadata.ShardName, ShardMetadata.TrajectoryCount);
-			}
+		if (Settings && Settings->bDebugLogging)
+		{
+			UE_LOG(LogTemp, Log, TEXT("  Dataset '%s' in scenario '%s': %lld trajectories"),
+				*DatasetName, *ScenarioName, DatasetMetadata.TrajectoryCount);
 		}
+		return true;
 	}
 
-	// Sort shards by shard name
-	OutDatasetInfo.Shards.Sort([](const FTrajectoryShardMetadata& A, const FTrajectoryShardMetadata& B)
-	{
-		return A.ShardName < B.ShardName;
-	});
-
-	return OutDatasetInfo.Shards.Num() > 0;
+	return false;
 }
 
-bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, FTrajectoryShardMetadata& OutShardMetadata)
+bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, FTrajectoryDatasetMetadata& OutDatasetMetadata)
 {
 	// Read the JSON file
 	FString JsonString;
@@ -168,25 +177,25 @@ bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, 
 	}
 
 	// Store paths
-	OutShardMetadata.ManifestFilePath = MetadataFilePath;
-	OutShardMetadata.ShardDirectory = FPaths::GetPath(MetadataFilePath);
+	OutDatasetMetadata.ManifestFilePath = MetadataFilePath;
+	OutDatasetMetadata.DatasetDirectory = FPaths::GetPath(MetadataFilePath);
 
-	// Parse all fields from shard-manifest.json according to specification
-	JsonObject->TryGetStringField(TEXT("shard_name"), OutShardMetadata.ShardName);
-	JsonObject->TryGetNumberField(TEXT("format_version"), OutShardMetadata.FormatVersion);
+	// Parse all fields from dataset-manifest.json according to specification
+	JsonObject->TryGetStringField(TEXT("dataset_name"), OutDatasetMetadata.DatasetName);
+	JsonObject->TryGetNumberField(TEXT("format_version"), OutDatasetMetadata.FormatVersion);
 	
-	JsonObject->TryGetStringField(TEXT("endianness"), OutShardMetadata.Endianness);
-	JsonObject->TryGetStringField(TEXT("coordinate_units"), OutShardMetadata.CoordinateUnits);
-	JsonObject->TryGetStringField(TEXT("float_precision"), OutShardMetadata.FloatPrecision);
-	JsonObject->TryGetStringField(TEXT("time_units"), OutShardMetadata.TimeUnits);
+	JsonObject->TryGetStringField(TEXT("endianness"), OutDatasetMetadata.Endianness);
+	JsonObject->TryGetStringField(TEXT("coordinate_units"), OutDatasetMetadata.CoordinateUnits);
+	JsonObject->TryGetStringField(TEXT("float_precision"), OutDatasetMetadata.FloatPrecision);
+	JsonObject->TryGetStringField(TEXT("time_units"), OutDatasetMetadata.TimeUnits);
 	
-	JsonObject->TryGetNumberField(TEXT("time_step_interval_size"), OutShardMetadata.TimeStepIntervalSize);
+	JsonObject->TryGetNumberField(TEXT("time_step_interval_size"), OutDatasetMetadata.TimeStepIntervalSize);
 	
 	double TempTimeInterval = 0.0;
 	JsonObject->TryGetNumberField(TEXT("time_interval_seconds"), TempTimeInterval);
-	OutShardMetadata.TimeIntervalSeconds = (float)TempTimeInterval;
+	OutDatasetMetadata.TimeIntervalSeconds = (float)TempTimeInterval;
 	
-	JsonObject->TryGetNumberField(TEXT("entry_size_bytes"), OutShardMetadata.EntrySizeBytes);
+	JsonObject->TryGetNumberField(TEXT("entry_size_bytes"), OutDatasetMetadata.EntrySizeBytes);
 	
 	// Parse bounding_box object
 	const TSharedPtr<FJsonObject>* BBoxObject;
@@ -199,7 +208,7 @@ bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, 
 			double X = (*MinArray)[0]->AsNumber();
 			double Y = (*MinArray)[1]->AsNumber();
 			double Z = (*MinArray)[2]->AsNumber();
-			OutShardMetadata.BoundingBoxMin = FVector(X, Y, Z);
+			OutDatasetMetadata.BoundingBoxMin = FVector(X, Y, Z);
 		}
 		
 		// Parse max array
@@ -209,25 +218,25 @@ bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, 
 			double X = (*MaxArray)[0]->AsNumber();
 			double Y = (*MaxArray)[1]->AsNumber();
 			double Z = (*MaxArray)[2]->AsNumber();
-			OutShardMetadata.BoundingBoxMax = FVector(X, Y, Z);
+			OutDatasetMetadata.BoundingBoxMax = FVector(X, Y, Z);
 		}
 	}
 	
 	// Parse trajectory counts as 64-bit integers
 	int64 TempTrajectoryCount = 0;
 	JsonObject->TryGetNumberField(TEXT("trajectory_count"), TempTrajectoryCount);
-	OutShardMetadata.TrajectoryCount = TempTrajectoryCount;
+	OutDatasetMetadata.TrajectoryCount = TempTrajectoryCount;
 	
 	int64 TempFirstId = 0;
 	JsonObject->TryGetNumberField(TEXT("first_trajectory_id"), TempFirstId);
-	OutShardMetadata.FirstTrajectoryId = TempFirstId;
+	OutDatasetMetadata.FirstTrajectoryId = TempFirstId;
 	
 	int64 TempLastId = 0;
 	JsonObject->TryGetNumberField(TEXT("last_trajectory_id"), TempLastId);
-	OutShardMetadata.LastTrajectoryId = TempLastId;
+	OutDatasetMetadata.LastTrajectoryId = TempLastId;
 	
-	JsonObject->TryGetStringField(TEXT("created_at"), OutShardMetadata.CreatedAt);
-	JsonObject->TryGetStringField(TEXT("converter_version"), OutShardMetadata.ConverterVersion);
+	JsonObject->TryGetStringField(TEXT("created_at"), OutDatasetMetadata.CreatedAt);
+	JsonObject->TryGetStringField(TEXT("converter_version"), OutDatasetMetadata.ConverterVersion);
 
 	return true;
 }

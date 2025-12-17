@@ -6,17 +6,17 @@
 #include "TrajectoryDataTypes.generated.h"
 
 /**
- * Structure representing metadata for a single trajectory data shard
- * Based on the Trajectory Data Shard specification (shard-manifest.json format)
+ * Structure representing metadata for a single trajectory dataset
+ * Based on the Trajectory Dataset specification (dataset-manifest.json format)
  */
 USTRUCT(BlueprintType)
-struct TRAJECTORYDATA_API FTrajectoryShardMetadata
+struct TRAJECTORYDATA_API FTrajectoryDatasetMetadata
 {
 	GENERATED_BODY()
 
-	/** Name of the shard */
+	/** Name of the dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	FString ShardName;
+	FString DatasetName;
 
 	/** Format version */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
@@ -58,7 +58,7 @@ struct TRAJECTORYDATA_API FTrajectoryShardMetadata
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FVector BoundingBoxMax;
 
-	/** Total number of trajectories in this shard */
+	/** Total number of trajectories in this dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int64 TrajectoryCount;
 
@@ -82,12 +82,12 @@ struct TRAJECTORYDATA_API FTrajectoryShardMetadata
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FString ManifestFilePath;
 
-	/** Directory path containing all shard files */
+	/** Directory path containing all dataset files */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	FString ShardDirectory;
+	FString DatasetDirectory;
 
-	FTrajectoryShardMetadata()
-		: ShardName(TEXT(""))
+	FTrajectoryDatasetMetadata()
+		: DatasetName(TEXT(""))
 		, FormatVersion(1)
 		, Endianness(TEXT("little"))
 		, CoordinateUnits(TEXT(""))
@@ -104,13 +104,14 @@ struct TRAJECTORYDATA_API FTrajectoryShardMetadata
 		, CreatedAt(TEXT(""))
 		, ConverterVersion(TEXT(""))
 		, ManifestFilePath(TEXT(""))
-		, ShardDirectory(TEXT(""))
+		, DatasetDirectory(TEXT(""))
 	{
 	}
 };
 
 /**
- * Structure representing a complete trajectory dataset with all its shards
+ * Structure representing a complete trajectory dataset with all its shards.
+ * Multiple datasets within the same scenario are spatially and temporally related to each other.
  */
 USTRUCT(BlueprintType)
 struct TRAJECTORYDATA_API FTrajectoryDatasetInfo
@@ -125,17 +126,22 @@ struct TRAJECTORYDATA_API FTrajectoryDatasetInfo
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FString DatasetPath;
 
-	/** Array of all shards in this dataset */
+	/** Name of the scenario this dataset belongs to */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	TArray<FTrajectoryShardMetadata> Shards;
+	FString ScenarioName;
 
-	/** Total number of trajectories across all shards */
+	/** Metadata for this dataset */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FTrajectoryDatasetMetadata Metadata;
+
+	/** Total number of trajectories in this dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int64 TotalTrajectories;
 
 	FTrajectoryDatasetInfo()
 		: DatasetName(TEXT(""))
 		, DatasetPath(TEXT(""))
+		, ScenarioName(TEXT(""))
 		, TotalTrajectories(0)
 	{
 	}
