@@ -111,7 +111,7 @@ struct TRAJECTORYDATA_API FTrajectoryShardMetadata
 
 /**
  * Structure representing a complete trajectory dataset with all its shards.
- * A dataset contains one or more shards that are spatially and temporally related.
+ * Multiple datasets within the same scenario are spatially and temporally related to each other.
  */
 USTRUCT(BlueprintType)
 struct TRAJECTORYDATA_API FTrajectoryDatasetInfo

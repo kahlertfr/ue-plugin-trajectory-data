@@ -104,6 +104,7 @@ int32 UTrajectoryDataManager::ScanScenarioDirectory(const FString& ScenarioDirec
 	});
 
 	// Scan each dataset directory
+	bool bDebugLogging = Settings && Settings->bDebugLogging;
 	for (const FString& DatasetDir : DatasetDirectories)
 	{
 		FTrajectoryDatasetInfo DatasetInfo;
@@ -111,7 +112,7 @@ int32 UTrajectoryDataManager::ScanScenarioDirectory(const FString& ScenarioDirec
 		{
 			OutDatasets.Add(DatasetInfo);
 			
-			if (Settings && Settings->bDebugLogging)
+			if (bDebugLogging)
 			{
 				UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Found dataset '%s' in scenario '%s' with %d shards, %d trajectories"),
 					*DatasetInfo.DatasetName, *ScenarioName, DatasetInfo.Shards.Num(), DatasetInfo.TotalTrajectories);
