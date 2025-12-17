@@ -41,9 +41,10 @@ ScenariosDirectory/                         ← Root configuration setting
 │       └── shard.bin
 └── scenario_wind_tunnel_test_03/           ← Scenario
     └── dataset_combined/                   ← Dataset
-        └── shard_0/                        ← Shard
-            ├── dataset-manifest.json
-            └── ...
+        ├── dataset-manifest.json
+        ├── dataset-meta.bin
+        ├── dataset-trajmeta.bin
+        └── shard.bin
 ```
 
 ## Configuration
@@ -64,9 +65,9 @@ bDebugLogging=False
 1. **Read Configuration**: Load `ScenariosDirectory` from settings
 2. **Scan Scenarios**: Iterate through all subdirectories in `ScenariosDirectory`
 3. **Scan Datasets**: For each scenario, iterate through dataset subdirectories
-4. **Scan Shards**: For each dataset, find subdirectories containing `dataset-manifest.json`
+4. **Find Manifests**: For each dataset, look for `dataset-manifest.json` directly in the dataset directory
 5. **Parse Metadata**: Read and parse each `dataset-manifest.json` file
-6. **Aggregate Data**: Group shards into datasets, associate datasets with scenarios
+6. **Associate Data**: Associate datasets with their parent scenarios
 7. **Cache Results**: Store all discovered information for fast access
 
 ## Data Structures
@@ -76,13 +77,13 @@ Contains information about a dataset:
 - `DatasetName`: Name of the dataset directory
 - `DatasetPath`: Full path to the dataset directory
 - `ScenarioName`: Name of the parent scenario
-- `Shards`: Array of all shards in this dataset
-- `TotalTrajectories`: Sum of trajectories across all shards
+- `Metadata`: Dataset metadata from the manifest file
+- `TotalTrajectories`: Number of trajectories in this dataset
 
-### FTrajectoryShardMetadata
-Contains information about a single shard:
-- `ShardName`: Name identifier from the manifest
-- `ShardDirectory`: Full path to the shard directory
+### FTrajectoryShardMetadata (Dataset Metadata)
+Contains metadata about a dataset (note: despite the legacy name, this now represents dataset metadata):
+- `ShardName`: Dataset name identifier from the manifest
+- `ShardDirectory`: Full path to the dataset directory
 - `ManifestFilePath`: Full path to `dataset-manifest.json`
 - Plus all fields from the manifest (trajectory count, bounding box, etc.)
 
@@ -111,41 +112,35 @@ Multiple datasets within the same scenario are spatially and temporally related.
   - `dataset_particles`: Trajectory data for particles
   - Both datasets share the same spatial origin and time reference
 
-### Multiple Shards
-A dataset can have multiple shards for various reasons:
-- **Time ranges**: Different time windows of the same simulation
-- **Spatial regions**: Different spatial areas
-- **File size management**: Splitting large datasets into manageable chunks
-
 ### Naming Consistency
-While the plugin doesn't enforce specific naming patterns for scenario/dataset/shard directories, using descriptive names improves organization:
+While the plugin doesn't enforce specific naming patterns for scenario/dataset directories, using descriptive names improves organization:
 - Good scenario names: `experiment_2025_01_15`, `baseline_test`, `high_velocity_run`
 - Good dataset names: `bubbles`, `particles`, `combined_entities`
-- Good shard names: `shard_0`, `shard_1`, `shard_time_0_100`, `shard_region_a`
 
 ## Migration from Previous Version
 
-If you were using an earlier version without scenario support:
+If you were using an earlier version with shard subdirectories:
 
 ### Old Structure
 ```
-DatasetsDirectory/
-├── dataset_A/
-│   ├── shard_0/
-│   └── shard_1/
-└── dataset_B/
-    └── shard_0/
+ScenariosDirectory/
+└── scenario_name/
+    └── dataset_A/
+        ├── shard_0/
+        │   └── shard-manifest.json
+        └── shard_1/
+            └── shard-manifest.json
 ```
 
 ### New Structure
 ```
 ScenariosDirectory/
-└── default_scenario/          ← Add scenario level
-    ├── dataset_A/
-    │   ├── shard_0/
-    │   └── shard_1/
-    └── dataset_B/
-        └── shard_0/
+└── scenario_name/
+    └── dataset_A/
+        ├── dataset-manifest.json
+        ├── dataset-meta.bin
+        ├── dataset-trajmeta.bin
+        └── shard.bin
 ```
 
 ### Configuration Change
