@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "TrajectoryDataTypes.h"
+#include "TrajectoryDataMemoryEstimator.h"
 #include "TrajectoryDataBlueprintLibrary.generated.h"
 
 /**
@@ -85,4 +86,88 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data", meta = (DisplayName = "Calculate Shard Display Points"))
 	static int32 CalculateShardDisplayPoints(const FTrajectoryShardMetadata& ShardMetadata);
+
+	// Memory Monitoring Functions
+
+	/**
+	 * Get the total physical memory available on the system
+	 * @return Total physical memory in bytes
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Memory", meta = (DisplayName = "Get Total Physical Memory"))
+	static int64 GetTotalPhysicalMemory();
+
+	/**
+	 * Get the maximum memory that can be used for trajectory data (75% of total physical memory)
+	 * @return Maximum trajectory data memory in bytes
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Memory", meta = (DisplayName = "Get Max Trajectory Data Memory"))
+	static int64 GetMaxTrajectoryDataMemory();
+
+	/**
+	 * Calculate memory required for a single shard
+	 * @param ShardMetadata The shard to calculate memory for
+	 * @return Estimated memory required in bytes
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Memory", meta = (DisplayName = "Calculate Shard Memory Requirement"))
+	static int64 CalculateShardMemoryRequirement(const FTrajectoryShardMetadata& ShardMetadata);
+
+	/**
+	 * Calculate memory required for an entire dataset
+	 * @param DatasetInfo The dataset to calculate memory for
+	 * @return Estimated memory required in bytes
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Memory", meta = (DisplayName = "Calculate Dataset Memory Requirement"))
+	static int64 CalculateDatasetMemoryRequirement(const FTrajectoryDatasetInfo& DatasetInfo);
+
+	/**
+	 * Get current memory usage information
+	 * @return Structure containing memory usage details
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Trajectory Data|Memory", meta = (DisplayName = "Get Memory Info"))
+	static FTrajectoryDataMemoryInfo GetMemoryInfo();
+
+	/**
+	 * Add estimated memory usage for planned data loading
+	 * Call this when user adjusts parameters to show immediate feedback
+	 * @param MemoryBytes Amount of memory to add to the estimate
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Trajectory Data|Memory", meta = (DisplayName = "Add Estimated Usage"))
+	static void AddEstimatedUsage(int64 MemoryBytes);
+
+	/**
+	 * Remove estimated memory usage for planned data unloading
+	 * @param MemoryBytes Amount of memory to remove from the estimate
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Trajectory Data|Memory", meta = (DisplayName = "Remove Estimated Usage"))
+	static void RemoveEstimatedUsage(int64 MemoryBytes);
+
+	/**
+	 * Reset all estimated memory usage to zero
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Trajectory Data|Memory", meta = (DisplayName = "Reset Estimated Usage"))
+	static void ResetEstimatedUsage();
+
+	/**
+	 * Check if loading a shard would exceed available capacity
+	 * @param ShardMetadata The shard to check
+	 * @return True if the shard can fit in remaining capacity
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Memory", meta = (DisplayName = "Can Load Shard"))
+	static bool CanLoadShard(const FTrajectoryShardMetadata& ShardMetadata);
+
+	/**
+	 * Check if loading a dataset would exceed available capacity
+	 * @param DatasetInfo The dataset to check
+	 * @return True if the dataset can fit in remaining capacity
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Memory", meta = (DisplayName = "Can Load Dataset"))
+	static bool CanLoadDataset(const FTrajectoryDatasetInfo& DatasetInfo);
+
+	/**
+	 * Format memory size in bytes to a human-readable string (e.g., "1.5 GB", "256 MB")
+	 * @param Bytes Memory size in bytes
+	 * @return Formatted string
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Memory", meta = (DisplayName = "Format Memory Size"))
+	static FString FormatMemorySize(int64 Bytes);
 };
