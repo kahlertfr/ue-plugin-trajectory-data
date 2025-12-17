@@ -6,15 +6,15 @@
 #include "TrajectoryDataTypes.generated.h"
 
 /**
- * Structure representing metadata for a single trajectory data shard
- * Based on the Trajectory Data Shard specification (shard-manifest.json format)
+ * Structure representing metadata for a single trajectory dataset
+ * Based on the Trajectory Dataset specification (dataset-manifest.json format)
  */
 USTRUCT(BlueprintType)
 struct TRAJECTORYDATA_API FTrajectoryShardMetadata
 {
 	GENERATED_BODY()
 
-	/** Name of the shard */
+	/** Name of the dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FString ShardName;
 
@@ -58,7 +58,7 @@ struct TRAJECTORYDATA_API FTrajectoryShardMetadata
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FVector BoundingBoxMax;
 
-	/** Total number of trajectories in this shard */
+	/** Total number of trajectories in this dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int64 TrajectoryCount;
 
@@ -82,7 +82,7 @@ struct TRAJECTORYDATA_API FTrajectoryShardMetadata
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FString ManifestFilePath;
 
-	/** Directory path containing all shard files */
+	/** Directory path containing all dataset files */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FString ShardDirectory;
 
@@ -130,11 +130,11 @@ struct TRAJECTORYDATA_API FTrajectoryDatasetInfo
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FString ScenarioName;
 
-	/** Array of all shards in this dataset */
+	/** Metadata for this dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	TArray<FTrajectoryShardMetadata> Shards;
+	FTrajectoryShardMetadata Metadata;
 
-	/** Total number of trajectories across all shards */
+	/** Total number of trajectories in this dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int64 TotalTrajectories;
 

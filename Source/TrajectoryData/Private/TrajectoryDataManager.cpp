@@ -112,11 +112,7 @@ int32 UTrajectoryDataManager::ScanScenarioDirectory(const FString& ScenarioDirec
 		{
 			OutDatasets.Add(DatasetInfo);
 			
-			if (bDebugLogging)
-			{
-				UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Found dataset '%s' in scenario '%s' with %d shards, %d trajectories"),
-					*DatasetInfo.DatasetName, *ScenarioName, DatasetInfo.Shards.Num(), DatasetInfo.TotalTrajectories);
-			}
+			// Logging moved to ScanDatasetDirectory
 		}
 	}
 
@@ -132,57 +128,33 @@ bool UTrajectoryDataManager::ScanDatasetDirectory(const FString& DatasetDirector
 	OutDatasetInfo.DatasetName = DatasetName;
 	OutDatasetInfo.DatasetPath = DatasetDirectory;
 	OutDatasetInfo.ScenarioName = ScenarioName;
-	OutDatasetInfo.Shards.Empty();
 	OutDatasetInfo.TotalTrajectories = 0;
 
-	// Find all shard-manifest.json files in subdirectories
-	TArray<FString> ManifestFiles;
-	PlatformFile.IterateDirectory(*DatasetDirectory, [&ManifestFiles, &PlatformFile](const TCHAR* FilenameOrDirectory, bool bIsDirectory) -> bool
+	// Look for dataset-manifest.json directly in the dataset directory
+	FString ManifestPath = FPaths::Combine(DatasetDirectory, TEXT("dataset-manifest.json"));
+	if (!PlatformFile.FileExists(*ManifestPath))
 	{
-		if (bIsDirectory)
-		{
-			// Check if this subdirectory contains a shard-manifest.json
-			FString SubDir(FilenameOrDirectory);
-			FString ManifestPath = FPaths::Combine(SubDir, TEXT("shard-manifest.json"));
-			if (PlatformFile.FileExists(*ManifestPath))
-			{
-				ManifestFiles.Add(ManifestPath);
-			}
-		}
-		return true; // Continue iteration
-	});
-
-	if (ManifestFiles.Num() == 0)
-	{
-		return false; // No manifest files found
+		return false; // No manifest file found
 	}
 
 	UTrajectoryDataSettings* Settings = UTrajectoryDataSettings::Get();
 
-	// Parse each manifest file
-	for (const FString& ManifestFile : ManifestFiles)
+	// Parse the manifest file
+	FTrajectoryShardMetadata DatasetMetadata;
+	if (ParseMetadataFile(ManifestPath, DatasetMetadata))
 	{
-		FTrajectoryShardMetadata ShardMetadata;
-		if (ParseMetadataFile(ManifestFile, ShardMetadata))
-		{
-			OutDatasetInfo.Shards.Add(ShardMetadata);
-			OutDatasetInfo.TotalTrajectories += ShardMetadata.TrajectoryCount;
+		OutDatasetInfo.Metadata = DatasetMetadata;
+		OutDatasetInfo.TotalTrajectories = DatasetMetadata.TrajectoryCount;
 
-			if (Settings && Settings->bDebugLogging)
-			{
-				UE_LOG(LogTemp, Log, TEXT("  Shard '%s': %lld trajectories"),
-					*ShardMetadata.ShardName, ShardMetadata.TrajectoryCount);
-			}
+		if (Settings && Settings->bDebugLogging)
+		{
+			UE_LOG(LogTemp, Log, TEXT("  Dataset '%s' in scenario '%s': %lld trajectories"),
+				*DatasetName, *ScenarioName, DatasetMetadata.TrajectoryCount);
 		}
+		return true;
 	}
 
-	// Sort shards by shard name
-	OutDatasetInfo.Shards.Sort([](const FTrajectoryShardMetadata& A, const FTrajectoryShardMetadata& B)
-	{
-		return A.ShardName < B.ShardName;
-	});
-
-	return OutDatasetInfo.Shards.Num() > 0;
+	return false;
 }
 
 bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, FTrajectoryShardMetadata& OutShardMetadata)
@@ -208,8 +180,8 @@ bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, 
 	OutShardMetadata.ManifestFilePath = MetadataFilePath;
 	OutShardMetadata.ShardDirectory = FPaths::GetPath(MetadataFilePath);
 
-	// Parse all fields from shard-manifest.json according to specification
-	JsonObject->TryGetStringField(TEXT("shard_name"), OutShardMetadata.ShardName);
+	// Parse all fields from dataset-manifest.json according to specification
+	JsonObject->TryGetStringField(TEXT("dataset_name"), OutShardMetadata.ShardName);
 	JsonObject->TryGetNumberField(TEXT("format_version"), OutShardMetadata.FormatVersion);
 	
 	JsonObject->TryGetStringField(TEXT("endianness"), OutShardMetadata.Endianness);

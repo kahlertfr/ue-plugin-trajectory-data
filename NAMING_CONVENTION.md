@@ -4,9 +4,9 @@
 
 This document describes the naming convention used throughout the Trajectory Data plugin for Unreal Engine 5.6.
 
-## Three-Level Hierarchy
+## Two-Level Hierarchy
 
-The plugin implements a **Scenario → Dataset → Shard** hierarchy for organizing trajectory data:
+The plugin implements a **Scenario → Dataset** hierarchy for organizing trajectory data:
 
 ### Level 1: Scenario
 - **Definition**: A top-level directory representing a complete simulation scenario or experiment
@@ -14,20 +14,15 @@ The plugin implements a **Scenario → Dataset → Shard** hierarchy for organiz
 - **Example**: `experiment_2025_01`, `wind_tunnel_test_03`, `bubble_simulation_final`
 
 ### Level 2: Dataset
-- **Definition**: A subdirectory within a scenario containing trajectory data for a specific type or subset of entities
+- **Definition**: A subdirectory within a scenario containing the actual trajectory data files
 - **Purpose**: Separates different types of trajectories within the same scenario
 - **Relationship**: Multiple datasets in the same scenario are spatially and temporally related
-- **Example**: `bubbles`, `particles`, `debris`, `combined`
-
-### Level 3: Shard
-- **Definition**: A subdirectory containing the actual trajectory data files
-- **Purpose**: Contains manifest and binary data files for a portion of the dataset
 - **Contents**: 
-  - `shard-manifest.json` (required)
-  - `shard-meta.bin` (optional)
-  - `shard-trajmeta.bin` (optional)
-  - `shard-data.bin` (optional)
-- **Example**: `shard_0`, `shard_1`, `shard_time_0_100`
+  - `dataset-manifest.json` (required)
+  - `dataset-meta.bin` (optional)
+  - `dataset-trajmeta.bin` (optional)
+  - `shard.bin` (optional)
+- **Example**: `bubbles`, `particles`, `debris`, `combined`
 
 ## Directory Structure Example
 
@@ -35,22 +30,19 @@ The plugin implements a **Scenario → Dataset → Shard** hierarchy for organiz
 ScenariosDirectory/                         ← Root configuration setting
 ├── scenario_experiment_2025_01/            ← Scenario
 │   ├── dataset_bubbles/                    ← Dataset
-│   │   ├── shard_0/                        ← Shard
-│   │   │   ├── shard-manifest.json
-│   │   │   ├── shard-meta.bin
-│   │   │   ├── shard-trajmeta.bin
-│   │   │   └── shard-data.bin
-│   │   └── shard_1/                        ← Shard
-│   │       ├── shard-manifest.json
-│   │       └── ...
+│   │   ├── dataset-manifest.json
+│   │   ├── dataset-meta.bin
+│   │   ├── dataset-trajmeta.bin
+│   │   └── shard.bin
 │   └── dataset_particles/                  ← Dataset (related to bubbles)
-│       └── shard_0/                        ← Shard
-│           ├── shard-manifest.json
-│           └── ...
+│       ├── dataset-manifest.json
+│       ├── dataset-meta.bin
+│       ├── dataset-trajmeta.bin
+│       └── shard.bin
 └── scenario_wind_tunnel_test_03/           ← Scenario
     └── dataset_combined/                   ← Dataset
         └── shard_0/                        ← Shard
-            ├── shard-manifest.json
+            ├── dataset-manifest.json
             └── ...
 ```
 
@@ -72,8 +64,8 @@ bDebugLogging=False
 1. **Read Configuration**: Load `ScenariosDirectory` from settings
 2. **Scan Scenarios**: Iterate through all subdirectories in `ScenariosDirectory`
 3. **Scan Datasets**: For each scenario, iterate through dataset subdirectories
-4. **Scan Shards**: For each dataset, find subdirectories containing `shard-manifest.json`
-5. **Parse Metadata**: Read and parse each `shard-manifest.json` file
+4. **Scan Shards**: For each dataset, find subdirectories containing `dataset-manifest.json`
+5. **Parse Metadata**: Read and parse each `dataset-manifest.json` file
 6. **Aggregate Data**: Group shards into datasets, associate datasets with scenarios
 7. **Cache Results**: Store all discovered information for fast access
 
@@ -91,7 +83,7 @@ Contains information about a dataset:
 Contains information about a single shard:
 - `ShardName`: Name identifier from the manifest
 - `ShardDirectory`: Full path to the shard directory
-- `ManifestFilePath`: Full path to `shard-manifest.json`
+- `ManifestFilePath`: Full path to `dataset-manifest.json`
 - Plus all fields from the manifest (trajectory count, bounding box, etc.)
 
 ## Blueprint API

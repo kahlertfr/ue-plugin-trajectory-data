@@ -61,15 +61,8 @@ int64 UTrajectoryDataMemoryEstimator::CalculateShardMemoryRequirement(const FTra
 
 int64 UTrajectoryDataMemoryEstimator::CalculateDatasetMemoryRequirement(const FTrajectoryDatasetInfo& DatasetInfo)
 {
-	int64 TotalMemory = 0;
-	
-	// Sum up memory requirements for all shards
-	for (const FTrajectoryShardMetadata& Shard : DatasetInfo.Shards)
-	{
-		TotalMemory += CalculateShardMemoryRequirement(Shard);
-	}
-	
-	return TotalMemory;
+	// Calculate memory requirement for the single dataset
+	return CalculateShardMemoryRequirement(DatasetInfo.Metadata);
 }
 
 FTrajectoryDataMemoryInfo UTrajectoryDataMemoryEstimator::GetMemoryInfo() const

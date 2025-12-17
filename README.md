@@ -4,27 +4,28 @@ This plugin enables loading and management of trajectory data from simulation ou
 
 ## Directory Structure Convention
 
-The plugin uses a three-level naming hierarchy:
+The plugin uses a two-level naming hierarchy:
 
-**Scenario → Dataset → Shard**
+**Scenario → Dataset**
 
 - **Scenario**: Top-level directory representing a simulation scenario or experiment
-- **Dataset**: Contains trajectory data for a specific type of entities within the scenario
+- **Dataset**: Contains the actual trajectory data files (manifest, metadata, and binary data)
   - Multiple datasets in the same scenario are spatially and temporally related
-- **Shard**: Contains the actual trajectory data files (manifest, metadata, and binary data)
 
 Example:
 ```
 ScenariosDirectory/
 └── experiment_2025_01/          ← Scenario
-    ├── bubbles/                  ← Dataset
-    │   ├── shard_0/              ← Shard
-    │   │   └── shard-manifest.json
-    │   └── shard_1/              ← Shard
-    │       └── shard-manifest.json
-    └── particles/                ← Dataset
-        └── shard_0/              ← Shard
-            └── shard-manifest.json
+    ├── bubbles/                  ← Dataset (contains files directly)
+    │   ├── dataset-manifest.json
+    │   ├── dataset-meta.bin
+    │   ├── dataset-trajmeta.bin
+    │   └── shard.bin
+    └── particles/                ← Dataset (contains files directly)
+        ├── dataset-manifest.json
+        ├── dataset-meta.bin
+        ├── dataset-trajmeta.bin
+        └── shard.bin
 ```
 
 ## Overview
@@ -115,31 +116,31 @@ Each dataset (FTrajectoryDatasetInfo) contains:
 - **Dataset Name**: Name derived from the dataset directory
 - **Dataset Path**: Full path to the dataset directory
 - **Scenario Name**: Name of the parent scenario this dataset belongs to
-- **Shards**: Array of shard metadata
-- **Total Trajectories**: Sum of trajectories across all shards
+- **Metadata**: Dataset metadata from the manifest file
+- **Total Trajectories**: Number of trajectories in the dataset
 
-### Shard Metadata Structure
+### Dataset Metadata Structure
 
-Each shard (FTrajectoryShardMetadata) contains metadata from the shard-manifest.json file:
-- **Shard Name**: Name identifier for the shard
+Each dataset's metadata (FTrajectoryShardMetadata) contains information from the dataset-manifest.json file:
+- **Dataset Name**: Name identifier for the dataset
 - **Format Version**: Format version (currently 1)
-- **Trajectory Count**: Number of trajectories in this shard
+- **Trajectory Count**: Number of trajectories in this dataset
 - **Time Step Interval Size**: Number of time steps per trajectory
 - **Time Interval Seconds**: Time duration per interval in seconds
 - **Bounding Box Min/Max**: Spatial bounds of the data
 - **First/Last Trajectory Id**: Range of trajectory IDs
 - **Coordinate Units**: Units for spatial coordinates (e.g., "millimeters")
-- **Created At**: Timestamp when the shard was created
+- **Created At**: Timestamp when the dataset was created
 - **Converter Version**: Git commit hash of the converter tool
-- **Manifest File Path**: Path to the shard-manifest.json file
-- **Shard Directory**: Directory containing all shard files
+- **Manifest File Path**: Path to the dataset-manifest.json file
+- **Dataset Directory**: Directory containing all dataset files
 
 ### Calculating Display Points
 
 To determine if a dataset can be visualized:
 
-- **Calculate Max Display Points** - Returns total sample points for a dataset (trajectory_count × time_step_interval_size across all shards)
-- **Calculate Shard Display Points** - Returns sample points for a single shard
+- **Calculate Max Display Points** - Returns total sample points for a dataset (trajectory_count × time_step_interval_size)
+- **Calculate Shard Display Points** - Returns sample points for a dataset (same as above)
 
 ### Memory Monitoring
 
@@ -196,44 +197,36 @@ The plugin follows a three-level hierarchy: **Scenario → Dataset → Shard**
 ScenariosDirectory/
 ├── scenario_A/
 │   ├── dataset_bubbles/
-│   │   ├── shard_0/
-│   │   │   ├── shard-manifest.json
-│   │   │   ├── shard-meta.bin
-│   │   │   ├── shard-trajmeta.bin
-│   │   │   └── shard-data.bin
-│   │   └── shard_1/
-│   │       ├── shard-manifest.json
-│   │       ├── shard-meta.bin
-│   │       ├── shard-trajmeta.bin
-│   │       └── shard-data.bin
+│   │   ├── dataset-manifest.json
+│   │   ├── dataset-meta.bin
+│   │   ├── dataset-trajmeta.bin
+│   │   └── shard.bin
 │   └── dataset_particles/
-│       └── shard_0/
-│           ├── shard-manifest.json
-│           ├── shard-meta.bin
-│           ├── shard-trajmeta.bin
-│           └── shard-data.bin
+│       ├── dataset-manifest.json
+│       ├── dataset-meta.bin
+│       ├── dataset-trajmeta.bin
+│       └── shard.bin
 └── scenario_B/
     └── dataset_combined/
-        └── shard_0/
-            ├── shard-manifest.json
-            ├── shard-meta.bin
-            ├── shard-trajmeta.bin
-            └── shard-data.bin
+        ├── dataset-manifest.json
+        ├── dataset-meta.bin
+        ├── dataset-trajmeta.bin
+        └── shard.bin
 ```
 
-Each shard subdirectory contains:
-- `shard-manifest.json` - Human-readable JSON manifest
-- `shard-meta.bin` - Binary metadata summary
-- `shard-trajmeta.bin` - Per-trajectory metadata
-- `shard-data.bin` - Actual trajectory position data
+Each dataset directory contains:
+- `dataset-manifest.json` - Human-readable JSON manifest
+- `dataset-meta.bin` - Binary metadata summary
+- `dataset-trajmeta.bin` - Per-trajectory metadata
+- `shard.bin` - Actual trajectory position data
 
 ## Manifest File Format
 
-Each shard requires a `shard-manifest.json` file with the following structure:
+Each dataset requires a `dataset-manifest.json` file with the following structure:
 
 ```json
 {
-  "shard_name": "shard_0",
+  "dataset_name": "bubbles",
   "format_version": 1,
   "endianness": "little",
   "coordinate_units": "millimeters",
@@ -266,12 +259,7 @@ A dataset within a scenario contains trajectory data for a specific type or subs
 - A scenario might have separate datasets for "bubbles" and "particles"
 - These datasets share the same spatial origin and time reference
 - A scenario can have a single dataset or multiple related datasets
-
-### Shard Level
-Multiple shards within a dataset can represent:
-- Different time ranges of the same simulation
-- Different spatial regions
-- Subdivisions for manageable file sizes
+- Each dataset directory contains the manifest and data files directly (no subdirectories)
 
 ## Example Blueprint Usage
 

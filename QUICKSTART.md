@@ -39,15 +39,15 @@ This guide will help you get started with the Trajectory Data plugin in 5 minute
    ```
    (Or any directory you prefer)
 
-2. Your directory structure should follow the **scenario → dataset → shard** hierarchy:
+2. Your directory structure should follow the **scenario → dataset** hierarchy:
    ```
    C:/TestData/
    └── sample_scenario/
        └── sample_dataset/
-           ├── shard_0/
-           │   └── shard-manifest.json
-           └── shard_1/
-               └── shard-manifest.json
+           ├── dataset-manifest.json
+           ├── dataset-meta.bin
+           ├── dataset-trajmeta.bin
+           └── shard.bin
    ```
 
 ## Step 3: Configure the Plugin
@@ -103,25 +103,24 @@ Event Begin Play
 ### Expected Output:
 ```
 LogTemp: TrajectoryDataManager: Scanning scenarios directory: C:/TestData
-LogTemp: TrajectoryDataManager: Found dataset 'sample_dataset' in scenario 'sample_scenario' with 2 shards, 2000 trajectories
+LogTemp: TrajectoryDataManager: Dataset 'sample_dataset' in scenario 'sample_scenario': 1000 trajectories
 LogTemp: TrajectoryDataManager: Found 1 dataset(s) in scenario 'sample_scenario'
 LogTemp: TrajectoryDataManager: Scan complete. Found 1 datasets across all scenarios
 LogBlueprintUserMessages: Dataset: sample_dataset
-LogBlueprintUserMessages: Trajectories: 2000
-LogBlueprintUserMessages: Shards: 2
+LogBlueprintUserMessages: Trajectories: 1000
 ```
 
-## Step 6: Access Shard Details
+## Step 6: Access Dataset Details
 
-To access detailed information about each shard:
+To access detailed information about each dataset:
 
 ```
 Get Available Datasets
   → ForEachLoop (Array = Return Value)
-     → ForEachLoop (Array = Array Element.Shards)
-        → Print String (In String = "Shard ID: " + ToString(Array Element.Shard Id))
-        → Print String (In String = "Time Range: " + ToString(Array Element.Time Step Start) + " to " + ToString(Array Element.Time Step End))
-        → Print String (In String = "Origin: " + ToString(Array Element.Origin))
+     → Print String (In String = "Dataset: " + Array Element.Dataset Name)
+     → Print String (In String = "Scenario: " + Array Element.Scenario Name)
+     → Print String (In String = "Trajectories: " + ToString(Array Element.Total Trajectories))
+     → Print String (In String = "Bounding Box: " + ToString(Array Element.Metadata.Bounding Box Min) + " to " + ToString(Array Element.Metadata.Bounding Box Max))
 ```
 
 ## Common Blueprint Functions
@@ -148,9 +147,8 @@ Get Available Datasets
 1. Is `ScenariosDirectory` pointing to the correct root directory?
 2. Does the directory contain scenario subdirectories?
 3. Do those scenario subdirectories contain dataset subdirectories?
-4. Do the dataset subdirectories contain shard subdirectories?
-5. Do the shard subdirectories contain `shard-manifest.json` files?
-6. Are the `shard-manifest.json` files valid JSON?
+4. Do the dataset subdirectories contain `dataset-manifest.json` files?
+5. Are the `dataset-manifest.json` files valid JSON?
 
 **Enable debug logging:**
 ```ini

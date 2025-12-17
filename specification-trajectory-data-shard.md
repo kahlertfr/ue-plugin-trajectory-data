@@ -1,21 +1,21 @@
-# Trajectory Data Shard — Refined Specification
+# Trajectory Dataset — Refined Specification
 
 version: b95b7d24eae of trajectory-converter
 
-This document defines the on-disk layout, semantics, and recommended reading/writing conventions for the Trajectory Data Shard format.
+This document defines the on-disk layout, semantics, and recommended reading/writing conventions for the Trajectory Dataset format.
 
 ## Overview
 
 ### Purpose
 
-Store many trajectories (3D positions over time) in fixed-size, mmap-friendly binary shards that allow fast sequential and random access.
+Store many trajectories (3D positions over time) in fixed-size, mmap-friendly binary files that allow fast sequential and random access.
 
 ### High-level components
 
-- **shard-manifest.json** (human readable) (JSON): describes shard-level metadata (version, endianness, ranges)
-- **shard-meta.bin** (binary): compact binary summary used by tools for fast lookup
-- **shard-trajmeta.bin** (binary): one fixed-size record per trajectory with per-trajectory metadata
-- **shard-data.bin** (binary): one or more data files, each covering a consecutive time-interval block (optional chunking parameter), where `<start-time-step>` is the first time step covered by that interval
+- **dataset-manifest.json** (human readable) (JSON): describes dataset-level metadata (version, endianness, ranges)
+- **dataset-meta.bin** (binary): compact binary summary used by tools for fast lookup
+- **dataset-trajmeta.bin** (binary): one fixed-size record per trajectory with per-trajectory metadata
+- **shard.bin** (binary): one or more data files, each covering a consecutive time-interval block (optional chunking parameter), where `<start-time-step>` is the first time step covered by that interval
 
 ### Common conventions
 
@@ -32,7 +32,7 @@ Store many trajectories (3D positions over time) in fixed-size, mmap-friendly bi
 
 ```json
 {
-  "shard_name": "shard-name",
+  "dataset_name": "dataset-name",
   "format_version": 1,
   "endianness": "little",
   "coordinate_units": "millimeters",
@@ -50,9 +50,9 @@ Store many trajectories (3D positions over time) in fixed-size, mmap-friendly bi
 }
 ```
 
-### Shard-Meta (binary)
+### Dataset-Meta (binary)
 
-Purpose: quick programmatic access to global shard parameters.
+Purpose: quick programmatic access to global dataset parameters.
 
 Layout (packed, little-endian):
 
@@ -134,7 +134,7 @@ Entry layout (per-trajectory) — fixed size for fast mmap:
 ### Examples: C/C++ struct definitions (packed, little-endian)
 
 ```cpp
-/* shard-meta.bin */
+/* dataset-meta.bin */
 #pragma pack(push,1)
 struct ShardMeta {
   char magic[4]; // "TDSH"
@@ -153,7 +153,7 @@ struct ShardMeta {
 };
 #pragma pack(pop)
 
-/* shard-trajmeta.bin */
+/* dataset-trajmeta.bin */
 #pragma pack(push,1)
 struct TrajectoryMeta {
   uint64_t trajectory_id;
@@ -165,7 +165,7 @@ struct TrajectoryMeta {
 };
 #pragma pack(pop)
 
-/* shard-data.bin header */
+/* shard.bin header */
 #pragma pack(push,1)
 struct DataBlockHeader {
   char magic[4];                  // "TDDB"
