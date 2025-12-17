@@ -14,6 +14,10 @@ struct TRAJECTORYDATA_API FTrajectoryDatasetMetadata
 {
 	GENERATED_BODY()
 
+	/** Name of the scenario this dataset belongs to */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString ScenarioName;
+
 	/** Name of the dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FString DatasetName;
@@ -87,7 +91,8 @@ struct TRAJECTORYDATA_API FTrajectoryDatasetMetadata
 	FString DatasetDirectory;
 
 	FTrajectoryDatasetMetadata()
-		: DatasetName(TEXT(""))
+		: ScenarioName(TEXT(""))
+		, DatasetName(TEXT(""))
 		, FormatVersion(1)
 		, Endianness(TEXT("little"))
 		, CoordinateUnits(TEXT(""))

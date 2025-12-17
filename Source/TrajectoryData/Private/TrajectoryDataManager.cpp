@@ -181,6 +181,7 @@ bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, 
 	OutDatasetMetadata.DatasetDirectory = FPaths::GetPath(MetadataFilePath);
 
 	// Parse all fields from dataset-manifest.json according to specification
+	JsonObject->TryGetStringField(TEXT("scenario_name"), OutDatasetMetadata.ScenarioName);
 	JsonObject->TryGetStringField(TEXT("dataset_name"), OutDatasetMetadata.DatasetName);
 	JsonObject->TryGetNumberField(TEXT("format_version"), OutDatasetMetadata.FormatVersion);
 	
