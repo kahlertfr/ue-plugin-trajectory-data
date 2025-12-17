@@ -36,58 +36,93 @@ bool UTrajectoryDataManager::ScanDatasets()
 		return false;
 	}
 
-	FString DatasetsDir = Settings->DatasetsDirectory;
-	if (DatasetsDir.IsEmpty())
+	FString ScenariosDir = Settings->ScenariosDirectory;
+	if (ScenariosDir.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataManager: Datasets directory is not configured"));
+		UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataManager: Scenarios directory is not configured"));
 		return false;
 	}
 
 	// Check if directory exists
 	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
-	if (!PlatformFile.DirectoryExists(*DatasetsDir))
+	if (!PlatformFile.DirectoryExists(*ScenariosDir))
 	{
-		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataManager: Datasets directory does not exist: %s"), *DatasetsDir);
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataManager: Scenarios directory does not exist: %s"), *ScenariosDir);
 		return false;
 	}
 
 	if (Settings->bDebugLogging)
 	{
-		UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Scanning datasets directory: %s"), *DatasetsDir);
+		UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Scanning scenarios directory: %s"), *ScenariosDir);
 	}
 
-	// Get all subdirectories
-	TArray<FString> SubDirectories;
-	PlatformFile.IterateDirectory(*DatasetsDir, [&SubDirectories](const TCHAR* FilenameOrDirectory, bool bIsDirectory) -> bool
+	// Get all scenario subdirectories
+	TArray<FString> ScenarioDirectories;
+	PlatformFile.IterateDirectory(*ScenariosDir, [&ScenarioDirectories](const TCHAR* FilenameOrDirectory, bool bIsDirectory) -> bool
 	{
 		if (bIsDirectory)
 		{
-			SubDirectories.Add(FilenameOrDirectory);
+			ScenarioDirectories.Add(FilenameOrDirectory);
 		}
 		return true; // Continue iteration
 	});
 
-	// Scan each subdirectory
-	for (const FString& SubDir : SubDirectories)
+	// Scan each scenario directory for datasets
+	for (const FString& ScenarioDir : ScenarioDirectories)
+	{
+		int32 DatasetsFound = ScanScenarioDirectory(ScenarioDir, Datasets);
+		
+		if (Settings->bDebugLogging && DatasetsFound > 0)
+		{
+			FString ScenarioName = FPaths::GetCleanFilename(ScenarioDir);
+			UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Found %d dataset(s) in scenario '%s'"),
+				DatasetsFound, *ScenarioName);
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Scan complete. Found %d datasets across all scenarios"), Datasets.Num());
+	return true;
+}
+
+int32 UTrajectoryDataManager::ScanScenarioDirectory(const FString& ScenarioDirectory, TArray<FTrajectoryDatasetInfo>& OutDatasets)
+{
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	UTrajectoryDataSettings* Settings = UTrajectoryDataSettings::Get();
+	
+	FString ScenarioName = FPaths::GetCleanFilename(ScenarioDirectory);
+	int32 InitialCount = OutDatasets.Num();
+
+	// Get all dataset subdirectories in this scenario
+	TArray<FString> DatasetDirectories;
+	PlatformFile.IterateDirectory(*ScenarioDirectory, [&DatasetDirectories](const TCHAR* FilenameOrDirectory, bool bIsDirectory) -> bool
+	{
+		if (bIsDirectory)
+		{
+			DatasetDirectories.Add(FilenameOrDirectory);
+		}
+		return true; // Continue iteration
+	});
+
+	// Scan each dataset directory
+	for (const FString& DatasetDir : DatasetDirectories)
 	{
 		FTrajectoryDatasetInfo DatasetInfo;
-		if (ScanDatasetDirectory(SubDir, DatasetInfo))
+		if (ScanDatasetDirectory(DatasetDir, ScenarioName, DatasetInfo))
 		{
-			Datasets.Add(DatasetInfo);
+			OutDatasets.Add(DatasetInfo);
 			
-			if (Settings->bDebugLogging)
+			if (Settings && Settings->bDebugLogging)
 			{
-				UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Found dataset '%s' with %d shards, %d trajectories"),
-					*DatasetInfo.DatasetName, DatasetInfo.Shards.Num(), DatasetInfo.TotalTrajectories);
+				UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Found dataset '%s' in scenario '%s' with %d shards, %d trajectories"),
+					*DatasetInfo.DatasetName, *ScenarioName, DatasetInfo.Shards.Num(), DatasetInfo.TotalTrajectories);
 			}
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Scan complete. Found %d datasets"), Datasets.Num());
-	return true;
+	return OutDatasets.Num() - InitialCount;
 }
 
-bool UTrajectoryDataManager::ScanDatasetDirectory(const FString& DatasetDirectory, FTrajectoryDatasetInfo& OutDatasetInfo)
+bool UTrajectoryDataManager::ScanDatasetDirectory(const FString& DatasetDirectory, const FString& ScenarioName, FTrajectoryDatasetInfo& OutDatasetInfo)
 {
 	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
 	
@@ -95,6 +130,7 @@ bool UTrajectoryDataManager::ScanDatasetDirectory(const FString& DatasetDirector
 	FString DatasetName = FPaths::GetCleanFilename(DatasetDirectory);
 	OutDatasetInfo.DatasetName = DatasetName;
 	OutDatasetInfo.DatasetPath = DatasetDirectory;
+	OutDatasetInfo.ScenarioName = ScenarioName;
 	OutDatasetInfo.Shards.Empty();
 	OutDatasetInfo.TotalTrajectories = 0;
 

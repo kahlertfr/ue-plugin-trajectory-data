@@ -64,12 +64,21 @@ private:
 	TArray<FTrajectoryDatasetInfo> Datasets;
 
 	/**
-	 * Scan a single directory for trajectory data shards
+	 * Scan a single scenario directory for datasets
+	 * @param ScenarioDirectory Path to the scenario directory
+	 * @param OutDatasets Output array to append discovered datasets to
+	 * @return Number of datasets found in the scenario
+	 */
+	int32 ScanScenarioDirectory(const FString& ScenarioDirectory, TArray<FTrajectoryDatasetInfo>& OutDatasets);
+
+	/**
+	 * Scan a single dataset directory for trajectory data shards
 	 * @param DatasetDirectory Path to the dataset directory
+	 * @param ScenarioName Name of the parent scenario
 	 * @param OutDatasetInfo Output parameter containing the scanned dataset info
 	 * @return True if scanning succeeded and shards were found
 	 */
-	bool ScanDatasetDirectory(const FString& DatasetDirectory, FTrajectoryDatasetInfo& OutDatasetInfo);
+	bool ScanDatasetDirectory(const FString& DatasetDirectory, const FString& ScenarioName, FTrajectoryDatasetInfo& OutDatasetInfo);
 
 	/**
 	 * Parse a metadata JSON file

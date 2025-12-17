@@ -56,18 +56,18 @@ public:
 	static void ClearDatasets();
 
 	/**
-	 * Get the configured datasets directory path
-	 * @return Path to the datasets directory
+	 * Get the configured scenarios directory path
+	 * @return Path to the scenarios directory
 	 */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data", meta = (DisplayName = "Get Datasets Directory"))
-	static FString GetDatasetsDirectory();
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data", meta = (DisplayName = "Get Scenarios Directory"))
+	static FString GetScenariosDirectory();
 
 	/**
-	 * Set the datasets directory path
-	 * @param NewPath New path to the datasets directory
+	 * Set the scenarios directory path
+	 * @param NewPath New path to the scenarios directory
 	 */
-	UFUNCTION(BlueprintCallable, Category = "Trajectory Data", meta = (DisplayName = "Set Datasets Directory"))
-	static void SetDatasetsDirectory(const FString& NewPath);
+	UFUNCTION(BlueprintCallable, Category = "Trajectory Data", meta = (DisplayName = "Set Scenarios Directory"))
+	static void SetScenariosDirectory(const FString& NewPath);
 
 	/**
 	 * Calculate the maximum displayable sample points for a dataset

@@ -54,22 +54,22 @@ void UTrajectoryDataBlueprintLibrary::ClearDatasets()
 	}
 }
 
-FString UTrajectoryDataBlueprintLibrary::GetDatasetsDirectory()
+FString UTrajectoryDataBlueprintLibrary::GetScenariosDirectory()
 {
 	UTrajectoryDataSettings* Settings = UTrajectoryDataSettings::Get();
 	if (Settings)
 	{
-		return Settings->DatasetsDirectory;
+		return Settings->ScenariosDirectory;
 	}
 	return FString();
 }
 
-void UTrajectoryDataBlueprintLibrary::SetDatasetsDirectory(const FString& NewPath)
+void UTrajectoryDataBlueprintLibrary::SetScenariosDirectory(const FString& NewPath)
 {
 	UTrajectoryDataSettings* Settings = UTrajectoryDataSettings::Get();
 	if (Settings)
 	{
-		Settings->DatasetsDirectory = NewPath;
+		Settings->ScenariosDirectory = NewPath;
 		// Note: SaveConfig is called explicitly here. Consider calling SaveConfig manually
 		// after multiple setting changes if you're updating multiple properties at once.
 		Settings->SaveConfig();
