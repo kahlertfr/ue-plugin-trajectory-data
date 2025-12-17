@@ -56,7 +56,7 @@ This guide will help you get started with the Trajectory Data plugin in 5 minute
 ## Step 3: Configure the Plugin
 
 1. Navigate to your project's `Config` directory
-2. Create or edit `DefaultTrajectoryData.ini`
+2. Create or edit `DefaultTrajectoryData.ini` (rename ExampleTrajectoryData.ini)
 3. Add the following:
    ```ini
    [/Script/TrajectoryData.TrajectoryDataSettings]
