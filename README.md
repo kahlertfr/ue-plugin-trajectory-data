@@ -2,6 +2,31 @@
 
 This plugin enables loading and management of trajectory data from simulation outputs in Unreal Engine.
 
+## Directory Structure Convention
+
+The plugin uses a three-level naming hierarchy:
+
+**Scenario → Dataset → Shard**
+
+- **Scenario**: Top-level directory representing a simulation scenario or experiment
+- **Dataset**: Contains trajectory data for a specific type of entities within the scenario
+  - Multiple datasets in the same scenario are spatially and temporally related
+- **Shard**: Contains the actual trajectory data files (manifest, metadata, and binary data)
+
+Example:
+```
+ScenariosDirectory/
+└── experiment_2025_01/          ← Scenario
+    ├── bubbles/                  ← Dataset
+    │   ├── shard_0/              ← Shard
+    │   │   └── shard-manifest.json
+    │   └── shard_1/              ← Shard
+    │       └── shard-manifest.json
+    └── particles/                ← Dataset
+        └── shard_0/              ← Shard
+            └── shard-manifest.json
+```
+
 ## Overview
 
 The Trajectory Data plugin provides C++ classes and Blueprint-callable functions to:
