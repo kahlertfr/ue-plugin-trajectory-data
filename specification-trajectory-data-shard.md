@@ -1,8 +1,10 @@
-# Trajectory Dataset — Refined Specification
+# Trajectory Dataset — Specification
 
-version: b95b7d24eae of trajectory-converter
+version: b95b7d24eae of trajectory-converter - changed externaly
 
 This document defines the on-disk layout, semantics, and recommended reading/writing conventions for the Trajectory Dataset format.
+
+The trajectory data is organized in the following structure: scenarios - datasets - shards. Each scenario can contain multiple datasets that are spatially and temporally related. Each dataset consists of multiple data shards that are described below.
 
 ## Overview
 
@@ -15,7 +17,7 @@ Store many trajectories (3D positions over time) in fixed-size, mmap-friendly bi
 - **dataset-manifest.json** (human readable) (JSON): describes dataset-level metadata (version, endianness, ranges)
 - **dataset-meta.bin** (binary): compact binary summary used by tools for fast lookup
 - **dataset-trajmeta.bin** (binary): one fixed-size record per trajectory with per-trajectory metadata
-- **shard-<interval>.bin** (binary): one or more data files, each covering a consecutive time-interval block (optional chunking parameter), where `<interval>` is the global_interval_index (e.g., `shard-0.bin`, `shard-1.bin`, etc.)
+- **shard-<interval>.bin** (binary): one or more data files, each covering a consecutive time-interval block (optional chunking parameter), where `<interval>` is the first time step covered by that interval
 
 ### Common conventions
 
@@ -32,6 +34,7 @@ Store many trajectories (3D positions over time) in fixed-size, mmap-friendly bi
 
 ```json
 {
+  "scenario_name" : "scenario_name",
   "dataset_name": "dataset-name",
   "format_version": 1,
   "endianness": "little",
@@ -136,7 +139,7 @@ Entry layout (per-trajectory) — fixed size for fast mmap:
 ```cpp
 /* dataset-meta.bin */
 #pragma pack(push,1)
-struct ShardMeta {
+struct DatasetMeta {
   char magic[4]; // "TDSH"
   uint8_t format_version;
   uint8_t endianness_flag;
@@ -194,4 +197,5 @@ struct TrajEntryNaN {
 
 ## Change log
 
+- format_version = 2: consistent naming convention
 - format_version = 1: initial stable definition for the project.
