@@ -20,7 +20,7 @@ public:
 	UTrajectoryDataManager();
 
 	/**
-	 * Scan the configured datasets directory and gather all available datasets
+	 * Scan the configured scenarios directory and gather all available datasets from all scenarios
 	 * @return True if scanning succeeded, false otherwise
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Trajectory Data")

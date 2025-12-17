@@ -19,7 +19,7 @@ class TRAJECTORYDATA_API UTrajectoryDataBlueprintLibrary : public UBlueprintFunc
 
 public:
 	/**
-	 * Scan the configured datasets directory and gather all available datasets
+	 * Scan the configured scenarios directory and gather all available datasets from all scenarios
 	 * Call this before accessing dataset information
 	 * @return True if scanning succeeded, false otherwise
 	 */
