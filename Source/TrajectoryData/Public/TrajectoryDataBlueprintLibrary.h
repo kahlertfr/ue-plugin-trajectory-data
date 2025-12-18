@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "TrajectoryDataTypes.h"
+#include "TrajectoryDataStructures.h"
 #include "TrajectoryDataMemoryEstimator.h"
 #include "TrajectoryDataBlueprintLibrary.generated.h"
 
@@ -170,4 +171,50 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Memory", meta = (DisplayName = "Format Memory Size"))
 	static FString FormatMemorySize(int64 Bytes);
+
+	// Trajectory Loading Functions
+
+	/**
+	 * Validate trajectory load parameters before loading
+	 * @param Params Load parameters to validate
+	 * @return Validation result with memory estimates
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Trajectory Data|Loading", meta = (DisplayName = "Validate Trajectory Load Params"))
+	static FTrajectoryLoadValidation ValidateTrajectoryLoadParams(const FTrajectoryLoadParams& Params);
+
+	/**
+	 * Load trajectory data synchronously (blocking)
+	 * @param Params Load parameters
+	 * @return Load result with trajectory data
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Trajectory Data|Loading", meta = (DisplayName = "Load Trajectories Sync"))
+	static FTrajectoryLoadResult LoadTrajectoriesSync(const FTrajectoryLoadParams& Params);
+
+	/**
+	 * Get the trajectory data loader singleton
+	 * Use this to access async loading functions and delegates
+	 * @return Trajectory data loader instance
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Loading", meta = (DisplayName = "Get Trajectory Loader"))
+	static class UTrajectoryDataLoader* GetTrajectoryLoader();
+
+	/**
+	 * Unload all currently loaded trajectory data to free memory
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Trajectory Data|Loading", meta = (DisplayName = "Unload All Trajectories"))
+	static void UnloadAllTrajectories();
+
+	/**
+	 * Get current memory usage for loaded trajectory data
+	 * @return Memory usage in bytes
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Loading", meta = (DisplayName = "Get Loaded Data Memory Usage"))
+	static int64 GetLoadedDataMemoryUsage();
+
+	/**
+	 * Get number of currently loaded trajectories
+	 * @return Number of loaded trajectories
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Loading", meta = (DisplayName = "Get Num Loaded Trajectories"))
+	static int32 GetNumLoadedTrajectories();
 };

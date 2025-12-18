@@ -4,6 +4,7 @@
 #include "TrajectoryDataManager.h"
 #include "TrajectoryDataSettings.h"
 #include "TrajectoryDataMemoryEstimator.h"
+#include "TrajectoryDataLoader.h"
 
 bool UTrajectoryDataBlueprintLibrary::ScanTrajectoryDatasets()
 {
@@ -197,4 +198,68 @@ FString UTrajectoryDataBlueprintLibrary::FormatMemorySize(int64 Bytes)
 	{
 		return FString::Printf(TEXT("%lld Bytes"), Bytes);
 	}
+}
+
+// Trajectory Loading Functions
+
+FTrajectoryLoadValidation UTrajectoryDataBlueprintLibrary::ValidateTrajectoryLoadParams(const FTrajectoryLoadParams& Params)
+{
+	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
+	if (Loader)
+	{
+		return Loader->ValidateLoadParams(Params);
+	}
+	
+	FTrajectoryLoadValidation Validation;
+	Validation.bCanLoad = false;
+	Validation.Message = TEXT("Failed to get trajectory loader");
+	return Validation;
+}
+
+FTrajectoryLoadResult UTrajectoryDataBlueprintLibrary::LoadTrajectoriesSync(const FTrajectoryLoadParams& Params)
+{
+	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
+	if (Loader)
+	{
+		return Loader->LoadTrajectoriesSync(Params);
+	}
+	
+	FTrajectoryLoadResult Result;
+	Result.bSuccess = false;
+	Result.ErrorMessage = TEXT("Failed to get trajectory loader");
+	return Result;
+}
+
+UTrajectoryDataLoader* UTrajectoryDataBlueprintLibrary::GetTrajectoryLoader()
+{
+	return UTrajectoryDataLoader::Get();
+}
+
+void UTrajectoryDataBlueprintLibrary::UnloadAllTrajectories()
+{
+	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
+	if (Loader)
+	{
+		Loader->UnloadAll();
+	}
+}
+
+int64 UTrajectoryDataBlueprintLibrary::GetLoadedDataMemoryUsage()
+{
+	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
+	if (Loader)
+	{
+		return Loader->GetLoadedDataMemoryUsage();
+	}
+	return 0;
+}
+
+int32 UTrajectoryDataBlueprintLibrary::GetNumLoadedTrajectories()
+{
+	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
+	if (Loader)
+	{
+		return Loader->GetLoadedTrajectories().Num();
+	}
+	return 0;
 }
