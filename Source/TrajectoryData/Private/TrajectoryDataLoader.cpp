@@ -3,6 +3,7 @@
 #include "TrajectoryDataLoader.h"
 #include "TrajectoryDataSettings.h"
 #include "TrajectoryDataMemoryEstimator.h"
+#include "TrajectoryDataBlueprintLibrary.h"
 #include "Misc/Paths.h"
 #include "Misc/FileHelper.h"
 #include "HAL/PlatformFileManager.h"
@@ -127,17 +128,17 @@ FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTraje
 
 	// Check against available memory
 	UTrajectoryDataMemoryEstimator* MemEstimator = UTrajectoryDataMemoryEstimator::Get();
-	int64 MaxMemory = MemEstimator->GetMaxTrajectoryDataMemory();
-	int64 CurrentUsage = MemEstimator->GetEstimatedUsage() + CurrentMemoryUsage;
-	int64 Available = MaxMemory - CurrentUsage;
+	FTrajectoryDataMemoryInfo MemInfo = MemEstimator->GetMemoryInfo();
+	int64 CurrentUsage = MemInfo.CurrentEstimatedUsage + CurrentMemoryUsage;
+	int64 Available = MemInfo.MaxTrajectoryDataMemory - CurrentUsage;
 
 	if (Validation.EstimatedMemoryBytes > Available)
 	{
 		Validation.bCanLoad = false;
 		Validation.Message = FString::Printf(
 			TEXT("Insufficient memory: requires %s, available %s"),
-			*UTrajectoryDataMemoryEstimator::FormatMemorySize(Validation.EstimatedMemoryBytes),
-			*UTrajectoryDataMemoryEstimator::FormatMemorySize(Available));
+			*UTrajectoryDataBlueprintLibrary::FormatMemorySize(Validation.EstimatedMemoryBytes),
+			*UTrajectoryDataBlueprintLibrary::FormatMemorySize(Available));
 	}
 	else
 	{
@@ -319,7 +320,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 	Result.MemoryUsedBytes = MemoryUsed;
 
 	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Successfully loaded %d trajectories, using %s memory"),
-		LoadedCount, *UTrajectoryDataMemoryEstimator::FormatMemorySize(MemoryUsed));
+		LoadedCount, *UTrajectoryDataBlueprintLibrary::FormatMemorySize(MemoryUsed));
 
 	return Result;
 }
