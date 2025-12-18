@@ -380,16 +380,24 @@ bool UTrajectoryDataLoader::ReadTrajectoryMeta(const FString& DatasetPath, TArra
 
 bool UTrajectoryDataLoader::ReadShardHeader(const FString& ShardPath, FDataBlockHeaderBinary& OutHeader)
 {
-	TArray<uint8> HeaderData;
-	if (!FFileHelper::LoadFileToArray(HeaderData, *ShardPath, 0, sizeof(FDataBlockHeaderBinary)))
+	// Use file handle to read only the header portion
+	IFileHandle* FileHandle = FPlatformFileManager::Get().GetPlatformFile().OpenRead(*ShardPath);
+	if (!FileHandle)
 	{
 		return false;
 	}
 
-	if (HeaderData.Num() < sizeof(FDataBlockHeaderBinary))
+	// Read only the header bytes
+	TArray<uint8> HeaderData;
+	HeaderData.SetNumUninitialized(sizeof(FDataBlockHeaderBinary));
+	
+	if (!FileHandle->Read(HeaderData.GetData(), sizeof(FDataBlockHeaderBinary)))
 	{
+		delete FileHandle;
 		return false;
 	}
+
+	delete FileHandle;
 
 	FMemory::Memcpy(&OutHeader, HeaderData.GetData(), sizeof(FDataBlockHeaderBinary));
 
