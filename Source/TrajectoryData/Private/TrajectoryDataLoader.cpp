@@ -280,7 +280,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 
 		// Load trajectory data from shard
 		FLoadedTrajectory LoadedTraj;
-		if (LoadTrajectoryFromShard(ShardPath, ShardHeader, *TrajMeta, Params, LoadedTraj))
+		if (LoadTrajectoryFromShard(ShardPath, ShardHeader, *TrajMeta, DatasetMeta, Params, LoadedTraj))
 		{
 			// Calculate memory used by this trajectory
 			int64 TrajMemory = sizeof(FLoadedTrajectory) + LoadedTraj.Samples.Num() * sizeof(FTrajectoryPositionSample);
@@ -399,7 +399,8 @@ bool UTrajectoryDataLoader::ReadShardHeader(const FString& ShardPath, FDataBlock
 }
 
 bool UTrajectoryDataLoader::LoadTrajectoryFromShard(const FString& ShardPath, const FDataBlockHeaderBinary& Header,
-	const FTrajectoryMetaBinary& TrajMeta, const FTrajectoryLoadParams& Params, FLoadedTrajectory& OutTrajectory)
+	const FTrajectoryMetaBinary& TrajMeta, const FDatasetMetaBinary& DatasetMeta,
+	const FTrajectoryLoadParams& Params, FLoadedTrajectory& OutTrajectory)
 {
 	// Set trajectory metadata
 	OutTrajectory.TrajectoryId = TrajMeta.TrajectoryId;
@@ -408,14 +409,13 @@ bool UTrajectoryDataLoader::LoadTrajectoryFromShard(const FString& ShardPath, co
 	OutTrajectory.Extent = FVector(TrajMeta.Extent[0], TrajMeta.Extent[1], TrajMeta.Extent[2]);
 
 	// Calculate entry offset in file
-	int64 EntryOffset = Header.DataSectionOffset + (TrajMeta.EntryOffsetIndex * Header.TimeStepIntervalSize * 12);
+	// According to spec: file_offset = data_section_offset + (entry_offset_index * entry_size_bytes)
+	int64 EntryOffset = Header.DataSectionOffset + (TrajMeta.EntryOffsetIndex * (int64)DatasetMeta.EntrySizeBytes);
 
 	// Read trajectory entry data
 	// Entry structure: uint64 trajectory_id + int32 start_time_step + int32 valid_sample_count + positions
 	TArray<uint8> EntryData;
-	int32 EntryHeaderSize = sizeof(uint64) + sizeof(int32) + sizeof(int32);
-	int32 PositionsSize = Header.TimeStepIntervalSize * 12; // 3 floats per sample
-	int32 TotalEntrySize = EntryHeaderSize + PositionsSize;
+	int32 TotalEntrySize = DatasetMeta.EntrySizeBytes;
 
 	IFileHandle* FileHandle = FPlatformFileManager::Get().GetPlatformFile().OpenRead(*ShardPath);
 	if (!FileHandle)
@@ -436,7 +436,7 @@ bool UTrajectoryDataLoader::LoadTrajectoryFromShard(const FString& ShardPath, co
 
 	delete FileHandle;
 
-	// Parse entry
+	// Parse entry header
 	int32 Offset = 0;
 	uint64 EntryTrajId;
 	FMemory::Memcpy(&EntryTrajId, EntryData.GetData() + Offset, sizeof(uint64));
@@ -453,7 +453,8 @@ bool UTrajectoryDataLoader::LoadTrajectoryFromShard(const FString& ShardPath, co
 	// Verify trajectory ID matches
 	if (EntryTrajId != TrajMeta.TrajectoryId)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Trajectory ID mismatch in shard entry"));
+		UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Trajectory ID mismatch in shard entry: expected %lld, got %lld"),
+			TrajMeta.TrajectoryId, EntryTrajId);
 		return false;
 	}
 

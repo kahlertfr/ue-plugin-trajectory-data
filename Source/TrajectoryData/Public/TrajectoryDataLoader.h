@@ -113,8 +113,8 @@ private:
 
 	/** Load trajectory data from shard file */
 	bool LoadTrajectoryFromShard(const FString& ShardPath, const FDataBlockHeaderBinary& Header,
-		const FTrajectoryMetaBinary& TrajMeta, const FTrajectoryLoadParams& Params,
-		FLoadedTrajectory& OutTrajectory);
+		const FTrajectoryMetaBinary& TrajMeta, const FDatasetMetaBinary& DatasetMeta,
+		const FTrajectoryLoadParams& Params, FLoadedTrajectory& OutTrajectory);
 
 	/** Internal implementation of synchronous loading */
 	FTrajectoryLoadResult LoadTrajectoriesInternal(const FTrajectoryLoadParams& Params);
