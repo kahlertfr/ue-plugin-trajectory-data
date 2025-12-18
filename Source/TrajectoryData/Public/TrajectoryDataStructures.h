@@ -120,11 +120,14 @@ struct TRAJECTORYDATA_API FLoadedTrajectory
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	TArray<FTrajectoryPositionSample> Samples;
 
+	/** Default extent in meters (10 cm half-extent = 20 cm full size) */
+	static constexpr float DefaultExtentMeters = 0.1f;
+
 	FLoadedTrajectory()
 		: TrajectoryId(0)
 		, StartTimeStep(0)
 		, EndTimeStep(0)
-		, Extent(FVector(0.1f, 0.1f, 0.1f))
+		, Extent(FVector(DefaultExtentMeters, DefaultExtentMeters, DefaultExtentMeters))
 	{
 	}
 };

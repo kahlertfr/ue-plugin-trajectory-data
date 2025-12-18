@@ -116,8 +116,9 @@ FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTraje
 	Validation.NumSamplesPerTrajectory = NumSamples;
 	
 	// Memory calculation: trajectory metadata + sample data
-	// Each sample: FVector (12 bytes) + int32 (4 bytes) + bool (1 byte) = ~20 bytes with padding
-	int64 SampleMemory = (int64)TrajectoryIds.Num() * NumSamples * 20;
+	// Approximate bytes per sample (FVector + int32 + bool + padding)
+	static constexpr int32 BytesPerSample = 20;
+	int64 SampleMemory = (int64)TrajectoryIds.Num() * NumSamples * BytesPerSample;
 	
 	// Trajectory metadata overhead
 	int64 TrajMetaMemory = (int64)TrajectoryIds.Num() * 128; // Approximate overhead per trajectory
@@ -293,13 +294,15 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			if (bIsLoadingAsync)
 			{
 				float Progress = (float)LoadedCount / TrajectoryIds.Num() * 100.0f;
+				int32 TotalTraj = TrajectoryIds.Num();
 				
-				// Broadcast on game thread
-				AsyncTask(ENamedThreads::GameThread, [this, LoadedCount, TrajectoryIds, Progress]()
+				// Broadcast on game thread - use weak reference to prevent crashes
+				TWeakObjectPtr<UTrajectoryDataLoader> WeakThis(this);
+				AsyncTask(ENamedThreads::GameThread, [WeakThis, LoadedCount, TotalTraj, Progress]()
 				{
-					if (OnLoadProgress.IsBound())
+					if (WeakThis.IsValid() && WeakThis->OnLoadProgress.IsBound())
 					{
-						OnLoadProgress.Broadcast(LoadedCount, TrajectoryIds.Num(), Progress);
+						WeakThis->OnLoadProgress.Broadcast(LoadedCount, TotalTraj, Progress);
 					}
 				});
 			}
@@ -307,6 +310,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 	}
 
 	// Update loaded data
+	// Note: This replaces any previously loaded data
 	LoadedTrajectories = MoveTemp(NewTrajectories);
 	CurrentMemoryUsage = MemoryUsed;
 
@@ -458,14 +462,24 @@ bool UTrajectoryDataLoader::LoadTrajectoryFromShard(const FString& ShardPath, co
 		return false;
 	}
 
-	// Determine time range to load
+	// Determine time range to load relative to the interval
 	int32 StartTime = (Params.StartTimeStep < 0) ? 0 : Params.StartTimeStep;
 	int32 EndTime = (Params.EndTimeStep < 0) ? Header.TimeStepIntervalSize : Params.EndTimeStep;
 
 	// Parse positions
+	// Note: StartTimeStepInInterval indicates where this trajectory's data begins within the interval
+	// We need to adjust for this when calculating offsets
 	for (int32 TimeStep = StartTime; TimeStep < EndTime && TimeStep < Header.TimeStepIntervalSize; TimeStep += Params.SampleRate)
 	{
-		int32 PosOffset = Offset + (TimeStep * 12);
+		// Calculate offset accounting for where the trajectory actually starts in this interval
+		int32 RelativeTimeStep = TimeStep - StartTimeStepInInterval;
+		if (RelativeTimeStep < 0 || RelativeTimeStep >= ValidSampleCount)
+		{
+			// This time step is outside the valid range for this trajectory
+			continue;
+		}
+		
+		int32 PosOffset = Offset + (RelativeTimeStep * 12);
 		
 		float X, Y, Z;
 		FMemory::Memcpy(&X, EntryData.GetData() + PosOffset, sizeof(float));
@@ -561,7 +575,9 @@ int64 UTrajectoryDataLoader::CalculateMemoryRequirement(const FTrajectoryLoadPar
 		NumTrajectories = Params.TrajectorySelections.Num();
 	}
 
-	return NumTrajectories * TimeSteps * 20; // Approximate size per sample
+	// Approximate bytes per sample (same as in ValidateLoadParams)
+	static constexpr int32 BytesPerSample = 20;
+	return NumTrajectories * TimeSteps * BytesPerSample;
 }
 
 // FTrajectoryLoadTask implementation
@@ -579,7 +595,9 @@ FTrajectoryLoadTask::~FTrajectoryLoadTask()
 {
 	if (Thread)
 	{
-		Thread->Kill(true);
+		// Properly stop the thread before destroying
+		Stop();
+		Thread->WaitForCompletion();
 		delete Thread;
 		Thread = nullptr;
 	}
@@ -593,19 +611,28 @@ bool FTrajectoryLoadTask::Init()
 uint32 FTrajectoryLoadTask::Run()
 {
 	// Perform loading on background thread
-	Result = Loader->LoadTrajectoriesInternal(Params);
-
-	// Notify completion on game thread
-	AsyncTask(ENamedThreads::GameThread, [this]()
+	if (Loader)
 	{
-		if (Loader && Loader->OnLoadComplete.IsBound())
-		{
-			Loader->OnLoadComplete.Broadcast(Result.bSuccess, Result);
-		}
+		Result = Loader->LoadTrajectoriesInternal(Params);
+	}
+	else
+	{
+		Result.bSuccess = false;
+		Result.ErrorMessage = TEXT("Loader is null");
+	}
 
-		if (Loader)
+	// Notify completion on game thread - use weak reference to prevent crashes
+	TWeakObjectPtr<UTrajectoryDataLoader> WeakLoader(Loader);
+	FTrajectoryLoadResult ResultCopy = Result;
+	AsyncTask(ENamedThreads::GameThread, [WeakLoader, ResultCopy]()
+	{
+		if (WeakLoader.IsValid())
 		{
-			Loader->bIsLoadingAsync = false;
+			if (WeakLoader->OnLoadComplete.IsBound())
+			{
+				WeakLoader->OnLoadComplete.Broadcast(ResultCopy.bSuccess, ResultCopy);
+			}
+			WeakLoader->bIsLoadingAsync = false;
 		}
 	});
 
