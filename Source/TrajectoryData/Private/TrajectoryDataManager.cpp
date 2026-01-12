@@ -129,6 +129,7 @@ bool UTrajectoryDataManager::ScanDatasetDirectory(const FString& DatasetDirector
 	OutDatasetInfo.DatasetPath = DatasetDirectory;
 	OutDatasetInfo.ScenarioName = ScenarioName;
 	OutDatasetInfo.TotalTrajectories = 0;
+	OutDatasetInfo.UniqueDSName = DatasetName + "-" + ScenarioName;
 
 	// Look for dataset-manifest.json directly in the dataset directory
 	FString ManifestPath = FPaths::Combine(DatasetDirectory, TEXT("dataset-manifest.json"));
@@ -251,7 +252,7 @@ bool UTrajectoryDataManager::GetDatasetInfo(const FString& DatasetName, FTraject
 {
 	for (const FTrajectoryDatasetInfo& Dataset : Datasets)
 	{
-		if (Dataset.DatasetName.Equals(DatasetName, ESearchCase::IgnoreCase))
+		if (Dataset.UniqueDSName.Equals(DatasetName, ESearchCase::IgnoreCase))
 		{
 			OutDatasetInfo = Dataset;
 			return true;

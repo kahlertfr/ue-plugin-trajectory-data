@@ -123,6 +123,10 @@ struct TRAJECTORYDATA_API FTrajectoryDatasetInfo
 {
 	GENERATED_BODY()
 
+	/** Name of the scenario this dataset belongs to */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString UniqueDSName;
+
 	/** Name of the dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FString DatasetName;
@@ -144,7 +148,8 @@ struct TRAJECTORYDATA_API FTrajectoryDatasetInfo
 	int64 TotalTrajectories;
 
 	FTrajectoryDatasetInfo()
-		: DatasetName(TEXT(""))
+		: UniqueDSName(TEXT(""))
+		, DatasetName(TEXT(""))
 		, DatasetPath(TEXT(""))
 		, ScenarioName(TEXT(""))
 		, TotalTrajectories(0)
