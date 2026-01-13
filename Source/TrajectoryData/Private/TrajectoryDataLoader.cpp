@@ -296,7 +296,9 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 
 		// Load trajectories from this shard in parallel
 		TArray<FLoadedTrajectory> ShardTrajectories;
+		TArray<bool> LoadSuccess;
 		ShardTrajectories.SetNum(TrajMetasInShard.Num());
+		LoadSuccess.SetNum(TrajMetasInShard.Num());
 
 		ParallelFor(TrajMetasInShard.Num(), [&](int32 Index)
 		{
@@ -304,43 +306,49 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			
 			// Load trajectory using memory-mapped data (zero-copy)
 			FLoadedTrajectory& LoadedTraj = ShardTrajectories[Index];
-			if (!LoadTrajectoryFromShardMapped(MappedData, MappedSize, ShardHeader, *TrajMeta, DatasetMeta, Params, LoadedTraj))
-			{
-				// Mark as invalid by setting TrajectoryId to 0
-				LoadedTraj.TrajectoryId = 0;
-			}
+			LoadSuccess[Index] = LoadTrajectoryFromShardMapped(MappedData, MappedSize, ShardHeader, *TrajMeta, DatasetMeta, Params, LoadedTraj);
 		});
 
-		// Accumulate results in thread-safe manner
-		for (FLoadedTrajectory& LoadedTraj : ShardTrajectories)
+		// Accumulate results (no longer in critical section for each trajectory)
+		TArray<FLoadedTrajectory> ValidTrajectories;
+		int64 ShardMemoryUsed = 0;
+		
+		for (int32 Index = 0; Index < ShardTrajectories.Num(); ++Index)
 		{
-			if (LoadedTraj.TrajectoryId != 0) // Valid trajectory
+			if (LoadSuccess[Index])
 			{
+				FLoadedTrajectory& LoadedTraj = ShardTrajectories[Index];
 				// Calculate memory used by this trajectory
 				int64 TrajMemory = sizeof(FLoadedTrajectory) + LoadedTraj.Samples.Num() * sizeof(FTrajectoryPositionSample);
-				
-				FScopeLock Lock(&ResultMutex);
-				MemoryUsed += TrajMemory;
-				NewTrajectories.Add(MoveTemp(LoadedTraj));
-				LoadedCount++;
-
-				// Report progress for async loads
-				if (bIsLoadingAsync)
-				{
-					float Progress = (float)LoadedCount / TrajectoryIds.Num() * 100.0f;
-					int32 TotalTraj = TrajectoryIds.Num();
-					
-					// Broadcast on game thread - use weak reference to prevent crashes
-					TWeakObjectPtr<UTrajectoryDataLoader> WeakThis(this);
-					AsyncTask(ENamedThreads::GameThread, [WeakThis, LoadedCount, TotalTraj, Progress]()
-					{
-						if (WeakThis.IsValid() && WeakThis->OnLoadProgress.IsBound())
-						{
-							WeakThis->OnLoadProgress.Broadcast(LoadedCount, TotalTraj, Progress);
-						}
-					});
-				}
+				ShardMemoryUsed += TrajMemory;
+				ValidTrajectories.Add(MoveTemp(LoadedTraj));
 			}
+		}
+
+		// Update shared state in a single critical section
+		{
+			FScopeLock Lock(&ResultMutex);
+			MemoryUsed += ShardMemoryUsed;
+			NewTrajectories.Append(MoveTemp(ValidTrajectories));
+			LoadedCount += ValidTrajectories.Num();
+		}
+
+		// Report progress for async loads (outside critical section, once per shard)
+		if (bIsLoadingAsync)
+		{
+			float Progress = (float)LoadedCount / TrajectoryIds.Num() * 100.0f;
+			int32 TotalTraj = TrajectoryIds.Num();
+			int32 CurrentLoadedCount = LoadedCount;
+			
+			// Broadcast on game thread - use weak reference to prevent crashes
+			TWeakObjectPtr<UTrajectoryDataLoader> WeakThis(this);
+			AsyncTask(ENamedThreads::GameThread, [WeakThis, CurrentLoadedCount, TotalTraj, Progress]()
+			{
+				if (WeakThis.IsValid() && WeakThis->OnLoadProgress.IsBound())
+				{
+					WeakThis->OnLoadProgress.Broadcast(CurrentLoadedCount, TotalTraj, Progress);
+				}
+			});
 		}
 		
 		// Mapped file will be automatically unmapped when MappedShard goes out of scope
