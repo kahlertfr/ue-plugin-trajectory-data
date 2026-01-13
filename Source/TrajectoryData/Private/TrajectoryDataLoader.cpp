@@ -300,11 +300,13 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		ShardTrajectories.SetNum(TrajMetasInShard.Num());
 		LoadSuccess.SetNum(TrajMetasInShard.Num());
 
+		// Note: DatasetMeta, Params, and MappedData are read-only in the lambda and safe for concurrent access
 		ParallelFor(TrajMetasInShard.Num(), [&](int32 Index)
 		{
 			const FTrajectoryMetaBinary* TrajMeta = TrajMetasInShard[Index];
 			
 			// Load trajectory using memory-mapped data (zero-copy)
+			// Each thread writes to its own index in ShardTrajectories and LoadSuccess arrays
 			FLoadedTrajectory& LoadedTraj = ShardTrajectories[Index];
 			LoadSuccess[Index] = LoadTrajectoryFromShardMapped(MappedData, MappedSize, ShardHeader, *TrajMeta, DatasetMeta, Params, LoadedTraj);
 		});
@@ -326,19 +328,20 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		}
 
 		// Update shared state in a single critical section
+		int32 CurrentLoadedCount = 0;
 		{
 			FScopeLock Lock(&ResultMutex);
 			MemoryUsed += ShardMemoryUsed;
 			NewTrajectories.Append(MoveTemp(ValidTrajectories));
 			LoadedCount += ValidTrajectories.Num();
+			CurrentLoadedCount = LoadedCount; // Capture count inside lock
 		}
 
 		// Report progress for async loads (outside critical section, once per shard)
 		if (bIsLoadingAsync)
 		{
-			float Progress = (float)LoadedCount / TrajectoryIds.Num() * 100.0f;
+			float Progress = (float)CurrentLoadedCount / TrajectoryIds.Num() * 100.0f;
 			int32 TotalTraj = TrajectoryIds.Num();
-			int32 CurrentLoadedCount = LoadedCount;
 			
 			// Broadcast on game thread - use weak reference to prevent crashes
 			TWeakObjectPtr<UTrajectoryDataLoader> WeakThis(this);
