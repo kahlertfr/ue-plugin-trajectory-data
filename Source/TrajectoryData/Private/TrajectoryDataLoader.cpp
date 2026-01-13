@@ -812,17 +812,24 @@ TMap<int32, FShardInfo> UTrajectoryDataLoader::DiscoverShardFiles(const FString&
 	
 	// Scan dataset directory for shard files (pattern: shard-*.bin)
 	TArray<FString> FoundFiles;
-	PlatformFile.FindFiles(FoundFiles, *DatasetPath, TEXT(".bin"));
+	FString SearchPattern = FPaths::Combine(DatasetPath, TEXT("shard-*.bin"));
+	PlatformFile.IterateDirectory(*DatasetPath, [&FoundFiles](const TCHAR* FilenameOrDirectory, bool bIsDirectory) -> bool
+	{
+		if (!bIsDirectory)
+		{
+			FString Filename = FPaths::GetCleanFilename(FilenameOrDirectory);
+			// Only include files matching shard-*.bin pattern
+			if (Filename.StartsWith(TEXT("shard-")) && Filename.EndsWith(TEXT(".bin")))
+			{
+				FoundFiles.Add(Filename);
+			}
+		}
+		return true; // Continue iteration
+	});
 	
 	for (const FString& FileName : FoundFiles)
 	{
-		// Check if this is a shard file (matches pattern shard-<number>.bin)
-		if (!FileName.StartsWith(TEXT("shard-")))
-		{
-			continue;
-		}
-		
-		// Extract interval index from filename
+		// Extract interval index from filename (this should match DataFileIndex in trajectory metadata)
 		FString NumberPart = FileName.Mid(6); // Skip "shard-"
 		NumberPart = NumberPart.LeftChop(4); // Remove ".bin"
 		
@@ -831,7 +838,7 @@ TMap<int32, FShardInfo> UTrajectoryDataLoader::DiscoverShardFiles(const FString&
 			continue;
 		}
 		
-		int32 IntervalIndex = FCString::Atoi(*NumberPart);
+		int32 FileIndex = FCString::Atoi(*NumberPart);
 		FString FullPath = FPaths::Combine(DatasetPath, FileName);
 		
 		// Try to read the shard header to get GlobalIntervalIndex
@@ -875,10 +882,11 @@ TMap<int32, FShardInfo> UTrajectoryDataLoader::DiscoverShardFiles(const FString&
 		Info.StartTimeStep = DatasetMeta.FirstTimeStep + (Header.GlobalIntervalIndex * DatasetMeta.TimeStepIntervalSize);
 		Info.EndTimeStep = Info.StartTimeStep + DatasetMeta.TimeStepIntervalSize - 1;
 		
-		ShardInfoTable.Add(IntervalIndex, Info);
+		// Use FileIndex (from filename) as key to match with DataFileIndex in trajectory metadata
+		ShardInfoTable.Add(FileIndex, Info);
 		
-		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Discovered shard %d (interval %d): time steps %d-%d"),
-			IntervalIndex, Header.GlobalIntervalIndex, Info.StartTimeStep, Info.EndTimeStep);
+		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Discovered shard file %d (global interval %d): time steps %d-%d"),
+			FileIndex, Header.GlobalIntervalIndex, Info.StartTimeStep, Info.EndTimeStep);
 	}
 	
 	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Discovered %d shard files in dataset"), ShardInfoTable.Num());
