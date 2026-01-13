@@ -79,15 +79,17 @@ void UTrajectoryDataBlueprintLibrary::SetScenariosDirectory(const FString& NewPa
 
 int32 UTrajectoryDataBlueprintLibrary::CalculateMaxDisplayPoints(const FTrajectoryDatasetInfo& DatasetInfo)
 {
-	// Each trajectory has TimeStepIntervalSize samples
-	int64 TotalPoints = DatasetInfo.Metadata.TrajectoryCount * DatasetInfo.Metadata.TimeStepIntervalSize;
+	// Each trajectory has samples across the time range (LastTimeStep - FirstTimeStep)
+	int64 TimeSteps = DatasetInfo.Metadata.LastTimeStep - DatasetInfo.Metadata.FirstTimeStep;
+	int64 TotalPoints = DatasetInfo.Metadata.TrajectoryCount * TimeSteps;
 	// Clamp to int32 range for Blueprint compatibility
 	return (int32)FMath::Min(TotalPoints, (int64)MAX_int32);
 }
 
 int32 UTrajectoryDataBlueprintLibrary::CalculateDatasetDisplayPoints(const FTrajectoryDatasetMetadata& DatasetMetadata)
 {
-	int64 TotalPoints = DatasetMetadata.TrajectoryCount * DatasetMetadata.TimeStepIntervalSize;
+	int64 TimeSteps = DatasetMetadata.LastTimeStep - DatasetMetadata.FirstTimeStep;
+	int64 TotalPoints = DatasetMetadata.TrajectoryCount * TimeSteps;
 	// Clamp to int32 range for Blueprint compatibility
 	return (int32)FMath::Min(TotalPoints, (int64)MAX_int32);
 }
