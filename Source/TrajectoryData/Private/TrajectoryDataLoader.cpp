@@ -302,7 +302,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 
 		// Note: DatasetMeta, Params, and MappedData are read-only in the lambda and safe for concurrent access
 		// Explicit capture list to document thread safety
-		ParallelFor(TrajMetasInShard.Num(), [&TrajMetasInShard, &ShardTrajectories, &LoadSuccess, MappedData, MappedSize, &ShardHeader, &DatasetMeta, &Params](int32 Index)
+		ParallelFor(TrajMetasInShard.Num(), [this, &TrajMetasInShard, &ShardTrajectories, &LoadSuccess, MappedData, MappedSize, &ShardHeader, &DatasetMeta, &Params](int32 Index)
 		{
 			const FTrajectoryMetaBinary* TrajMeta = TrajMetasInShard[Index];
 			
