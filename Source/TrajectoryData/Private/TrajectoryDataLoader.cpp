@@ -274,8 +274,20 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		int32 ShardIndex = ShardGroup.Key;
 		const TArray<const FTrajectoryMetaBinary*>& TrajMetasInShard = ShardGroup.Value;
 
-		// Get shard file path
-		FString ShardPath = GetShardFilePath(Params.DatasetPath, ShardIndex);
+		// Get shard file path from ShardInfoTable (which has the actual discovered path)
+		FString ShardPath;
+		const FShardInfo* ShardInfo = ShardInfoTable.Find(ShardIndex);
+		if (ShardInfo && !ShardInfo->FilePath.IsEmpty())
+		{
+			// Use the discovered file path
+			ShardPath = ShardInfo->FilePath;
+		}
+		else
+		{
+			// Fallback: construct path (for backward compatibility if shard wasn't discovered)
+			ShardPath = GetShardFilePath(Params.DatasetPath, ShardIndex);
+			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Using fallback path construction for shard %d"), ShardIndex);
+		}
 
 		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
 		if (!PlatformFile.FileExists(*ShardPath))
