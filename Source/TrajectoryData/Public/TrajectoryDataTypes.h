@@ -22,6 +22,24 @@ struct TRAJECTORYDATA_API FTrajectoryDatasetMetadata
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FString DatasetName;
 
+	/** Physical time unit (e.g., seconds, milliseconds, minutes) */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString PhysicalTimeUnit;
+
+	/** Physical start time in physical_time_unit */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	double PhysicalStartTime;
+
+	/** Physical end time in physical_time_unit */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	double PhysicalEndTime;
+
+	/** Coordinate units (e.g., millimeters, meters) */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString CoordinateUnits;
+
+	// Read-only dataset meta info (from binary file or JSON mirror)
+	
 	/** Format version */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int32 FormatVersion;
@@ -30,25 +48,21 @@ struct TRAJECTORYDATA_API FTrajectoryDatasetMetadata
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FString Endianness;
 
-	/** Coordinate units (e.g., millimeters, meters) */
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	FString CoordinateUnits;
-
 	/** Floating point precision (e.g., float32) */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FString FloatPrecision;
 
-	/** Time units (e.g., seconds) */
+	/** First time step in the dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	FString TimeUnits;
+	int32 FirstTimeStep;
+
+	/** Last time step in the dataset */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	int32 LastTimeStep;
 
 	/** Time step interval size */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int32 TimeStepIntervalSize;
-
-	/** Time interval in seconds */
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	float TimeIntervalSeconds;
 
 	/** Entry size in bytes */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
@@ -93,13 +107,16 @@ struct TRAJECTORYDATA_API FTrajectoryDatasetMetadata
 	FTrajectoryDatasetMetadata()
 		: ScenarioName(TEXT(""))
 		, DatasetName(TEXT(""))
+		, PhysicalTimeUnit(TEXT("seconds"))
+		, PhysicalStartTime(0.0)
+		, PhysicalEndTime(0.0)
+		, CoordinateUnits(TEXT(""))
 		, FormatVersion(1)
 		, Endianness(TEXT("little"))
-		, CoordinateUnits(TEXT(""))
 		, FloatPrecision(TEXT("float32"))
-		, TimeUnits(TEXT("seconds"))
+		, FirstTimeStep(0)
+		, LastTimeStep(0)
 		, TimeStepIntervalSize(0)
-		, TimeIntervalSeconds(0.0f)
 		, EntrySizeBytes(0)
 		, BoundingBoxMin(FVector::ZeroVector)
 		, BoundingBoxMax(FVector::ZeroVector)

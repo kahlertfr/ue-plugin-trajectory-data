@@ -7,7 +7,7 @@
 
 /**
  * Binary structure for Dataset Meta (dataset-meta.bin)
- * Total size: 76 bytes
+ * Total size: 92 bytes
  */
 #pragma pack(push, 1)
 struct FDatasetMetaBinary
@@ -15,8 +15,10 @@ struct FDatasetMetaBinary
 	char Magic[4];                      // "TDSH"
 	uint8 FormatVersion;                // = 1
 	uint8 EndiannessFlag;               // 0 = little, 1 = big
-	uint16 Reserved;
-	double TimeIntervalSeconds;
+	uint8 FloatPrecision;               // 0 = float32, 1 = float64
+	uint8 Reserved;
+	int32 FirstTimeStep;
+	int32 LastTimeStep;
 	int32 TimeStepIntervalSize;
 	int32 EntrySizeBytes;
 	float BBoxMin[3];
@@ -24,6 +26,8 @@ struct FDatasetMetaBinary
 	uint64 TrajectoryCount;
 	uint64 FirstTrajectoryId;
 	uint64 LastTrajectoryId;
+	int64 CreatedAtUnix;
+	char ConverterVersion[8];
 	uint32 Reserved2;
 };
 #pragma pack(pop)

@@ -78,8 +78,8 @@ FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTraje
 	}
 
 	// Validate time range
-	int32 StartTime = (Params.StartTimeStep < 0) ? 0 : Params.StartTimeStep;
-	int32 EndTime = (Params.EndTimeStep < 0) ? DatasetMeta.TimeStepIntervalSize : Params.EndTimeStep;
+	int32 StartTime = (Params.StartTimeStep < 0) ? DatasetMeta.FirstTimeStep : Params.StartTimeStep;
+	int32 EndTime = (Params.EndTimeStep < 0) ? DatasetMeta.LastTimeStep : Params.EndTimeStep;
 
 	if (StartTime >= EndTime)
 	{
@@ -234,8 +234,8 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 	}
 
 	// Determine time range
-	int32 StartTime = (Params.StartTimeStep < 0) ? 0 : Params.StartTimeStep;
-	int32 EndTime = (Params.EndTimeStep < 0) ? DatasetMeta.TimeStepIntervalSize : Params.EndTimeStep;
+	int32 StartTime = (Params.StartTimeStep < 0) ? DatasetMeta.FirstTimeStep : Params.StartTimeStep;
+	int32 EndTime = (Params.EndTimeStep < 0) ? DatasetMeta.LastTimeStep : Params.EndTimeStep;
 
 	Result.LoadedStartTimeStep = StartTime;
 	Result.LoadedEndTimeStep = EndTime;
@@ -472,6 +472,11 @@ bool UTrajectoryDataLoader::LoadTrajectoryFromShard(const FString& ShardPath, co
 	}
 
 	// Determine time range to load relative to the interval
+	// NOTE: Current implementation limitation - this loads only from a single shard.
+	// For proper multi-shard support, we would need to:
+	// 1. Calculate the global interval index from Header.GlobalIntervalIndex
+	// 2. Map Params time steps to the local interval range
+	// 3. Load additional shards if the requested time range spans multiple intervals
 	int32 StartTime = (Params.StartTimeStep < 0) ? 0 : Params.StartTimeStep;
 	int32 EndTime = (Params.EndTimeStep < 0) ? Header.TimeStepIntervalSize : Params.EndTimeStep;
 
@@ -572,7 +577,7 @@ int64 UTrajectoryDataLoader::CalculateMemoryRequirement(const FTrajectoryLoadPar
 	const FDatasetMetaBinary& DatasetMeta)
 {
 	// This is a rough estimate
-	int32 TimeSteps = DatasetMeta.TimeStepIntervalSize;
+	int32 TimeSteps = DatasetMeta.LastTimeStep - DatasetMeta.FirstTimeStep;
 	if (Params.StartTimeStep >= 0 && Params.EndTimeStep >= 0)
 	{
 		TimeSteps = (Params.EndTimeStep - Params.StartTimeStep) / Params.SampleRate;
