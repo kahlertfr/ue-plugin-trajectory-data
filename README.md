@@ -36,14 +36,23 @@ The Trajectory Data plugin provides C++ classes and Blueprint-callable functions
 - Configure the location of trajectory datasets
 - Scan and discover available datasets
 - Read metadata from trajectory data shards
+- **Load actual trajectory data** from binary files
 - Access dataset information from Blueprints for visualization
+- Stream and manage large trajectory datasets efficiently
 
 ## Features
 
 - **Configuration Management**: Specify the location of trajectory datasets via a config file
 - **Dataset Discovery**: Automatically scan directories to find available trajectory datasets
 - **Metadata Reading**: Parse and access metadata from trajectory data shards (number of trajectories, samples, time steps, etc.)
+- **Trajectory Data Loading**: Load actual 3D position data with flexible filtering and sampling
+  - Multiple loading strategies (first N, distributed, explicit list)
+  - Configurable time ranges and sample rates
+  - Per-trajectory time range support
+  - Synchronous and asynchronous loading
+- **Data Streaming**: Load and unload data dynamically to manage memory usage
 - **Memory Monitoring**: Real-time memory estimation and capacity monitoring for trajectory data loading
+- **Multi-threading**: Background loading with progress callbacks
 - **Blueprint Integration**: Full Blueprint support with easy-to-use functions for building UIs and visualizations
 - **Spatially Correlated Data**: Support for multiple related shards with the same spatial origin
 
@@ -319,21 +328,86 @@ for (const FTrajectoryDatasetInfo& Dataset : Datasets)
 }
 ```
 
+## Trajectory Data Loading
+
+The plugin now supports loading actual trajectory data from binary files:
+
+### Loading Features
+
+- **Full Dataset Loading**: Load trajectories with customizable parameters
+  - Configurable time range (start/end time steps)
+  - Sample rate control (load every Nth sample)
+  - Trajectory selection strategies (first N, distributed, explicit list)
+- **Partial Loading**: Load specific trajectories by ID with individual time ranges
+- **Memory Validation**: Check memory requirements before loading
+- **Async Loading**: Non-blocking loading with progress callbacks
+- **Data Streaming**: Adjust time ranges dynamically to manage memory
+
+### Loading Strategies
+
+1. **First N Trajectories**: Load the first N trajectories from the dataset
+2. **Distributed**: Load N trajectories evenly distributed across the dataset
+3. **Explicit List**: Load specific trajectories by ID with custom time ranges per trajectory
+
+### Blueprint Functions
+
+- **Validate Trajectory Load Params** - Validate before loading
+- **Load Trajectories Sync** - Synchronous (blocking) loading
+- **Load Trajectories Async** - Asynchronous loading with progress callbacks
+- **Get Trajectory Loader** - Access loader for async operations
+- **Unload All Trajectories** - Free memory
+- **Get Loaded Data Memory Usage** - Monitor memory usage
+
+### C++ API
+
+```cpp
+#include "TrajectoryDataLoader.h"
+
+// Create load parameters
+FTrajectoryLoadParams Params;
+Params.DatasetPath = TEXT("C:/Data/Scenarios/Test/Dataset1");
+Params.StartTimeStep = 0;
+Params.EndTimeStep = 500;
+Params.SampleRate = 1;
+Params.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
+Params.NumTrajectories = 100;
+
+// Validate and load
+UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
+FTrajectoryLoadValidation Validation = Loader->ValidateLoadParams(Params);
+if (Validation.bCanLoad)
+{
+    FTrajectoryLoadResult Result = Loader->LoadTrajectoriesSync(Params);
+    if (Result.bSuccess)
+    {
+        // Access loaded trajectories
+        for (const FLoadedTrajectory& Traj : Result.Trajectories)
+        {
+            // Process trajectory samples
+        }
+    }
+}
+```
+
+See [Loading API Reference](LOADING_API.md) and [Loading Blueprint Examples](examples/LOADING_BLUEPRINTS.md) for detailed documentation.
+
 ## Documentation
 
 - [Trajectory Data Shard Specification](specification-trajectory-data-shard.md) - File format specification
 - [Quick Start Guide](QUICKSTART.md) - Getting started guide
 - [Implementation Details](IMPLEMENTATION.md) - Technical implementation details
+- [Loading API Reference](LOADING_API.md) - Complete API documentation for loading functionality
+- [Loading Blueprint Examples](examples/LOADING_BLUEPRINTS.md) - Blueprint usage examples for loading
 - [Memory Monitoring Blueprint Example](examples/MEMORY_MONITORING_BLUEPRINT.md) - Complete example for creating memory monitoring UI
 
 ## Future Enhancements
 
 Planned features include:
-- Binary data loading (actual trajectory data)
-- Data streaming for large datasets
-- Time window filtering
-- Spatial filtering
-- Visualization helpers
+- Memory-mapped file I/O for ultra-fast access
+- Spatial filtering (bounding box queries)
+- Additional trajectory selection strategies
+- Niagara system integration helpers
+- Texture-based data export for GPU rendering
 
 ## License
 
