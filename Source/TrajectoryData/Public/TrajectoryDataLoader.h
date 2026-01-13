@@ -11,6 +11,24 @@
 
 // Forward declarations
 class FTrajectoryLoadTask;
+class IMappedFileHandle;
+class IMappedFileRegion;
+
+/**
+ * Helper structure to manage memory-mapped shard files
+ */
+struct FMappedShardFile
+{
+	TUniquePtr<IMappedFileHandle> MappedFileHandle;
+	TUniquePtr<IMappedFileRegion> MappedRegion;
+	FString ShardPath;
+	int32 ShardIndex;
+
+	FMappedShardFile()
+		: ShardIndex(-1)
+	{
+	}
+};
 
 /**
  * Delegate for trajectory loading progress updates
@@ -115,6 +133,22 @@ private:
 	bool LoadTrajectoryFromShard(const FString& ShardPath, const FDataBlockHeaderBinary& Header,
 		const FTrajectoryMetaBinary& TrajMeta, const FDatasetMetaBinary& DatasetMeta,
 		const FTrajectoryLoadParams& Params, FLoadedTrajectory& OutTrajectory);
+
+	/** Memory-mapped version: Read shard file header from mapped region */
+	bool ReadShardHeaderMapped(const uint8* MappedData, int64 MappedSize, FDataBlockHeaderBinary& OutHeader);
+
+	/** Memory-mapped version: Load trajectory data from mapped shard file */
+	bool LoadTrajectoryFromShardMapped(const uint8* MappedData, int64 MappedSize,
+		const FDataBlockHeaderBinary& Header, const FTrajectoryMetaBinary& TrajMeta,
+		const FDatasetMetaBinary& DatasetMeta, const FTrajectoryLoadParams& Params,
+		FLoadedTrajectory& OutTrajectory);
+
+	/** Open and map a shard file for reading */
+	TSharedPtr<FMappedShardFile> MapShardFile(const FString& ShardPath);
+
+	/** Group trajectories by shard file for efficient batch loading */
+	TMap<int32, TArray<const FTrajectoryMetaBinary*>> GroupTrajectoriesByShard(
+		const TArray<int64>& TrajectoryIds, const TMap<int64, FTrajectoryMetaBinary>& TrajMetaMap);
 
 	/** Internal implementation of synchronous loading */
 	FTrajectoryLoadResult LoadTrajectoriesInternal(const FTrajectoryLoadParams& Params);
