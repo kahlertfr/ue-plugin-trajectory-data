@@ -472,6 +472,11 @@ bool UTrajectoryDataLoader::LoadTrajectoryFromShard(const FString& ShardPath, co
 	}
 
 	// Determine time range to load relative to the interval
+	// NOTE: Current implementation limitation - this loads only from a single shard.
+	// For proper multi-shard support, we would need to:
+	// 1. Calculate the global interval index from Header.GlobalIntervalIndex
+	// 2. Map Params time steps to the local interval range
+	// 3. Load additional shards if the requested time range spans multiple intervals
 	int32 StartTime = (Params.StartTimeStep < 0) ? 0 : Params.StartTimeStep;
 	int32 EndTime = (Params.EndTimeStep < 0) ? Header.TimeStepIntervalSize : Params.EndTimeStep;
 

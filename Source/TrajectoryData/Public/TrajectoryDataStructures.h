@@ -15,7 +15,7 @@ struct FDatasetMetaBinary
 	char Magic[4];                      // "TDSH"
 	uint8 FormatVersion;                // = 1
 	uint8 EndiannessFlag;               // 0 = little, 1 = big
-	uint8 FloatPrecision;               // 0 = float32
+	uint8 FloatPrecision;               // 0 = float32, 1 = float64
 	uint8 Reserved;
 	int32 FirstTimeStep;
 	int32 LastTimeStep;
