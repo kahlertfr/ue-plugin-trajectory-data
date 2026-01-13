@@ -1,6 +1,6 @@
 # Trajectory Dataset — Specification
 
-version: b95b7d24eae of trajectory-converter - changed externaly
+version: cee971b of trajectory-converter
 
 This document defines the on-disk layout, semantics, and recommended reading/writing conventions for the Trajectory Dataset format.
 
@@ -32,47 +32,90 @@ Store many trajectories (3D positions over time) in fixed-size, mmap-friendly bi
 
 ### Manifest (JSON) — Example (human readable)
 
+The manifest file contains two sections:
+1. **Editable real-world semantics** - can be adjusted after conversion
+2. **Dataset meta information (read-only)** - human-readable view of the binary dataset-meta file for reference
+
+Parsers should read physical units from the editable section, and use the binary dataset-meta.bin file for structural information. The `dataset_meta_info` section is provided for human readability only.
+
 ```json
 {
-  "scenario_name" : "scenario_name",
+  "scenario_name": "scenario_name",
   "dataset_name": "dataset-name",
-  "format_version": 1,
-  "endianness": "little",
+  "physical_time_unit": "seconds",
+  "physical_start_time": 0.0,
+  "physical_end_time": 500.0,
   "coordinate_units": "millimeters",
-  "float_precision": "float32",
-  "time_units": "seconds",
-  "time_step_interval_size": 50,
-  "time_interval_seconds": 0.1,
-  "entry_size_bytes": 616,
-  "bounding_box": { "min": [-1000, -1000, -1000], "max": [1000, 1000, 1000] },
-  "trajectory_count": 123456,
-  "first_trajectory_id": 1000,
-  "last_trajectory_id": 124455,
-  "created_at": "2025-12-10T12:00:00Z",
-  "converter_version": "140a9d5"
+  "dataset_meta_info": {
+    "format_version": 1,
+    "endianness": "little",
+    "float_precision": "float32",
+    "first_time_step": 0,
+    "last_time_step": 5000,
+    "time_step_interval_size": 50,
+    "entry_size_bytes": 616,
+    "bounding_box": {
+      "min": [-1000.0, -1000.0, -1000.0],
+      "max": [1000.0, 1000.0, 1000.0]
+    },
+    "trajectory_count": 123456,
+    "first_trajectory_id": 1000,
+    "last_trajectory_id": 124455,
+    "created_at": "2025-12-10T12:00:00Z",
+    "converter_version": "140a9d5"
+  }
 }
 ```
 
+**Editable field descriptions:**
+- `scenario_name`: Name of the scenario this dataset belongs to
+- `dataset_name`: Name of this specific dataset within the scenario
+- `physical_time_unit`: Unit of time for physical_start_time and physical_end_time (e.g., "milliseconds", "seconds", "minutes")
+- `physical_start_time`: Physical start time of the dataset in physical_time_unit
+- `physical_end_time`: Physical end time of the dataset in physical_time_unit
+- `coordinate_units`: Unit of spatial coordinates (e.g., "millimeters", "meters")
+
+**Dataset meta info (read-only view of binary file):**
+- `format_version`: Binary format version
+- `endianness`: Byte order ("little" or "big")
+- `float_precision`: Floating point precision ("float32" or "float64")
+- `first_time_step`: First time step index in the dataset
+- `last_time_step`: Last time step index in the dataset
+- `time_step_interval_size`: Number of time steps per shard interval
+- `entry_size_bytes`: Size of each trajectory entry in bytes
+- `bounding_box`: Spatial bounding box of all trajectories
+- `trajectory_count`: Total number of trajectories
+- `first_trajectory_id`: Smallest trajectory ID
+- `last_trajectory_id`: Largest trajectory ID
+- `created_at`: Creation timestamp (ISO 8601 format)
+- `converter_version`: Git commit hash of the converter tool
+
 ### Dataset-Meta (binary)
 
-Purpose: quick programmatic access to global dataset parameters.
+Purpose: quick programmatic access to global dataset parameters. This file contains non-editable information about the dataset structure and ranges.
+
+**Important:** Parsers should read physical time and coordinate units from the manifest file, not from this binary file. This binary file stores internal time step indices and structural information.
 
 Layout (packed, little-endian):
 
 - offset 0: 4 bytes magic: ASCII "TDSH"
 - offset 4: 1 byte format_version (uint8) = 1
 - offset 5: 1 byte endianness_flag (0 = little, 1 = big) (uint8)
-- offset 6: 2 bytes reserved (padding)
-- offset 8: float64 time_interval_seconds
-- offset 16: int32 time_step_interval_size
+- offset 6: 1 byte float_precision (0 = float32) (uint8)
+- offset 7: 1 byte reserved (padding)
+- offset 8: int32 first_time_step (first time step in dataset, used for shard file naming)
+- offset 12: int32 last_time_step (last time step in dataset, used for shard file naming)
+- offset 16: int32 time_step_interval_size (number of time steps per shard interval)
 - offset 20: int32 entry_size_bytes (bytes per trajectory entry in data files)
 - offset 24: float32 bbox_min[3] (12 bytes)
 - offset 36: float32 bbox_max[3] (12 bytes)
 - offset 48: uint64 trajectory_count
 - offset 56: uint64 first_trajectory_id
 - offset 64: uint64 last_trajectory_id
-- offset 72: uint32 reserved2
-- total size: 76 bytes
+- offset 72: int64 created_at_unix (Unix timestamp of creation time)
+- offset 80: char converter_version[8] (git commit hash, null-terminated if shorter)
+- offset 88: uint32 reserved2
+- total size: 92 bytes
 
 ### Trajectory-Meta (binary) — one fixed-size record per trajectory
 
@@ -113,15 +156,15 @@ Entry layout (per-trajectory) — fixed size for fast mmap:
 
 - Each trajectory entry occupies exactly entry_size_bytes as declared in shard-meta (recommended: small fixed size computed as below).
 - Proposed per-entry binary layout:
-	- offset 0: uint64 trajectory_id
-	- offset 8: int32 start_time_step_in_interval (0..time_step_interval_size-1) — -1 if none valid
-	- offset 12: int32 valid_sample_count (number of valid samples within interval)
-	- offset 16: positions: time_step_interval_size * (3 * float32) = time_step_interval_size * 12 bytes
-	- trailing padding to fill entry_size_bytes
+  - offset 0: uint64 trajectory_id
+  - offset 8: int32 start_time_step_in_interval (0..time_step_interval_size-1) — -1 if none valid
+  - offset 12: int32 valid_sample_count (number of valid samples within interval)
+  - offset 16: positions: time_step_interval_size * (3 * float32) = time_step_interval_size * 12 bytes
+  - trailing padding to fill entry_size_bytes
 
 - Fixed-size rationale:
-  	- Fixed size = 8 (id) + 4 + 4 + (time_step_interval_size * 12)
-	- Indexing and fast seeks: because entries are fixed-size and Trajectory-Meta contains entry_offset_index, readers can compute:
+    - Fixed size = 8 (id) + 4 + 4 + (time_step_interval_size * 12)
+  - Indexing and fast seeks: because entries are fixed-size and Trajectory-Meta contains entry_offset_index, readers can compute:
   file_offset = data_section_offset + (entry_offset_index * entry_size_bytes)
 
 - Store positions as float32 x,y,z per sample. Invalid samples are represented by IEEE-754 NaN for x,y and z
@@ -143,8 +186,10 @@ struct DatasetMeta {
   char magic[4]; // "TDSH"
   uint8_t format_version;
   uint8_t endianness_flag;
-  uint16_t _reserved;
-  double time_interval_seconds;
+  uint8_t float_precision; // 0 = float32
+  uint8_t _reserved;
+  int32_t first_time_step;
+  int32_t last_time_step;
   int32_t time_step_interval_size;
   int32_t entry_size_bytes;
   float bbox_min[3];
@@ -152,6 +197,8 @@ struct DatasetMeta {
   uint64_t trajectory_count;
   uint64_t first_trajectory_id;
   uint64_t last_trajectory_id;
+  int64_t created_at_unix;
+  char converter_version[8];
   uint32_t reserved2;
 };
 #pragma pack(pop)
@@ -197,5 +244,11 @@ struct TrajEntryNaN {
 
 ## Change log
 
-- format_version = 2: consistent naming convention
 - format_version = 1: initial stable definition for the project.
+  - Update (2026-01-13): Restructured manifest and dataset-meta.bin:
+    - Manifest now contains only editable real-world semantics (scenario_name, dataset_name, physical_time_unit, physical_start_time, physical_end_time, coordinate_units)
+    - Dataset-meta.bin now contains time step indices (first_time_step, last_time_step) instead of physical times
+    - Removed time_interval_duration from both files (physical time mapping is now done via manifest times and time step range)
+    - Added float_precision field to dataset-meta.bin
+    - Replaced start_time/end_time doubles with created_at_unix int64 and converter_version char[8] in dataset-meta.bin
+    - Physical time and coordinate units are now only stored in the human-readable manifest
