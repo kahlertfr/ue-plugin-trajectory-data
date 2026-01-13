@@ -248,8 +248,17 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		TrajMetaMap.Add(TrajMeta.TrajectoryId, TrajMeta);
 	}
 
+	// Discover all shard files and build time-range information table
+	TMap<int32, FShardInfo> ShardInfoTable = DiscoverShardFiles(Params.DatasetPath, DatasetMeta);
+
 	// Group trajectories by shard file for efficient batch loading
 	TMap<int32, TArray<const FTrajectoryMetaBinary*>> ShardGroups = GroupTrajectoriesByShard(TrajectoryIds, TrajMetaMap);
+
+	// Filter shards to only load those containing data in the requested time range
+	ShardGroups = FilterShardsByTimeRange(ShardGroups, ShardInfoTable, StartTime, EndTime);
+
+	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Loading from %d shard(s) for time range %d-%d"),
+		ShardGroups.Num(), StartTime, EndTime);
 
 	// Load trajectories using memory-mapped files and parallel processing
 	TArray<FLoadedTrajectory> NewTrajectories;
@@ -793,6 +802,126 @@ bool UTrajectoryDataLoader::LoadTrajectoryFromShardMapped(const uint8* MappedDat
 	}
 
 	return true;
+}
+
+TMap<int32, FShardInfo> UTrajectoryDataLoader::DiscoverShardFiles(const FString& DatasetPath, const FDatasetMetaBinary& DatasetMeta)
+{
+	TMap<int32, FShardInfo> ShardInfoTable;
+	
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	
+	// Scan dataset directory for shard files (pattern: shard-*.bin)
+	TArray<FString> FoundFiles;
+	PlatformFile.FindFiles(FoundFiles, *DatasetPath, TEXT(".bin"));
+	
+	for (const FString& FileName : FoundFiles)
+	{
+		// Check if this is a shard file (matches pattern shard-<number>.bin)
+		if (!FileName.StartsWith(TEXT("shard-")))
+		{
+			continue;
+		}
+		
+		// Extract interval index from filename
+		FString NumberPart = FileName.Mid(6); // Skip "shard-"
+		NumberPart = NumberPart.LeftChop(4); // Remove ".bin"
+		
+		if (!NumberPart.IsNumeric())
+		{
+			continue;
+		}
+		
+		int32 IntervalIndex = FCString::Atoi(*NumberPart);
+		FString FullPath = FPaths::Combine(DatasetPath, FileName);
+		
+		// Try to read the shard header to get GlobalIntervalIndex
+		TUniquePtr<IMappedFileHandle> MappedFileHandle(PlatformFile.OpenMapped(*FullPath));
+		if (!MappedFileHandle.IsValid())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Failed to map shard file for discovery: %s"), *FullPath);
+			continue;
+		}
+		
+		int64 FileSize = PlatformFile.FileSize(*FullPath);
+		if (FileSize < sizeof(FDataBlockHeaderBinary))
+		{
+			continue;
+		}
+		
+		TUniquePtr<IMappedFileRegion> MappedRegion(MappedFileHandle->MapRegion(0, FileSize));
+		if (!MappedRegion.IsValid())
+		{
+			continue;
+		}
+		
+		const uint8* MappedData = MappedRegion->GetMappedPtr();
+		
+		// Read header
+		FDataBlockHeaderBinary Header;
+		if (!ReadShardHeaderMapped(MappedData, FileSize, Header))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Failed to read shard header for: %s"), *FullPath);
+			continue;
+		}
+		
+		// Build shard info
+		FShardInfo Info;
+		Info.GlobalIntervalIndex = Header.GlobalIntervalIndex;
+		Info.FilePath = FullPath;
+		
+		// Calculate time step range
+		// Each shard covers: [GlobalIntervalIndex * TimeStepIntervalSize, (GlobalIntervalIndex + 1) * TimeStepIntervalSize - 1]
+		// Adjusted by the dataset's FirstTimeStep
+		Info.StartTimeStep = DatasetMeta.FirstTimeStep + (Header.GlobalIntervalIndex * DatasetMeta.TimeStepIntervalSize);
+		Info.EndTimeStep = Info.StartTimeStep + DatasetMeta.TimeStepIntervalSize - 1;
+		
+		ShardInfoTable.Add(IntervalIndex, Info);
+		
+		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Discovered shard %d (interval %d): time steps %d-%d"),
+			IntervalIndex, Header.GlobalIntervalIndex, Info.StartTimeStep, Info.EndTimeStep);
+	}
+	
+	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Discovered %d shard files in dataset"), ShardInfoTable.Num());
+	
+	return ShardInfoTable;
+}
+
+TMap<int32, TArray<const FTrajectoryMetaBinary*>> UTrajectoryDataLoader::FilterShardsByTimeRange(
+	const TMap<int32, TArray<const FTrajectoryMetaBinary*>>& ShardGroups,
+	const TMap<int32, FShardInfo>& ShardInfoTable,
+	int32 StartTimeStep, int32 EndTimeStep)
+{
+	TMap<int32, TArray<const FTrajectoryMetaBinary*>> FilteredGroups;
+	
+	for (const auto& ShardGroup : ShardGroups)
+	{
+		int32 ShardIndex = ShardGroup.Key;
+		
+		// Check if we have info for this shard
+		const FShardInfo* ShardInfo = ShardInfoTable.Find(ShardIndex);
+		if (!ShardInfo)
+		{
+			// If no info available, include it (fallback to old behavior)
+			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: No shard info for index %d, including anyway"), ShardIndex);
+			FilteredGroups.Add(ShardGroup.Key, ShardGroup.Value);
+			continue;
+		}
+		
+		// Check if shard's time range overlaps with requested time range
+		if (ShardInfo->ContainsTimeRange(StartTimeStep, EndTimeStep))
+		{
+			FilteredGroups.Add(ShardGroup.Key, ShardGroup.Value);
+			UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Including shard %d (time steps %d-%d) for range %d-%d"),
+				ShardIndex, ShardInfo->StartTimeStep, ShardInfo->EndTimeStep, StartTimeStep, EndTimeStep);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Skipping shard %d (time steps %d-%d) - outside range %d-%d"),
+				ShardIndex, ShardInfo->StartTimeStep, ShardInfo->EndTimeStep, StartTimeStep, EndTimeStep);
+		}
+	}
+	
+	return FilteredGroups;
 }
 
 TMap<int32, TArray<const FTrajectoryMetaBinary*>> UTrajectoryDataLoader::GroupTrajectoriesByShard(

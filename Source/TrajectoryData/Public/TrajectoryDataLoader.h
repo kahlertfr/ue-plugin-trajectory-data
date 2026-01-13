@@ -25,6 +25,30 @@ struct FMappedShardFile
 };
 
 /**
+ * Information about a discovered shard file
+ */
+struct FShardInfo
+{
+	int32 GlobalIntervalIndex;    // From shard header
+	int32 StartTimeStep;          // Calculated: GlobalIntervalIndex * TimeStepIntervalSize + FirstTimeStep
+	int32 EndTimeStep;            // Calculated: StartTimeStep + TimeStepIntervalSize - 1
+	FString FilePath;             // Full path to shard file
+	
+	FShardInfo()
+		: GlobalIntervalIndex(-1)
+		, StartTimeStep(0)
+		, EndTimeStep(0)
+	{
+	}
+	
+	/** Check if this shard contains data for the given time range */
+	bool ContainsTimeRange(int32 RangeStart, int32 RangeEnd) const
+	{
+		return EndTimeStep >= RangeStart && StartTimeStep <= RangeEnd;
+	}
+};
+
+/**
  * Delegate for trajectory loading progress updates
  */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnTrajectoryLoadProgress, int32, TrajectoriesLoaded, int32, TotalTrajectories, float, ProgressPercent);
@@ -139,6 +163,15 @@ private:
 
 	/** Open and map a shard file for reading */
 	TSharedPtr<FMappedShardFile> MapShardFile(const FString& ShardPath);
+
+	/** Discover all shard files in dataset and build information table */
+	TMap<int32, FShardInfo> DiscoverShardFiles(const FString& DatasetPath, const FDatasetMetaBinary& DatasetMeta);
+
+	/** Filter shard groups to only include shards relevant for the time range */
+	TMap<int32, TArray<const FTrajectoryMetaBinary*>> FilterShardsByTimeRange(
+		const TMap<int32, TArray<const FTrajectoryMetaBinary*>>& ShardGroups,
+		const TMap<int32, FShardInfo>& ShardInfoTable,
+		int32 StartTimeStep, int32 EndTimeStep);
 
 	/** Group trajectories by shard file for efficient batch loading */
 	TMap<int32, TArray<const FTrajectoryMetaBinary*>> GroupTrajectoriesByShard(
