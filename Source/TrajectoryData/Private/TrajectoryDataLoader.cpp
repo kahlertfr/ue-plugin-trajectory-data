@@ -328,6 +328,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		}
 
 		// Update shared state in a single critical section
+		// Count before entering the lock (ValidTrajectories will be moved inside the lock)
 		int32 NumValidTrajectoriesInShard = ValidTrajectories.Num();
 		int32 CurrentLoadedCount = 0;
 		{
@@ -797,7 +798,7 @@ TMap<int32, TArray<const FTrajectoryMetaBinary*>> UTrajectoryDataLoader::GroupTr
 {
 	TMap<int32, TArray<const FTrajectoryMetaBinary*>> ShardGroups;
 
-	for (int64 TrajId : TrajectoryIds)
+	for (const int64& TrajId : TrajectoryIds)
 	{
 		const FTrajectoryMetaBinary* TrajMeta = TrajMetaMap.Find(TrajId);
 		if (TrajMeta)
