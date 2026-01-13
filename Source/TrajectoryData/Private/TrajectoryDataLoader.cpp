@@ -328,12 +328,13 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		}
 
 		// Update shared state in a single critical section
+		int32 NumValidTrajectoriesInShard = ValidTrajectories.Num();
 		int32 CurrentLoadedCount = 0;
 		{
 			FScopeLock Lock(&ResultMutex);
 			MemoryUsed += ShardMemoryUsed;
 			NewTrajectories.Append(MoveTemp(ValidTrajectories));
-			LoadedCount += ValidTrajectories.Num();
+			LoadedCount += NumValidTrajectoriesInShard;
 			CurrentLoadedCount = LoadedCount; // Capture count inside lock
 		}
 

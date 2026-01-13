@@ -25,9 +25,7 @@ struct FMappedShardFile
 	int32 ShardIndex;
 
 	FMappedShardFile()
-		: MappedFileHandle(nullptr)
-		, MappedRegion(nullptr)
-		, ShardPath()
+		: ShardPath()
 		, ShardIndex(-1)
 	{
 	}
