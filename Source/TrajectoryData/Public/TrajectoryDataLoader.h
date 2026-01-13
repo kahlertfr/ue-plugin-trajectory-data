@@ -22,11 +22,6 @@ struct FMappedShardFile
 	TUniquePtr<IMappedFileHandle> MappedFileHandle;
 	TUniquePtr<IMappedFileRegion> MappedRegion;
 	FString ShardPath;
-
-	FMappedShardFile()
-		: ShardPath()
-	{
-	}
 };
 
 /**

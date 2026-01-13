@@ -301,7 +301,8 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		LoadSuccess.SetNum(TrajMetasInShard.Num());
 
 		// Note: DatasetMeta, Params, and MappedData are read-only in the lambda and safe for concurrent access
-		ParallelFor(TrajMetasInShard.Num(), [&](int32 Index)
+		// Explicit capture list to document thread safety
+		ParallelFor(TrajMetasInShard.Num(), [&TrajMetasInShard, &ShardTrajectories, &LoadSuccess, MappedData, MappedSize, &ShardHeader, &DatasetMeta, &Params](int32 Index)
 		{
 			const FTrajectoryMetaBinary* TrajMeta = TrajMetasInShard[Index];
 			
@@ -328,10 +329,11 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		}
 
 		// Update shared state in a single critical section
-		// Count before entering the lock (ValidTrajectories will be moved inside the lock)
-		int32 NumValidTrajectoriesInShard = ValidTrajectories.Num();
 		int32 CurrentLoadedCount = 0;
 		{
+			// Count before the move operation (ValidTrajectories will be moved below)
+			int32 NumValidTrajectoriesInShard = ValidTrajectories.Num();
+			
 			FScopeLock Lock(&ResultMutex);
 			MemoryUsed += ShardMemoryUsed;
 			NewTrajectories.Append(MoveTemp(ValidTrajectories));
@@ -798,7 +800,7 @@ TMap<int32, TArray<const FTrajectoryMetaBinary*>> UTrajectoryDataLoader::GroupTr
 {
 	TMap<int32, TArray<const FTrajectoryMetaBinary*>> ShardGroups;
 
-	for (const int64& TrajId : TrajectoryIds)
+	for (int64 TrajId : TrajectoryIds)
 	{
 		const FTrajectoryMetaBinary* TrajMeta = TrajMetaMap.Find(TrajId);
 		if (TrajMeta)
