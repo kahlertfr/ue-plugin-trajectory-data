@@ -1,21 +1,26 @@
 {
   "scenario_name": "sample_scenario",
   "dataset_name": "sample_dataset",
-  "format_version": 1,
-  "endianness": "little",
+  "physical_time_unit": "seconds",
+  "physical_start_time": 0.0,
+  "physical_end_time": 500.0,
   "coordinate_units": "millimeters",
-  "float_precision": "float32",
-  "time_units": "seconds",
-  "time_step_interval_size": 50,
-  "time_interval_seconds": 0.1,
-  "entry_size_bytes": 616,
-  "bounding_box": {
-    "min": [-1000.0, -1000.0, -1000.0],
-    "max": [1000.0, 1000.0, 1000.0]
-  },
-  "trajectory_count": 1000,
-  "first_trajectory_id": 1,
-  "last_trajectory_id": 1000,
-  "created_at": "2025-12-17T10:00:00Z",
-  "converter_version": "b95b7d2"
+  "dataset_meta_info": {
+    "format_version": 1,
+    "endianness": "little",
+    "float_precision": "float32",
+    "first_time_step": 0,
+    "last_time_step": 5000,
+    "time_step_interval_size": 50,
+    "entry_size_bytes": 616,
+    "bounding_box": {
+      "min": [-1000.0, -1000.0, -1000.0],
+      "max": [1000.0, 1000.0, 1000.0]
+    },
+    "trajectory_count": 1000,
+    "first_trajectory_id": 1,
+    "last_trajectory_id": 1000,
+    "created_at": "2025-12-17T10:00:00Z",
+    "converter_version": "b95b7d2"
+  }
 }

@@ -182,63 +182,67 @@ bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, 
 	OutDatasetMetadata.DatasetDirectory = FPaths::GetPath(MetadataFilePath);
 
 	// Parse all fields from dataset-manifest.json according to specification
+	// Editable real-world semantics
 	JsonObject->TryGetStringField(TEXT("scenario_name"), OutDatasetMetadata.ScenarioName);
 	JsonObject->TryGetStringField(TEXT("dataset_name"), OutDatasetMetadata.DatasetName);
-	JsonObject->TryGetNumberField(TEXT("format_version"), OutDatasetMetadata.FormatVersion);
-	
-	JsonObject->TryGetStringField(TEXT("endianness"), OutDatasetMetadata.Endianness);
+	JsonObject->TryGetStringField(TEXT("physical_time_unit"), OutDatasetMetadata.PhysicalTimeUnit);
+	JsonObject->TryGetNumberField(TEXT("physical_start_time"), OutDatasetMetadata.PhysicalStartTime);
+	JsonObject->TryGetNumberField(TEXT("physical_end_time"), OutDatasetMetadata.PhysicalEndTime);
 	JsonObject->TryGetStringField(TEXT("coordinate_units"), OutDatasetMetadata.CoordinateUnits);
-	JsonObject->TryGetStringField(TEXT("float_precision"), OutDatasetMetadata.FloatPrecision);
-	JsonObject->TryGetStringField(TEXT("time_units"), OutDatasetMetadata.TimeUnits);
 	
-	JsonObject->TryGetNumberField(TEXT("time_step_interval_size"), OutDatasetMetadata.TimeStepIntervalSize);
-	
-	double TempTimeInterval = 0.0;
-	JsonObject->TryGetNumberField(TEXT("time_interval_seconds"), TempTimeInterval);
-	OutDatasetMetadata.TimeIntervalSeconds = (float)TempTimeInterval;
-	
-	JsonObject->TryGetNumberField(TEXT("entry_size_bytes"), OutDatasetMetadata.EntrySizeBytes);
-	
-	// Parse bounding_box object
-	const TSharedPtr<FJsonObject>* BBoxObject;
-	if (JsonObject->TryGetObjectField(TEXT("bounding_box"), BBoxObject))
+	// Dataset meta info (read-only) - for human readability, may be present in manifest
+	const TSharedPtr<FJsonObject>* DatasetMetaInfo;
+	if (JsonObject->TryGetObjectField(TEXT("dataset_meta_info"), DatasetMetaInfo))
 	{
-		// Parse min array
-		const TArray<TSharedPtr<FJsonValue>>* MinArray;
-		if ((*BBoxObject)->TryGetArrayField(TEXT("min"), MinArray) && MinArray->Num() == 3)
+		(*DatasetMetaInfo)->TryGetNumberField(TEXT("format_version"), OutDatasetMetadata.FormatVersion);
+		(*DatasetMetaInfo)->TryGetStringField(TEXT("endianness"), OutDatasetMetadata.Endianness);
+		(*DatasetMetaInfo)->TryGetStringField(TEXT("float_precision"), OutDatasetMetadata.FloatPrecision);
+		(*DatasetMetaInfo)->TryGetNumberField(TEXT("first_time_step"), OutDatasetMetadata.FirstTimeStep);
+		(*DatasetMetaInfo)->TryGetNumberField(TEXT("last_time_step"), OutDatasetMetadata.LastTimeStep);
+		(*DatasetMetaInfo)->TryGetNumberField(TEXT("time_step_interval_size"), OutDatasetMetadata.TimeStepIntervalSize);
+		(*DatasetMetaInfo)->TryGetNumberField(TEXT("entry_size_bytes"), OutDatasetMetadata.EntrySizeBytes);
+		
+		// Parse bounding_box object
+		const TSharedPtr<FJsonObject>* BBoxObject;
+		if ((*DatasetMetaInfo)->TryGetObjectField(TEXT("bounding_box"), BBoxObject))
 		{
-			double X = (*MinArray)[0]->AsNumber();
-			double Y = (*MinArray)[1]->AsNumber();
-			double Z = (*MinArray)[2]->AsNumber();
-			OutDatasetMetadata.BoundingBoxMin = FVector(X, Y, Z);
+			// Parse min array
+			const TArray<TSharedPtr<FJsonValue>>* MinArray;
+			if ((*BBoxObject)->TryGetArrayField(TEXT("min"), MinArray) && MinArray->Num() == 3)
+			{
+				double X = (*MinArray)[0]->AsNumber();
+				double Y = (*MinArray)[1]->AsNumber();
+				double Z = (*MinArray)[2]->AsNumber();
+				OutDatasetMetadata.BoundingBoxMin = FVector(X, Y, Z);
+			}
+			
+			// Parse max array
+			const TArray<TSharedPtr<FJsonValue>>* MaxArray;
+			if ((*BBoxObject)->TryGetArrayField(TEXT("max"), MaxArray) && MaxArray->Num() == 3)
+			{
+				double X = (*MaxArray)[0]->AsNumber();
+				double Y = (*MaxArray)[1]->AsNumber();
+				double Z = (*MaxArray)[2]->AsNumber();
+				OutDatasetMetadata.BoundingBoxMax = FVector(X, Y, Z);
+			}
 		}
 		
-		// Parse max array
-		const TArray<TSharedPtr<FJsonValue>>* MaxArray;
-		if ((*BBoxObject)->TryGetArrayField(TEXT("max"), MaxArray) && MaxArray->Num() == 3)
-		{
-			double X = (*MaxArray)[0]->AsNumber();
-			double Y = (*MaxArray)[1]->AsNumber();
-			double Z = (*MaxArray)[2]->AsNumber();
-			OutDatasetMetadata.BoundingBoxMax = FVector(X, Y, Z);
-		}
+		// Parse trajectory counts as 64-bit integers
+		int64 TempTrajectoryCount = 0;
+		(*DatasetMetaInfo)->TryGetNumberField(TEXT("trajectory_count"), TempTrajectoryCount);
+		OutDatasetMetadata.TrajectoryCount = TempTrajectoryCount;
+		
+		int64 TempFirstId = 0;
+		(*DatasetMetaInfo)->TryGetNumberField(TEXT("first_trajectory_id"), TempFirstId);
+		OutDatasetMetadata.FirstTrajectoryId = TempFirstId;
+		
+		int64 TempLastId = 0;
+		(*DatasetMetaInfo)->TryGetNumberField(TEXT("last_trajectory_id"), TempLastId);
+		OutDatasetMetadata.LastTrajectoryId = TempLastId;
+		
+		(*DatasetMetaInfo)->TryGetStringField(TEXT("created_at"), OutDatasetMetadata.CreatedAt);
+		(*DatasetMetaInfo)->TryGetStringField(TEXT("converter_version"), OutDatasetMetadata.ConverterVersion);
 	}
-	
-	// Parse trajectory counts as 64-bit integers
-	int64 TempTrajectoryCount = 0;
-	JsonObject->TryGetNumberField(TEXT("trajectory_count"), TempTrajectoryCount);
-	OutDatasetMetadata.TrajectoryCount = TempTrajectoryCount;
-	
-	int64 TempFirstId = 0;
-	JsonObject->TryGetNumberField(TEXT("first_trajectory_id"), TempFirstId);
-	OutDatasetMetadata.FirstTrajectoryId = TempFirstId;
-	
-	int64 TempLastId = 0;
-	JsonObject->TryGetNumberField(TEXT("last_trajectory_id"), TempLastId);
-	OutDatasetMetadata.LastTrajectoryId = TempLastId;
-	
-	JsonObject->TryGetStringField(TEXT("created_at"), OutDatasetMetadata.CreatedAt);
-	JsonObject->TryGetStringField(TEXT("converter_version"), OutDatasetMetadata.ConverterVersion);
 
 	return true;
 }

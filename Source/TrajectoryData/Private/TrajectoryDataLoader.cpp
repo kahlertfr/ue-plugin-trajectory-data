@@ -78,8 +78,8 @@ FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTraje
 	}
 
 	// Validate time range
-	int32 StartTime = (Params.StartTimeStep < 0) ? 0 : Params.StartTimeStep;
-	int32 EndTime = (Params.EndTimeStep < 0) ? DatasetMeta.TimeStepIntervalSize : Params.EndTimeStep;
+	int32 StartTime = (Params.StartTimeStep < 0) ? DatasetMeta.FirstTimeStep : Params.StartTimeStep;
+	int32 EndTime = (Params.EndTimeStep < 0) ? DatasetMeta.LastTimeStep : Params.EndTimeStep;
 
 	if (StartTime >= EndTime)
 	{
@@ -234,8 +234,8 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 	}
 
 	// Determine time range
-	int32 StartTime = (Params.StartTimeStep < 0) ? 0 : Params.StartTimeStep;
-	int32 EndTime = (Params.EndTimeStep < 0) ? DatasetMeta.TimeStepIntervalSize : Params.EndTimeStep;
+	int32 StartTime = (Params.StartTimeStep < 0) ? DatasetMeta.FirstTimeStep : Params.StartTimeStep;
+	int32 EndTime = (Params.EndTimeStep < 0) ? DatasetMeta.LastTimeStep : Params.EndTimeStep;
 
 	Result.LoadedStartTimeStep = StartTime;
 	Result.LoadedEndTimeStep = EndTime;
@@ -572,7 +572,7 @@ int64 UTrajectoryDataLoader::CalculateMemoryRequirement(const FTrajectoryLoadPar
 	const FDatasetMetaBinary& DatasetMeta)
 {
 	// This is a rough estimate
-	int32 TimeSteps = DatasetMeta.TimeStepIntervalSize;
+	int32 TimeSteps = DatasetMeta.LastTimeStep - DatasetMeta.FirstTimeStep;
 	if (Params.StartTimeStep >= 0 && Params.EndTimeStep >= 0)
 	{
 		TimeSteps = (Params.EndTimeStep - Params.StartTimeStep) / Params.SampleRate;
