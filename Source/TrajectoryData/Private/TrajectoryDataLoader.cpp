@@ -326,6 +326,31 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Processing shard %d with %d trajectory entries"),
 			ShardIndex, ShardHeader.TrajectoryEntryCount);
 
+		// Build an index of trajectory IDs to entry offsets for O(1) lookup instead of O(M) linear search
+		// This is critical for performance with millions of trajectories
+		TMap<int64, int32> TrajIdToEntryIndex;
+		TrajIdToEntryIndex.Reserve(ShardHeader.TrajectoryEntryCount);
+		
+		int64 DataSectionStart = ShardHeader.DataSectionOffset;
+		int32 EntrySize = DatasetMeta.EntrySizeBytes;
+		
+		for (int32 EntryIdx = 0; EntryIdx < ShardHeader.TrajectoryEntryCount; ++EntryIdx)
+		{
+			int64 EntryOffset = DataSectionStart + (EntryIdx * EntrySize);
+			if (EntryOffset + (int64)sizeof(uint64) > MappedSize)
+			{
+				break;
+			}
+			
+			// Read trajectory ID from entry
+			uint64 EntryTrajId;
+			FMemory::Memcpy(&EntryTrajId, MappedData + EntryOffset, sizeof(uint64));
+			TrajIdToEntryIndex.Add(EntryTrajId, EntryIdx);
+		}
+		
+		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Built index for %d entries in shard %d"),
+			TrajIdToEntryIndex.Num(), ShardIndex);
+
 		// For each requested trajectory, try to load samples from this shard (in parallel)
 		// Note: Not all trajectories will have data in every shard
 		TArray<int64> TrajIdsArray = TrajectoryIds;
@@ -334,8 +359,14 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		int32 ShardStartTimeStep = ShardInfo->StartTimeStep;
 		int32 ShardEndTimeStep = ShardInfo->EndTimeStep;
 		
+		// Limit thread count to leave cores for game thread - use 75% of available cores, minimum 1
+		int32 MaxThreads = FMath::Max(1, (int32)(FPlatformMisc::NumberOfCoresIncludingHyperthreads() * 0.75f));
+		// Calculate items per batch to limit parallelism
+		int32 ItemsPerBatch = FMath::Max(1, (TrajIdsArray.Num() + MaxThreads - 1) / MaxThreads);
+		
 		ParallelFor(TrajIdsArray.Num(), [this, &TrajIdsArray, &TrajMetaMap, &TrajectoryMap, &ResultMutex,
-			MappedData, MappedSize, &ShardHeader, &DatasetMeta, &Params, ShardStartTimeStep, ShardEndTimeStep](int32 Index)
+			MappedData, MappedSize, &ShardHeader, &DatasetMeta, &Params, ShardStartTimeStep, ShardEndTimeStep,
+			&TrajIdToEntryIndex, DataSectionStart, EntrySize](int32 Index)
 		{
 			int64 TrajId = TrajIdsArray[Index];
 			const FTrajectoryMetaBinary* TrajMeta = TrajMetaMap.Find(TrajId);
@@ -352,101 +383,86 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 				return;
 			}
 			
-			// Load samples from this shard for this trajectory
-			// We need to find the trajectory's entry in this shard
-			// TODO: Optimize with index/hash map for large datasets - currently O(N*M) linear search
-			
-			// Calculate data section start
-			int64 DataSectionStart = ShardHeader.DataSectionOffset;
-			int32 EntrySize = DatasetMeta.EntrySizeBytes;
-			
-			// Search for this trajectory's entry in the shard
-			bool FoundEntry = false;
-			for (int32 EntryIdx = 0; EntryIdx < ShardHeader.TrajectoryEntryCount; ++EntryIdx)
+			// Use index for O(1) lookup instead of O(M) linear search
+			const int32* EntryIdxPtr = TrajIdToEntryIndex.Find(TrajId);
+			if (!EntryIdxPtr)
 			{
-				int64 EntryOffset = DataSectionStart + (EntryIdx * EntrySize);
-				if (EntryOffset + (int64)sizeof(uint64) > MappedSize)
+				// This trajectory doesn't have an entry in this shard
+				return;
+			}
+			
+			int32 EntryIdx = *EntryIdxPtr;
+			int64 EntryOffset = DataSectionStart + (EntryIdx * EntrySize);
+			
+			if (EntryOffset + (int64)sizeof(uint64) > MappedSize)
+			{
+				return;
+			}
+			
+			// Parse the entry to extract samples
+			int32 Offset = sizeof(uint64);
+			
+			int32 StartTimeStepInInterval;
+			FMemory::Memcpy(&StartTimeStepInInterval, MappedData + EntryOffset + Offset, sizeof(int32));
+			Offset += sizeof(int32);
+			
+			int32 ValidSampleCount;
+			FMemory::Memcpy(&ValidSampleCount, MappedData + EntryOffset + Offset, sizeof(int32));
+			Offset += sizeof(int32);
+			
+			// Extract samples for the requested time range
+			TArray<FTrajectoryPositionSample> ShardSamples;
+			
+			for (int32 TimeStepIdx = 0; TimeStepIdx < ShardHeader.TimeStepIntervalSize; TimeStepIdx += Params.SampleRate)
+			{
+				// Calculate absolute time step
+				int32 AbsoluteTimeStep = ShardStartTimeStep + TimeStepIdx;
+				
+				// Check if this time step is within the requested range
+				if (Params.StartTimeStep >= 0 && AbsoluteTimeStep < Params.StartTimeStep)
+					continue;
+				if (Params.EndTimeStep >= 0 && AbsoluteTimeStep > Params.EndTimeStep)
+					continue;
+				
+				// Check if this sample is valid (within the trajectory's valid range in this interval)
+				// StartTimeStepInInterval is relative to the start of this shard interval (0..TimeStepIntervalSize-1)
+				// ValidSampleCount tells us how many consecutive samples are valid starting from StartTimeStepInInterval
+				if (TimeStepIdx < StartTimeStepInInterval || TimeStepIdx >= (StartTimeStepInInterval + ValidSampleCount))
+				{
+					continue;
+				}
+				
+				// Read position data
+				int32 PosOffset = Offset + (TimeStepIdx * 12);
+				if (EntryOffset + PosOffset + 12 > MappedSize)
 				{
 					break;
 				}
 				
-				// Read trajectory ID from entry
-				uint64 EntryTrajId;
-				FMemory::Memcpy(&EntryTrajId, MappedData + EntryOffset, sizeof(uint64));
+				float X, Y, Z;
+				FMemory::Memcpy(&X, MappedData + EntryOffset + PosOffset, sizeof(float));
+				FMemory::Memcpy(&Y, MappedData + EntryOffset + PosOffset + 4, sizeof(float));
+				FMemory::Memcpy(&Z, MappedData + EntryOffset + PosOffset + 8, sizeof(float));
 				
-				if (EntryTrajId == TrajId)
+				FTrajectoryPositionSample Sample;
+				Sample.TimeStep = AbsoluteTimeStep;
+				Sample.Position = FVector(X, Y, Z);
+				Sample.bIsValid = !FMath::IsNaN(X) && !FMath::IsNaN(Y) && !FMath::IsNaN(Z);
+				
+				ShardSamples.Add(Sample);
+			}
+			
+			// Add samples to the trajectory (thread-safe)
+			if (ShardSamples.Num() > 0)
+			{
+				FScopeLock Lock(&ResultMutex);
+				FLoadedTrajectory* LoadedTraj = TrajectoryMap.Find(TrajId);
+				if (LoadedTraj)
 				{
-					// Found the entry for this trajectory in this shard
-					FoundEntry = true;
-					
-					// Parse the entry to extract samples
-					int32 Offset = sizeof(uint64);
-					
-					int32 StartTimeStepInInterval;
-					FMemory::Memcpy(&StartTimeStepInInterval, MappedData + EntryOffset + Offset, sizeof(int32));
-					Offset += sizeof(int32);
-					
-					int32 ValidSampleCount;
-					FMemory::Memcpy(&ValidSampleCount, MappedData + EntryOffset + Offset, sizeof(int32));
-					Offset += sizeof(int32);
-					
-					// Extract samples for the requested time range
-					TArray<FTrajectoryPositionSample> ShardSamples;
-					
-					for (int32 TimeStepIdx = 0; TimeStepIdx < ShardHeader.TimeStepIntervalSize; TimeStepIdx += Params.SampleRate)
-					{
-						// Calculate absolute time step
-						int32 AbsoluteTimeStep = ShardStartTimeStep + TimeStepIdx;
-						
-						// Check if this time step is within the requested range
-						if (Params.StartTimeStep >= 0 && AbsoluteTimeStep < Params.StartTimeStep)
-							continue;
-						if (Params.EndTimeStep >= 0 && AbsoluteTimeStep > Params.EndTimeStep)
-							continue;
-						
-						// Check if this sample is valid (within the trajectory's valid range in this interval)
-						// StartTimeStepInInterval is relative to the start of this shard interval (0..TimeStepIntervalSize-1)
-						// ValidSampleCount tells us how many consecutive samples are valid starting from StartTimeStepInInterval
-						if (TimeStepIdx < StartTimeStepInInterval || TimeStepIdx >= (StartTimeStepInInterval + ValidSampleCount))
-						{
-							continue;
-						}
-						
-						// Read position data
-						int32 PosOffset = Offset + (TimeStepIdx * 12);
-						if (EntryOffset + PosOffset + 12 > MappedSize)
-						{
-							break;
-						}
-						
-						float X, Y, Z;
-						FMemory::Memcpy(&X, MappedData + EntryOffset + PosOffset, sizeof(float));
-						FMemory::Memcpy(&Y, MappedData + EntryOffset + PosOffset + 4, sizeof(float));
-						FMemory::Memcpy(&Z, MappedData + EntryOffset + PosOffset + 8, sizeof(float));
-						
-						FTrajectoryPositionSample Sample;
-						Sample.TimeStep = AbsoluteTimeStep;
-						Sample.Position = FVector(X, Y, Z);
-						Sample.bIsValid = !FMath::IsNaN(X) && !FMath::IsNaN(Y) && !FMath::IsNaN(Z);
-						
-						ShardSamples.Add(Sample);
-					}
-					
-					// Add samples to the trajectory (thread-safe)
-					if (ShardSamples.Num() > 0)
-					{
-						FScopeLock Lock(&ResultMutex);
-						FLoadedTrajectory* LoadedTraj = TrajectoryMap.Find(TrajId);
-						if (LoadedTraj)
-						{
-							LoadedTraj->Samples.Append(ShardSamples);
-						}
-					}
-					
-					break; // Found and processed this trajectory's entry
+					LoadedTraj->Samples.Append(ShardSamples);
 				}
 			}
-		});
+		}, EParallelForFlags::None, ItemsPerBatch);
 	}
 
 	// Convert map to array and sort samples by time step
