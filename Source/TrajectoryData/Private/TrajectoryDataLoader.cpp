@@ -10,6 +10,7 @@
 #include "HAL/RunnableThread.h"
 #include "GenericPlatform/GenericPlatformFile.h"
 #include "Async/Async.h"
+#include "Async/ParallelFor.h"
 
 UTrajectoryDataLoader* UTrajectoryDataLoader::Instance = nullptr;
 
@@ -117,8 +118,8 @@ FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTraje
 	Validation.NumSamplesPerTrajectory = NumSamples;
 	
 	// Memory calculation: trajectory metadata + sample data
-	// Approximate bytes per sample (FVector + int32 + bool + padding)
-	static constexpr int32 BytesPerSample = 20;
+	// Bytes per sample: FTrajectoryPositionSample now only contains FVector Position (12 bytes: 3 floats)
+	static constexpr int32 BytesPerSample = sizeof(FTrajectoryPositionSample);
 	int64 SampleMemory = (int64)TrajectoryIds.Num() * NumSamples * BytesPerSample;
 	
 	// Trajectory metadata overhead
@@ -129,8 +130,10 @@ FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTraje
 	// Check against available memory
 	UTrajectoryDataMemoryEstimator* MemEstimator = UTrajectoryDataMemoryEstimator::Get();
 	FTrajectoryDataMemoryInfo MemInfo = MemEstimator->GetMemoryInfo();
-	int64 CurrentUsage = MemInfo.CurrentEstimatedUsage + CurrentMemoryUsage;
-	int64 Available = MemInfo.MaxTrajectoryDataMemory - CurrentUsage;
+	// Convert GB to bytes for comparison
+	constexpr double BytesToGB = 1.0 / (1024.0 * 1024.0 * 1024.0);
+	int64 CurrentUsage = static_cast<int64>(MemInfo.CurrentEstimatedUsageGB / BytesToGB) + CurrentMemoryUsage;
+	int64 Available = static_cast<int64>(MemInfo.MaxTrajectoryDataMemoryGB / BytesToGB) - CurrentUsage;
 
 	if (Validation.EstimatedMemoryBytes > Available)
 	{
@@ -143,9 +146,11 @@ FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTraje
 	else
 	{
 		Validation.bCanLoad = true;
+		// Convert to GB for display
+		float RequiredGB = static_cast<float>(Validation.EstimatedMemoryBytes * BytesToGB);
 		Validation.Message = FString::Printf(
-			TEXT("Can load %d trajectories with %d samples each"),
-			Validation.NumTrajectoriesToLoad, Validation.NumSamplesPerTrajectory);
+			TEXT("Can load %d trajectories with %d samples each (Estimated memory: %.2f GB)"),
+			Validation.NumTrajectoriesToLoad, Validation.NumSamplesPerTrajectory, RequiredGB);
 	}
 
 	return Validation;
@@ -247,23 +252,58 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		TrajMetaMap.Add(TrajMeta.TrajectoryId, TrajMeta);
 	}
 
-	// Load trajectories
-	TArray<FLoadedTrajectory> NewTrajectories;
-	int32 LoadedCount = 0;
-	int64 MemoryUsed = 0;
+	// Discover all shard files and build time-range information table
+	TMap<int32, FShardInfo> ShardInfoTable = DiscoverShardFiles(Params.DatasetPath, DatasetMeta);
 
+	// Filter shards to only load those containing data in the requested time range
+	TArray<int32> RelevantShards;
+	for (const auto& ShardEntry : ShardInfoTable)
+	{
+		const FShardInfo& ShardInfo = ShardEntry.Value;
+		if (ShardInfo.ContainsTimeRange(StartTime, EndTime))
+		{
+			RelevantShards.Add(ShardEntry.Key);
+			UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Will load from shard %d (time steps %d-%d)"),
+				ShardEntry.Key, ShardInfo.StartTimeStep, ShardInfo.EndTimeStep);
+		}
+	}
+
+	// Sort shards by index to ensure they are processed in chronological order
+	// This is critical for maintaining temporal ordering of samples when using Append()
+	RelevantShards.Sort();
+
+	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Loading from %d shard(s) for time range %d-%d"),
+		RelevantShards.Num(), StartTime, EndTime);
+
+	// Initialize trajectory data structures - one per requested trajectory
+	TMap<int64, FLoadedTrajectory> TrajectoryMap;
 	for (int64 TrajId : TrajectoryIds)
 	{
 		const FTrajectoryMetaBinary* TrajMeta = TrajMetaMap.Find(TrajId);
-		if (!TrajMeta)
+		if (TrajMeta)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Trajectory ID %lld not found in metadata"), TrajId);
+			FLoadedTrajectory& LoadedTraj = TrajectoryMap.Add(TrajId);
+			LoadedTraj.TrajectoryId = TrajId;
+			LoadedTraj.StartTimeStep = TrajMeta->StartTimeStep;
+			LoadedTraj.EndTimeStep = TrajMeta->EndTimeStep;
+			LoadedTraj.Extent = FVector(TrajMeta->Extent[0], TrajMeta->Extent[1], TrajMeta->Extent[2]);
+			LoadedTraj.Samples.Reserve((EndTime - StartTime) / Params.SampleRate);
+		}
+	}
+	
+	int64 MemoryUsed = 0;
+	FCriticalSection ResultMutex;  // For thread-safe access to shared state
+
+	// Process each relevant shard to accumulate trajectory data across time intervals
+	for (int32 ShardIndex : RelevantShards)
+	{
+		const FShardInfo* ShardInfo = ShardInfoTable.Find(ShardIndex);
+		if (!ShardInfo)
+		{
 			continue;
 		}
 
-		// Determine which shard file(s) to read
-		int32 ShardIndex = TrajMeta->DataFileIndex;
-		FString ShardPath = GetShardFilePath(Params.DatasetPath, ShardIndex);
+		FString ShardPath = ShardInfo->FilePath;
 
 		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
 		if (!PlatformFile.FileExists(*ShardPath))
@@ -272,46 +312,229 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			continue;
 		}
 
-		// Read shard header
+		// Memory-map the shard file once for all trajectories
+		TSharedPtr<FMappedShardFile> MappedShard = MapShardFile(ShardPath);
+		if (!MappedShard.IsValid())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Failed to map shard file: %s"), *ShardPath);
+			continue;
+		}
+
+		// Read shard header from mapped memory
 		FDataBlockHeaderBinary ShardHeader;
-		if (!ReadShardHeader(ShardPath, ShardHeader))
+		const uint8* MappedData = MappedShard->MappedRegion->GetMappedPtr();
+		int64 MappedSize = MappedShard->MappedRegion->GetMappedSize();
+		
+		if (!ReadShardHeaderMapped(MappedData, MappedSize, ShardHeader))
 		{
 			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Failed to read shard header: %s"), *ShardPath);
 			continue;
 		}
 
-		// Load trajectory data from shard
-		FLoadedTrajectory LoadedTraj;
-		if (LoadTrajectoryFromShard(ShardPath, ShardHeader, *TrajMeta, DatasetMeta, Params, LoadedTraj))
+		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Processing shard %d with %d trajectory entries"),
+			ShardIndex, ShardHeader.TrajectoryEntryCount);
+
+		// Build an index of trajectory IDs to entry offsets for O(1) lookup instead of O(M) linear search
+		// This is critical for performance with millions of trajectories
+		TMap<int64, int32> TrajIdToEntryIndex;
+		TrajIdToEntryIndex.Reserve(ShardHeader.TrajectoryEntryCount);
+		
+		int64 DataSectionStart = ShardHeader.DataSectionOffset;
+		int32 EntrySize = DatasetMeta.EntrySizeBytes;
+		
+		for (int32 EntryIdx = 0; EntryIdx < ShardHeader.TrajectoryEntryCount; ++EntryIdx)
 		{
-			// Calculate memory used by this trajectory
-			int64 TrajMemory = sizeof(FLoadedTrajectory) + LoadedTraj.Samples.Num() * sizeof(FTrajectoryPositionSample);
-			MemoryUsed += TrajMemory;
-
-			NewTrajectories.Add(LoadedTraj);
-			LoadedCount++;
-
-			// Report progress for async loads
-			if (bIsLoadingAsync)
+			int64 EntryOffset = DataSectionStart + (EntryIdx * EntrySize);
+			if (EntryOffset + (int64)sizeof(uint64) > MappedSize)
 			{
-				float Progress = (float)LoadedCount / TrajectoryIds.Num() * 100.0f;
-				int32 TotalTraj = TrajectoryIds.Num();
-				
-				// Broadcast on game thread - use weak reference to prevent crashes
-				TWeakObjectPtr<UTrajectoryDataLoader> WeakThis(this);
-				AsyncTask(ENamedThreads::GameThread, [WeakThis, LoadedCount, TotalTraj, Progress]()
-				{
-					if (WeakThis.IsValid() && WeakThis->OnLoadProgress.IsBound())
-					{
-						WeakThis->OnLoadProgress.Broadcast(LoadedCount, TotalTraj, Progress);
-					}
-				});
+				break;
 			}
+			
+			// Read trajectory ID from entry
+			uint64 EntryTrajId;
+			FMemory::Memcpy(&EntryTrajId, MappedData + EntryOffset, sizeof(uint64));
+			TrajIdToEntryIndex.Add(EntryTrajId, EntryIdx);
 		}
+		
+		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Built index for %d entries in shard %d"),
+			TrajIdToEntryIndex.Num(), ShardIndex);
+
+		// For each requested trajectory, try to load samples from this shard (in parallel)
+		// Note: Not all trajectories will have data in every shard
+		TArray<int64> TrajIdsArray = TrajectoryIds;
+		
+		// Capture ShardInfo values to avoid pointer lifetime issues
+		int32 ShardStartTimeStep = ShardInfo->StartTimeStep;
+		int32 ShardEndTimeStep = ShardInfo->EndTimeStep;
+		
+		// Note: ParallelFor in UE uses the task graph system which automatically manages thread pools
+		// The task graph naturally limits parallelism based on available worker threads
+		// UE's scheduler will balance work between game thread and worker threads automatically
+		
+		ParallelFor(TrajIdsArray.Num(), [this, &TrajIdsArray, &TrajMetaMap, &TrajectoryMap, &ResultMutex,
+			MappedData, MappedSize, &ShardHeader, &DatasetMeta, &Params, ShardStartTimeStep, ShardEndTimeStep,
+			&TrajIdToEntryIndex, DataSectionStart, EntrySize](int32 Index)
+		{
+			int64 TrajId = TrajIdsArray[Index];
+			const FTrajectoryMetaBinary* TrajMeta = TrajMetaMap.Find(TrajId);
+			
+			if (!TrajMeta)
+			{
+				return;
+			}
+			
+			// Check if this trajectory has data in this time interval
+			if (TrajMeta->EndTimeStep < ShardStartTimeStep || TrajMeta->StartTimeStep > ShardEndTimeStep)
+			{
+				// Trajectory doesn't exist in this time interval
+				return;
+			}
+			
+			// Use index for O(1) lookup instead of O(M) linear search
+			const int32* EntryIdxPtr = TrajIdToEntryIndex.Find(TrajId);
+			if (!EntryIdxPtr)
+			{
+				// This trajectory doesn't have an entry in this shard
+				return;
+			}
+			
+			int32 EntryIdx = *EntryIdxPtr;
+			int64 EntryOffset = DataSectionStart + (EntryIdx * EntrySize);
+			
+			if (EntryOffset + (int64)sizeof(uint64) > MappedSize)
+			{
+				return;
+			}
+			
+			// Parse the entry to extract samples
+			int32 Offset = sizeof(uint64);
+			
+			int32 StartTimeStepInInterval;
+			FMemory::Memcpy(&StartTimeStepInInterval, MappedData + EntryOffset + Offset, sizeof(int32));
+			Offset += sizeof(int32);
+			
+			int32 ValidSampleCount;
+			FMemory::Memcpy(&ValidSampleCount, MappedData + EntryOffset + Offset, sizeof(int32));
+			Offset += sizeof(int32);
+			
+			// Extract samples for the requested time range
+			TArray<FTrajectoryPositionSample> ShardSamples;
+			
+			// Determine the valid sample range within this shard's interval
+			// StartTimeStepInInterval is relative to the start of this shard interval (0..TimeStepIntervalSize-1)
+			// ValidSampleCount tells us how many consecutive samples are valid starting from StartTimeStepInInterval
+			int32 ValidRangeStart = StartTimeStepInInterval;
+			int32 ValidRangeEnd = StartTimeStepInInterval + ValidSampleCount;
+			
+			// Clamp to requested time range (relative to shard start)
+			int32 LoadStart = ValidRangeStart;
+			int32 LoadEnd = ValidRangeEnd;
+			
+			if (Params.StartTimeStep >= 0)
+			{
+				int32 RequestedStartRelative = Params.StartTimeStep - ShardStartTimeStep;
+				LoadStart = FMath::Max(LoadStart, RequestedStartRelative);
+			}
+			
+			if (Params.EndTimeStep >= 0)
+			{
+				int32 RequestedEndRelative = Params.EndTimeStep - ShardStartTimeStep + 1;
+				LoadEnd = FMath::Min(LoadEnd, RequestedEndRelative);
+			}
+			
+			// Ensure we stay within the shard's time step interval
+			LoadStart = FMath::Clamp(LoadStart, 0, ShardHeader.TimeStepIntervalSize);
+			LoadEnd = FMath::Clamp(LoadEnd, 0, ShardHeader.TimeStepIntervalSize);
+			
+			if (LoadStart >= LoadEnd)
+			{
+				return; // No samples to load from this shard for this trajectory
+			}
+			
+			// Calculate position data offset for the first sample to load
+			int32 PosDataStart = Offset + (LoadStart * 12);
+			
+			// Validate we have enough data
+			int64 PosDataSize = (LoadEnd - LoadStart) * 12;
+			if (EntryOffset + PosDataStart + PosDataSize > MappedSize)
+			{
+				return; // Not enough data
+			}
+			
+			// Get pointer to the position data array (as binary structs)
+			const uint8* PosDataPtr = MappedData + EntryOffset + PosDataStart;
+			const FPositionSampleBinary* BinarySamples = reinterpret_cast<const FPositionSampleBinary*>(PosDataPtr);
+			
+			// FAST PATH: Sample rate 1 - bulk load all consecutive samples with single memcpy
+			if (Params.SampleRate == 1)
+			{
+				// Calculate exact number of samples
+				int32 NumSamples = LoadEnd - LoadStart;
+				
+				// Pre-allocate array to exact size
+				ShardSamples.Reserve(NumSamples);
+				ShardSamples.SetNum(NumSamples);
+				
+				// Bulk copy all position data at once (most efficient method)
+				// Source: binary struct array from mapped memory
+				// Dest: FVector array in ShardSamples (FTrajectoryPositionSample wraps FVector)
+				FMemory::Memcpy(ShardSamples.GetData(), BinarySamples, NumSamples * sizeof(FPositionSampleBinary));
+			}
+			else
+			{
+				// SLOW PATH: Sample rate > 1 - load individual samples with skipping
+				int32 NumSamplesToLoad = ((LoadEnd - LoadStart) + Params.SampleRate - 1) / Params.SampleRate;
+				ShardSamples.Reserve(NumSamplesToLoad);
+				
+				for (int32 TimeStepIdx = LoadStart; TimeStepIdx < LoadEnd; TimeStepIdx += Params.SampleRate)
+				{
+					int32 SampleIdx = TimeStepIdx - LoadStart;
+					const FPositionSampleBinary& BinarySample = BinarySamples[SampleIdx];
+					
+					// Create sample with position data
+					FTrajectoryPositionSample Sample;
+					Sample.Position = FVector(BinarySample.X, BinarySample.Y, BinarySample.Z);
+					
+					// Filter out NaN samples
+					if (!FMath::IsNaN(BinarySample.X) && !FMath::IsNaN(BinarySample.Y) && !FMath::IsNaN(BinarySample.Z))
+					{
+						ShardSamples.Add(Sample);
+					}
+				}
+			}
+			
+			// Add samples to the trajectory (thread-safe)
+			if (ShardSamples.Num() > 0)
+			{
+				FScopeLock Lock(&ResultMutex);
+				FLoadedTrajectory* LoadedTraj = TrajectoryMap.Find(TrajId);
+				if (LoadedTraj)
+				{
+					LoadedTraj->Samples.Append(ShardSamples);
+				}
+			}
+		});
+	}
+
+	// Convert map to array
+	TArray<FLoadedTrajectory> NewTrajectories;
+	for (auto& TrajEntry : TrajectoryMap)
+	{
+		FLoadedTrajectory& Traj = TrajEntry.Value;
+		
+		// Note: Samples are already in temporal order because:
+		// 1. Shards are processed sequentially in time order
+		// 2. Within each shard, samples are loaded in consecutive order
+		// No sorting needed!
+		
+		// Calculate memory usage
+		int64 TrajMemory = sizeof(FLoadedTrajectory) + Traj.Samples.Num() * sizeof(FTrajectoryPositionSample);
+		MemoryUsed += TrajMemory;
+		
+		NewTrajectories.Add(MoveTemp(Traj));
 	}
 
 	// Update loaded data
-	// Note: This replaces any previously loaded data
 	LoadedTrajectories = MoveTemp(NewTrajectories);
 	CurrentMemoryUsage = MemoryUsed;
 
@@ -320,7 +543,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 	Result.MemoryUsedBytes = MemoryUsed;
 
 	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Successfully loaded %d trajectories, using %s memory"),
-		LoadedCount, *UTrajectoryDataBlueprintLibrary::FormatMemorySize(MemoryUsed));
+		LoadedTrajectories.Num(), *UTrajectoryDataBlueprintLibrary::FormatMemorySize(MemoryUsed));
 
 	return Result;
 }
@@ -329,21 +552,35 @@ bool UTrajectoryDataLoader::ReadDatasetMeta(const FString& DatasetPath, FDataset
 {
 	FString MetaPath = FPaths::Combine(DatasetPath, TEXT("dataset-meta.bin"));
 	
-	TArray<uint8> FileData;
-	if (!FFileHelper::LoadFileToArray(FileData, *MetaPath))
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	
+	// Get file size first
+	int64 FileSize = PlatformFile.FileSize(*MetaPath);
+	if (FileSize != sizeof(FDatasetMetaBinary))
 	{
-		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataLoader: Failed to read file: %s"), *MetaPath);
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataLoader: Invalid file size for dataset-meta.bin: %lld (expected %d)"),
+			FileSize, sizeof(FDatasetMetaBinary));
 		return false;
 	}
 
-	if (FileData.Num() != sizeof(FDatasetMetaBinary))
+	// Memory-map the file for fast reading
+	TUniquePtr<IMappedFileHandle> MappedFileHandle(PlatformFile.OpenMapped(*MetaPath));
+	if (!MappedFileHandle.IsValid())
 	{
-		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataLoader: Invalid file size for dataset-meta.bin: %d (expected %d)"),
-			FileData.Num(), sizeof(FDatasetMetaBinary));
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataLoader: Failed to memory-map file: %s"), *MetaPath);
 		return false;
 	}
 
-	FMemory::Memcpy(&OutMeta, FileData.GetData(), sizeof(FDatasetMetaBinary));
+	TUniquePtr<IMappedFileRegion> MappedRegion(MappedFileHandle->MapRegion(0, FileSize));
+	if (!MappedRegion.IsValid())
+	{
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataLoader: Failed to map file region: %s"), *MetaPath);
+		return false;
+	}
+
+	// Direct copy from mapped memory
+	const uint8* MappedData = MappedRegion->GetMappedPtr();
+	FMemory::Memcpy(&OutMeta, MappedData, sizeof(FDatasetMetaBinary));
 
 	// Validate magic number
 	if (FMemory::Memcmp(OutMeta.Magic, "TDSH", 4) != 0)
@@ -359,21 +596,41 @@ bool UTrajectoryDataLoader::ReadTrajectoryMeta(const FString& DatasetPath, TArra
 {
 	FString TrajMetaPath = FPaths::Combine(DatasetPath, TEXT("dataset-trajmeta.bin"));
 	
-	TArray<uint8> FileData;
-	if (!FFileHelper::LoadFileToArray(FileData, *TrajMetaPath))
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	
+	// Get file size
+	int64 FileSize = PlatformFile.FileSize(*TrajMetaPath);
+	if (FileSize <= 0)
 	{
-		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataLoader: Failed to read file: %s"), *TrajMetaPath);
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataLoader: Invalid file size for dataset-trajmeta.bin"));
 		return false;
 	}
 
-	int32 NumTrajectories = FileData.Num() / sizeof(FTrajectoryMetaBinary);
-	if (FileData.Num() % sizeof(FTrajectoryMetaBinary) != 0)
+	int32 NumTrajectories = FileSize / sizeof(FTrajectoryMetaBinary);
+	if (FileSize % sizeof(FTrajectoryMetaBinary) != 0)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: File size not a multiple of trajectory meta size"));
 	}
 
+	// Memory-map the file for fast reading
+	TUniquePtr<IMappedFileHandle> MappedFileHandle(PlatformFile.OpenMapped(*TrajMetaPath));
+	if (!MappedFileHandle.IsValid())
+	{
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataLoader: Failed to memory-map file: %s"), *TrajMetaPath);
+		return false;
+	}
+
+	TUniquePtr<IMappedFileRegion> MappedRegion(MappedFileHandle->MapRegion(0, FileSize));
+	if (!MappedRegion.IsValid())
+	{
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataLoader: Failed to map file region: %s"), *TrajMetaPath);
+		return false;
+	}
+
+	// Direct copy from mapped memory
+	const uint8* MappedData = MappedRegion->GetMappedPtr();
 	OutMetas.SetNum(NumTrajectories);
-	FMemory::Memcpy(OutMetas.GetData(), FileData.GetData(), NumTrajectories * sizeof(FTrajectoryMetaBinary));
+	FMemory::Memcpy(OutMetas.GetData(), MappedData, NumTrajectories * sizeof(FTrajectoryMetaBinary));
 
 	return true;
 }
@@ -411,107 +668,6 @@ bool UTrajectoryDataLoader::ReadShardHeader(const FString& ShardPath, FDataBlock
 	return true;
 }
 
-bool UTrajectoryDataLoader::LoadTrajectoryFromShard(const FString& ShardPath, const FDataBlockHeaderBinary& Header,
-	const FTrajectoryMetaBinary& TrajMeta, const FDatasetMetaBinary& DatasetMeta,
-	const FTrajectoryLoadParams& Params, FLoadedTrajectory& OutTrajectory)
-{
-	// Set trajectory metadata
-	OutTrajectory.TrajectoryId = TrajMeta.TrajectoryId;
-	OutTrajectory.StartTimeStep = TrajMeta.StartTimeStep;
-	OutTrajectory.EndTimeStep = TrajMeta.EndTimeStep;
-	OutTrajectory.Extent = FVector(TrajMeta.Extent[0], TrajMeta.Extent[1], TrajMeta.Extent[2]);
-
-	// Calculate entry offset in file
-	// According to spec: file_offset = data_section_offset + (entry_offset_index * entry_size_bytes)
-	int64 EntryOffset = Header.DataSectionOffset + (TrajMeta.EntryOffsetIndex * (int64)DatasetMeta.EntrySizeBytes);
-
-	// Read trajectory entry data
-	// Entry structure: uint64 trajectory_id + int32 start_time_step + int32 valid_sample_count + positions
-	TArray<uint8> EntryData;
-	int32 TotalEntrySize = DatasetMeta.EntrySizeBytes;
-
-	IFileHandle* FileHandle = FPlatformFileManager::Get().GetPlatformFile().OpenRead(*ShardPath);
-	if (!FileHandle)
-	{
-		return false;
-	}
-
-	// Seek to entry
-	FileHandle->Seek(EntryOffset);
-
-	// Read entry data
-	EntryData.SetNumUninitialized(TotalEntrySize);
-	if (!FileHandle->Read(EntryData.GetData(), TotalEntrySize))
-	{
-		delete FileHandle;
-		return false;
-	}
-
-	delete FileHandle;
-
-	// Parse entry header
-	int32 Offset = 0;
-	uint64 EntryTrajId;
-	FMemory::Memcpy(&EntryTrajId, EntryData.GetData() + Offset, sizeof(uint64));
-	Offset += sizeof(uint64);
-
-	int32 StartTimeStepInInterval;
-	FMemory::Memcpy(&StartTimeStepInInterval, EntryData.GetData() + Offset, sizeof(int32));
-	Offset += sizeof(int32);
-
-	int32 ValidSampleCount;
-	FMemory::Memcpy(&ValidSampleCount, EntryData.GetData() + Offset, sizeof(int32));
-	Offset += sizeof(int32);
-
-	// Verify trajectory ID matches
-	if (EntryTrajId != TrajMeta.TrajectoryId)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Trajectory ID mismatch in shard entry: expected %lld, got %lld"),
-			TrajMeta.TrajectoryId, EntryTrajId);
-		return false;
-	}
-
-	// Determine time range to load relative to the interval
-	// NOTE: Current implementation limitation - this loads only from a single shard.
-	// For proper multi-shard support, we would need to:
-	// 1. Calculate the global interval index from Header.GlobalIntervalIndex
-	// 2. Map Params time steps to the local interval range
-	// 3. Load additional shards if the requested time range spans multiple intervals
-	int32 StartTime = (Params.StartTimeStep < 0) ? 0 : Params.StartTimeStep;
-	int32 EndTime = (Params.EndTimeStep < 0) ? Header.TimeStepIntervalSize : Params.EndTimeStep;
-
-	// Parse positions
-	// Note: StartTimeStepInInterval indicates where this trajectory's data begins within the interval
-	// We need to adjust for this when calculating offsets
-	for (int32 TimeStep = StartTime; TimeStep < EndTime && TimeStep < Header.TimeStepIntervalSize; TimeStep += Params.SampleRate)
-	{
-		// Calculate offset accounting for where the trajectory actually starts in this interval
-		int32 RelativeTimeStep = TimeStep - StartTimeStepInInterval;
-		if (RelativeTimeStep < 0 || RelativeTimeStep >= ValidSampleCount)
-		{
-			// This time step is outside the valid range for this trajectory
-			continue;
-		}
-		
-		int32 PosOffset = Offset + (RelativeTimeStep * 12);
-		
-		float X, Y, Z;
-		FMemory::Memcpy(&X, EntryData.GetData() + PosOffset, sizeof(float));
-		FMemory::Memcpy(&Y, EntryData.GetData() + PosOffset + 4, sizeof(float));
-		FMemory::Memcpy(&Z, EntryData.GetData() + PosOffset + 8, sizeof(float));
-
-		FTrajectoryPositionSample Sample;
-		Sample.TimeStep = TimeStep;
-		Sample.Position = FVector(X, Y, Z);
-		
-		// Check for NaN (invalid sample)
-		Sample.bIsValid = !FMath::IsNaN(X) && !FMath::IsNaN(Y) && !FMath::IsNaN(Z);
-
-		OutTrajectory.Samples.Add(Sample);
-	}
-
-	return true;
-}
 
 TArray<int64> UTrajectoryDataLoader::BuildTrajectoryIdList(const FTrajectoryLoadParams& Params,
 	const FDatasetMetaBinary& DatasetMeta, const TArray<FTrajectoryMetaBinary>& TrajMetas)
@@ -573,6 +729,154 @@ FString UTrajectoryDataLoader::GetShardFilePath(const FString& DatasetPath, int3
 	return FPaths::Combine(DatasetPath, FString::Printf(TEXT("shard-%d.bin"), IntervalIndex));
 }
 
+TSharedPtr<FMappedShardFile> UTrajectoryDataLoader::MapShardFile(const FString& ShardPath)
+{
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	
+	// Get file size
+	int64 FileSize = PlatformFile.FileSize(*ShardPath);
+	if (FileSize <= 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataLoader: Invalid file size for: %s"), *ShardPath);
+		return nullptr;
+	}
+
+	// Open mapped file handle
+	TUniquePtr<IMappedFileHandle> MappedFileHandle(PlatformFile.OpenMapped(*ShardPath));
+	if (!MappedFileHandle.IsValid())
+	{
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataLoader: Failed to memory-map file: %s"), *ShardPath);
+		return nullptr;
+	}
+
+	// Map the entire file into memory
+	TUniquePtr<IMappedFileRegion> MappedRegion(MappedFileHandle->MapRegion(0, FileSize));
+	if (!MappedRegion.IsValid())
+	{
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataLoader: Failed to map file region: %s"), *ShardPath);
+		return nullptr;
+	}
+
+	// Create wrapper structure
+	TSharedPtr<FMappedShardFile> MappedFile = MakeShared<FMappedShardFile>();
+	MappedFile->MappedFileHandle = MoveTemp(MappedFileHandle);
+	MappedFile->MappedRegion = MoveTemp(MappedRegion);
+	MappedFile->ShardPath = ShardPath;
+	
+	return MappedFile;
+}
+
+bool UTrajectoryDataLoader::ReadShardHeaderMapped(const uint8* MappedData, int64 MappedSize, FDataBlockHeaderBinary& OutHeader)
+{
+	if (MappedSize < sizeof(FDataBlockHeaderBinary))
+	{
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataLoader: Mapped region too small for header"));
+		return false;
+	}
+
+	// Direct memory copy from mapped region
+	FMemory::Memcpy(&OutHeader, MappedData, sizeof(FDataBlockHeaderBinary));
+
+	// Validate magic number
+	if (FMemory::Memcmp(OutHeader.Magic, "TDDB", 4) != 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataLoader: Invalid magic number in mapped shard file"));
+		return false;
+	}
+
+	return true;
+}
+
+TMap<int32, FShardInfo> UTrajectoryDataLoader::DiscoverShardFiles(const FString& DatasetPath, const FDatasetMetaBinary& DatasetMeta)
+{
+	TMap<int32, FShardInfo> ShardInfoTable;
+	
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	
+	// Scan dataset directory for shard files (pattern: shard-*.bin)
+	TArray<FString> FoundFiles;
+	FString SearchPattern = FPaths::Combine(DatasetPath, TEXT("shard-*.bin"));
+	PlatformFile.IterateDirectory(*DatasetPath, [&FoundFiles](const TCHAR* FilenameOrDirectory, bool bIsDirectory) -> bool
+	{
+		if (!bIsDirectory)
+		{
+			FString Filename = FPaths::GetCleanFilename(FilenameOrDirectory);
+			// Only include files matching shard-*.bin pattern
+			if (Filename.StartsWith(TEXT("shard-")) && Filename.EndsWith(TEXT(".bin")))
+			{
+				FoundFiles.Add(Filename);
+			}
+		}
+		return true; // Continue iteration
+	});
+	
+	for (const FString& FileName : FoundFiles)
+	{
+		// Extract interval index from filename (this should match DataFileIndex in trajectory metadata)
+		FString NumberPart = FileName.Mid(6); // Skip "shard-"
+		NumberPart = NumberPart.LeftChop(4); // Remove ".bin"
+		
+		if (!NumberPart.IsNumeric())
+		{
+			continue;
+		}
+		
+		int32 FileIndex = FCString::Atoi(*NumberPart);
+		FString FullPath = FPaths::Combine(DatasetPath, FileName);
+		
+		// Try to read the shard header to get GlobalIntervalIndex
+		TUniquePtr<IMappedFileHandle> MappedFileHandle(PlatformFile.OpenMapped(*FullPath));
+		if (!MappedFileHandle.IsValid())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Failed to map shard file for discovery: %s"), *FullPath);
+			continue;
+		}
+		
+		int64 FileSize = PlatformFile.FileSize(*FullPath);
+		if (FileSize < sizeof(FDataBlockHeaderBinary))
+		{
+			continue;
+		}
+		
+		TUniquePtr<IMappedFileRegion> MappedRegion(MappedFileHandle->MapRegion(0, FileSize));
+		if (!MappedRegion.IsValid())
+		{
+			continue;
+		}
+		
+		const uint8* MappedData = MappedRegion->GetMappedPtr();
+		
+		// Read header
+		FDataBlockHeaderBinary Header;
+		if (!ReadShardHeaderMapped(MappedData, FileSize, Header))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Failed to read shard header for: %s"), *FullPath);
+			continue;
+		}
+		
+		// Build shard info
+		FShardInfo Info;
+		Info.GlobalIntervalIndex = Header.GlobalIntervalIndex;
+		Info.FilePath = FullPath;
+		
+		// Calculate time step range
+		// Each shard covers: [GlobalIntervalIndex * TimeStepIntervalSize, (GlobalIntervalIndex + 1) * TimeStepIntervalSize - 1]
+		// Adjusted by the dataset's FirstTimeStep
+		Info.StartTimeStep = DatasetMeta.FirstTimeStep + (Header.GlobalIntervalIndex * DatasetMeta.TimeStepIntervalSize);
+		Info.EndTimeStep = Info.StartTimeStep + DatasetMeta.TimeStepIntervalSize - 1;
+		
+		// Use FileIndex (from filename) as key to match with DataFileIndex in trajectory metadata
+		ShardInfoTable.Add(FileIndex, Info);
+		
+		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Discovered shard file %d (global interval %d): time steps %d-%d"),
+			FileIndex, Header.GlobalIntervalIndex, Info.StartTimeStep, Info.EndTimeStep);
+	}
+	
+	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Discovered %d shard files in dataset"), ShardInfoTable.Num());
+	
+	return ShardInfoTable;
+}
+
 int64 UTrajectoryDataLoader::CalculateMemoryRequirement(const FTrajectoryLoadParams& Params,
 	const FDatasetMetaBinary& DatasetMeta)
 {
@@ -589,9 +893,15 @@ int64 UTrajectoryDataLoader::CalculateMemoryRequirement(const FTrajectoryLoadPar
 		NumTrajectories = Params.TrajectorySelections.Num();
 	}
 
-	// Approximate bytes per sample (same as in ValidateLoadParams)
-	static constexpr int32 BytesPerSample = 20;
-	return NumTrajectories * TimeSteps * BytesPerSample;
+	// Bytes per sample: FTrajectoryPositionSample now only contains FVector Position (12 bytes: 3 floats)
+	static constexpr int32 BytesPerSample = sizeof(FTrajectoryPositionSample);
+	
+	// Memory overhead adjustment factor: accounts for container overhead, alignment, and internal structures
+	// Set to 5.0 to match empirically observed memory usage
+	static constexpr float MemoryOverheadFactor = 5.0f;
+	
+	int64 BaseMemory = NumTrajectories * TimeSteps * BytesPerSample;
+	return static_cast<int64>(BaseMemory * MemoryOverheadFactor);
 }
 
 // FTrajectoryLoadTask implementation

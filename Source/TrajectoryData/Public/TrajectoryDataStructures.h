@@ -68,29 +68,40 @@ struct FDataBlockHeaderBinary
 #pragma pack(pop)
 
 /**
+ * Binary structure for raw position data as stored in shard files
+ * Matches the exact layout in shard-*.bin files for blob copy optimization
+ */
+#pragma pack(push, 1)
+struct FPositionSampleBinary
+{
+	float X;
+	float Y;
+	float Z;
+};
+#pragma pack(pop)
+
+/**
  * Blueprint-exposed structure for a single 3D position sample
+ * Simplified for maximum memory efficiency - stores only position data
+ * Time step is implicit from array index + trajectory StartTimeStep
+ * Invalid samples (NaN) should be filtered during loading
  */
 USTRUCT(BlueprintType)
 struct TRAJECTORYDATA_API FTrajectoryPositionSample
 {
 	GENERATED_BODY()
 
-	/** Time step index */
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	int32 TimeStep;
-
 	/** 3D position (x, y, z) */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FVector Position;
 
-	/** Whether this sample is valid (false if NaN) */
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	bool bIsValid;
-
 	FTrajectoryPositionSample()
-		: TimeStep(0)
-		, Position(FVector::ZeroVector)
-		, bIsValid(false)
+		: Position(FVector::ZeroVector)
+	{
+	}
+	
+	FTrajectoryPositionSample(const FVector& InPosition)
+		: Position(InPosition)
 	{
 	}
 };

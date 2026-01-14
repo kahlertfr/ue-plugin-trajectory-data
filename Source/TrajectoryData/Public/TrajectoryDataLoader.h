@@ -11,6 +11,42 @@
 
 // Forward declarations
 class FTrajectoryLoadTask;
+class IMappedFileHandle;
+class IMappedFileRegion;
+
+/**
+ * Helper structure to manage memory-mapped shard files
+ */
+struct FMappedShardFile
+{
+	TUniquePtr<IMappedFileHandle> MappedFileHandle;
+	TUniquePtr<IMappedFileRegion> MappedRegion;
+	FString ShardPath;
+};
+
+/**
+ * Information about a discovered shard file
+ */
+struct FShardInfo
+{
+	int32 GlobalIntervalIndex;    // From shard header
+	int32 StartTimeStep;          // Calculated: GlobalIntervalIndex * TimeStepIntervalSize + FirstTimeStep
+	int32 EndTimeStep;            // Calculated: StartTimeStep + TimeStepIntervalSize - 1
+	FString FilePath;             // Full path to shard file
+	
+	FShardInfo()
+		: GlobalIntervalIndex(-1)
+		, StartTimeStep(0)
+		, EndTimeStep(0)
+	{
+	}
+	
+	/** Check if this shard contains data for the given time range */
+	bool ContainsTimeRange(int32 RangeStart, int32 RangeEnd) const
+	{
+		return EndTimeStep >= RangeStart && StartTimeStep <= RangeEnd;
+	}
+};
 
 /**
  * Delegate for trajectory loading progress updates
@@ -111,10 +147,14 @@ private:
 	/** Read shard file header */
 	bool ReadShardHeader(const FString& ShardPath, FDataBlockHeaderBinary& OutHeader);
 
-	/** Load trajectory data from shard file */
-	bool LoadTrajectoryFromShard(const FString& ShardPath, const FDataBlockHeaderBinary& Header,
-		const FTrajectoryMetaBinary& TrajMeta, const FDatasetMetaBinary& DatasetMeta,
-		const FTrajectoryLoadParams& Params, FLoadedTrajectory& OutTrajectory);
+	/** Memory-mapped version: Read shard file header from mapped region */
+	bool ReadShardHeaderMapped(const uint8* MappedData, int64 MappedSize, FDataBlockHeaderBinary& OutHeader);
+
+	/** Open and map a shard file for reading */
+	TSharedPtr<FMappedShardFile> MapShardFile(const FString& ShardPath);
+
+	/** Discover all shard files in dataset and build information table */
+	TMap<int32, FShardInfo> DiscoverShardFiles(const FString& DatasetPath, const FDatasetMetaBinary& DatasetMeta);
 
 	/** Internal implementation of synchronous loading */
 	FTrajectoryLoadResult LoadTrajectoriesInternal(const FTrajectoryLoadParams& Params);

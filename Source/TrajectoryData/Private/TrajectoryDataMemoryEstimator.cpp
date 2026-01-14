@@ -69,16 +69,23 @@ FTrajectoryDataMemoryInfo UTrajectoryDataMemoryEstimator::GetMemoryInfo() const
 {
 	FTrajectoryDataMemoryInfo MemoryInfo;
 	
-	MemoryInfo.TotalPhysicalMemory = GetTotalPhysicalMemory();
-	MemoryInfo.MaxTrajectoryDataMemory = GetMaxTrajectoryDataMemory();
-	MemoryInfo.CurrentEstimatedUsage = EstimatedMemoryUsage;
-	MemoryInfo.RemainingCapacity = MemoryInfo.MaxTrajectoryDataMemory - MemoryInfo.CurrentEstimatedUsage;
+	const int64 TotalPhysicalMemory = GetTotalPhysicalMemory();
+	const int64 MaxTrajectoryDataMemory = GetMaxTrajectoryDataMemory();
+	const int64 RemainingCapacity = MaxTrajectoryDataMemory - EstimatedMemoryUsage;
+	
+	// Convert bytes to gigabytes (GB)
+	constexpr double BytesToGB = 1.0 / (1024.0 * 1024.0 * 1024.0);
+	
+	MemoryInfo.TotalPhysicalMemoryGB = static_cast<float>(TotalPhysicalMemory * BytesToGB);
+	MemoryInfo.MaxTrajectoryDataMemoryGB = static_cast<float>(MaxTrajectoryDataMemory * BytesToGB);
+	MemoryInfo.CurrentEstimatedUsageGB = static_cast<float>(EstimatedMemoryUsage * BytesToGB);
+	MemoryInfo.RemainingCapacityGB = static_cast<float>(RemainingCapacity * BytesToGB);
 	
 	// Calculate usage percentage
-	if (MemoryInfo.MaxTrajectoryDataMemory > 0)
+	if (MaxTrajectoryDataMemory > 0)
 	{
-		MemoryInfo.UsagePercentage = (static_cast<float>(MemoryInfo.CurrentEstimatedUsage) / 
-		                              static_cast<float>(MemoryInfo.MaxTrajectoryDataMemory)) * 100.0f;
+		MemoryInfo.UsagePercentage = (static_cast<float>(EstimatedMemoryUsage) / 
+		                              static_cast<float>(MaxTrajectoryDataMemory)) * 100.0f;
 	}
 	else
 	{
