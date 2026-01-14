@@ -360,8 +360,10 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		int32 ShardEndTimeStep = ShardInfo->EndTimeStep;
 		
 		// Limit thread count to leave cores for game thread - use 75% of available cores, minimum 1
+		// Note: ParallelFor in UE uses the task graph system which automatically manages thread pools
+		// We control parallelism by limiting batch sizes to reduce contention
 		int32 MaxThreads = FMath::Max(1, (int32)(FPlatformMisc::NumberOfCoresIncludingHyperthreads() * 0.75f));
-		// Calculate items per batch to limit parallelism
+		// Calculate items per batch to limit parallelism - larger batches = fewer parallel tasks
 		int32 ItemsPerBatch = FMath::Max(1, (TrajIdsArray.Num() + MaxThreads - 1) / MaxThreads);
 		
 		ParallelFor(TrajIdsArray.Num(), [this, &TrajIdsArray, &TrajMetaMap, &TrajectoryMap, &ResultMutex,
@@ -462,7 +464,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 					LoadedTraj->Samples.Append(ShardSamples);
 				}
 			}
-		}, EParallelForFlags::None, ItemsPerBatch);
+		}, ItemsPerBatch);
 	}
 
 	// Convert map to array and sort samples by time step
