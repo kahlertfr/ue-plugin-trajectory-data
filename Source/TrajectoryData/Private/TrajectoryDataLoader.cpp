@@ -131,7 +131,7 @@ FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTraje
 	UTrajectoryDataMemoryEstimator* MemEstimator = UTrajectoryDataMemoryEstimator::Get();
 	FTrajectoryDataMemoryInfo MemInfo = MemEstimator->GetMemoryInfo();
 	// Convert GB to bytes for comparison
-	const double BytesToGB = 1.0 / (1024.0 * 1024.0 * 1024.0);
+	constexpr double BytesToGB = 1.0 / (1024.0 * 1024.0 * 1024.0);
 	int64 CurrentUsage = static_cast<int64>(MemInfo.CurrentEstimatedUsageGB / BytesToGB) + CurrentMemoryUsage;
 	int64 Available = static_cast<int64>(MemInfo.MaxTrajectoryDataMemoryGB / BytesToGB) - CurrentUsage;
 
@@ -147,7 +147,6 @@ FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTraje
 	{
 		Validation.bCanLoad = true;
 		// Convert to GB for display
-		constexpr double BytesToGB = 1.0 / (1024.0 * 1024.0 * 1024.0);
 		float RequiredGB = static_cast<float>(Validation.EstimatedMemoryBytes * BytesToGB);
 		Validation.Message = FString::Printf(
 			TEXT("Can load %d trajectories with %d samples each (Estimated memory: %.2f GB)"),
