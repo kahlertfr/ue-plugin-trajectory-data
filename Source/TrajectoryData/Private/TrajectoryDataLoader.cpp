@@ -118,8 +118,8 @@ FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTraje
 	Validation.NumSamplesPerTrajectory = NumSamples;
 	
 	// Memory calculation: trajectory metadata + sample data
-	// Approximate bytes per sample (FVector + int32 + bool + padding)
-	static constexpr int32 BytesPerSample = 20;
+	// Bytes per sample: FTrajectoryPositionSample now only contains FVector Position (12 bytes: 3 floats)
+	static constexpr int32 BytesPerSample = sizeof(FTrajectoryPositionSample);
 	int64 SampleMemory = (int64)TrajectoryIds.Num() * NumSamples * BytesPerSample;
 	
 	// Trajectory metadata overhead
@@ -889,8 +889,8 @@ int64 UTrajectoryDataLoader::CalculateMemoryRequirement(const FTrajectoryLoadPar
 		NumTrajectories = Params.TrajectorySelections.Num();
 	}
 
-	// Approximate bytes per sample (same as in ValidateLoadParams)
-	static constexpr int32 BytesPerSample = 20;
+	// Bytes per sample: FTrajectoryPositionSample now only contains FVector Position (12 bytes: 3 floats)
+	static constexpr int32 BytesPerSample = sizeof(FTrajectoryPositionSample);
 	return NumTrajectories * TimeSteps * BytesPerSample;
 }
 
