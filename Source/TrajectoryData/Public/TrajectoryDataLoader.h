@@ -167,16 +167,6 @@ private:
 	/** Discover all shard files in dataset and build information table */
 	TMap<int32, FShardInfo> DiscoverShardFiles(const FString& DatasetPath, const FDatasetMetaBinary& DatasetMeta);
 
-	/** Filter shard groups to only include shards relevant for the time range */
-	TMap<int32, TArray<const FTrajectoryMetaBinary*>> FilterShardsByTimeRange(
-		const TMap<int32, TArray<const FTrajectoryMetaBinary*>>& ShardGroups,
-		const TMap<int32, FShardInfo>& ShardInfoTable,
-		int32 StartTimeStep, int32 EndTimeStep);
-
-	/** Group trajectories by shard file for efficient batch loading */
-	TMap<int32, TArray<const FTrajectoryMetaBinary*>> GroupTrajectoriesByShard(
-		const TArray<int64>& TrajectoryIds, const TMap<int64, FTrajectoryMetaBinary>& TrajMetaMap);
-
 	/** Internal implementation of synchronous loading */
 	FTrajectoryLoadResult LoadTrajectoriesInternal(const FTrajectoryLoadParams& Params);
 

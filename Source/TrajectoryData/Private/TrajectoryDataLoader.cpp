@@ -987,62 +987,6 @@ TMap<int32, FShardInfo> UTrajectoryDataLoader::DiscoverShardFiles(const FString&
 	return ShardInfoTable;
 }
 
-TMap<int32, TArray<const FTrajectoryMetaBinary*>> UTrajectoryDataLoader::FilterShardsByTimeRange(
-	const TMap<int32, TArray<const FTrajectoryMetaBinary*>>& ShardGroups,
-	const TMap<int32, FShardInfo>& ShardInfoTable,
-	int32 StartTimeStep, int32 EndTimeStep)
-{
-	TMap<int32, TArray<const FTrajectoryMetaBinary*>> FilteredGroups;
-	
-	for (const auto& ShardGroup : ShardGroups)
-	{
-		int32 ShardIndex = ShardGroup.Key;
-		
-		// Check if we have info for this shard
-		const FShardInfo* ShardInfo = ShardInfoTable.Find(ShardIndex);
-		if (!ShardInfo)
-		{
-			// If no info available, include it (fallback to old behavior)
-			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: No shard info for index %d, including anyway"), ShardIndex);
-			FilteredGroups.Add(ShardGroup.Key, ShardGroup.Value);
-			continue;
-		}
-		
-		// Check if shard's time range overlaps with requested time range
-		if (ShardInfo->ContainsTimeRange(StartTimeStep, EndTimeStep))
-		{
-			FilteredGroups.Add(ShardGroup.Key, ShardGroup.Value);
-			UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Including shard %d (time steps %d-%d) for range %d-%d"),
-				ShardIndex, ShardInfo->StartTimeStep, ShardInfo->EndTimeStep, StartTimeStep, EndTimeStep);
-		}
-		else
-		{
-			UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Skipping shard %d (time steps %d-%d) - outside range %d-%d"),
-				ShardIndex, ShardInfo->StartTimeStep, ShardInfo->EndTimeStep, StartTimeStep, EndTimeStep);
-		}
-	}
-	
-	return FilteredGroups;
-}
-
-TMap<int32, TArray<const FTrajectoryMetaBinary*>> UTrajectoryDataLoader::GroupTrajectoriesByShard(
-	const TArray<int64>& TrajectoryIds, const TMap<int64, FTrajectoryMetaBinary>& TrajMetaMap)
-{
-	TMap<int32, TArray<const FTrajectoryMetaBinary*>> ShardGroups;
-
-	for (int64 TrajId : TrajectoryIds)
-	{
-		const FTrajectoryMetaBinary* TrajMeta = TrajMetaMap.Find(TrajId);
-		if (TrajMeta)
-		{
-			int32 ShardIndex = TrajMeta->DataFileIndex;
-			ShardGroups.FindOrAdd(ShardIndex).Add(TrajMeta);
-		}
-	}
-
-	return ShardGroups;
-}
-
 int64 UTrajectoryDataLoader::CalculateMemoryRequirement(const FTrajectoryLoadParams& Params,
 	const FDatasetMetaBinary& DatasetMeta)
 {
