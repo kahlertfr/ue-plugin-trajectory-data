@@ -903,7 +903,19 @@ bool UTrajectoryDataLoader::LoadTrajectoryFromShardMapped(const uint8* MappedDat
 	int32 InitialSampleCount = OutTrajectory.Samples.Num();
 	OutTrajectory.Samples.Reserve(InitialSampleCount + NumSamplesToLoad);
 
+	// Validate that we have enough data in the mapped region for all position samples
+	int64 PositionDataSize = ValidSampleCount * sizeof(FPositionSampleBinary);
+	if (Offset + PositionDataSize > TotalEntrySize)
+	{
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataLoader: Position data exceeds entry size"));
+		return false;
+	}
+
 	// Pointer to raw position data in shard file (matches FPositionSampleBinary layout)
+	// This is safe because:
+	// 1. Shard file format is little-endian float32 (verified in header)
+	// 2. FPositionSampleBinary is packed struct with 3 floats (12 bytes)
+	// 3. We've validated the data size above
 	const FPositionSampleBinary* PositionData = reinterpret_cast<const FPositionSampleBinary*>(EntryData + Offset);
 
 	// Load samples using direct pointer access to binary data
@@ -912,6 +924,15 @@ bool UTrajectoryDataLoader::LoadTrajectoryFromShardMapped(const uint8* MappedDat
 		int32 RelativeTimeStep = TimeStep - StartTimeStepInInterval;
 		if (RelativeTimeStep < 0 || RelativeTimeStep >= ValidSampleCount)
 		{
+			continue;
+		}
+
+		// Bounds check: ensure this sample index is within mapped memory
+		// (This should always pass given earlier validation, but provides defense in depth)
+		int64 SampleOffset = Offset + (RelativeTimeStep * sizeof(FPositionSampleBinary));
+		if (SampleOffset + sizeof(FPositionSampleBinary) > TotalEntrySize)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Sample at timestep %d exceeds entry bounds, skipping"), TimeStep);
 			continue;
 		}
 
