@@ -264,6 +264,10 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		}
 	}
 
+	// Sort shards by index to ensure they are processed in chronological order
+	// This is critical for maintaining temporal ordering of samples when using Append()
+	RelevantShards.Sort();
+
 	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Loading from %d shard(s) for time range %d-%d"),
 		RelevantShards.Num(), StartTime, EndTime);
 
