@@ -412,43 +412,87 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			// Extract samples for the requested time range
 			TArray<FTrajectoryPositionSample> ShardSamples;
 			
-			for (int32 TimeStepIdx = 0; TimeStepIdx < ShardHeader.TimeStepIntervalSize; TimeStepIdx += Params.SampleRate)
+			// Determine the valid sample range within this shard's interval
+			// StartTimeStepInInterval is relative to the start of this shard interval (0..TimeStepIntervalSize-1)
+			// ValidSampleCount tells us how many consecutive samples are valid starting from StartTimeStepInInterval
+			int32 ValidRangeStart = StartTimeStepInInterval;
+			int32 ValidRangeEnd = StartTimeStepInInterval + ValidSampleCount;
+			
+			// Clamp to requested time range (relative to shard start)
+			int32 LoadStart = ValidRangeStart;
+			int32 LoadEnd = ValidRangeEnd;
+			
+			if (Params.StartTimeStep >= 0)
 			{
-				// Calculate absolute time step
-				int32 AbsoluteTimeStep = ShardStartTimeStep + TimeStepIdx;
+				int32 RequestedStartRelative = Params.StartTimeStep - ShardStartTimeStep;
+				LoadStart = FMath::Max(LoadStart, RequestedStartRelative);
+			}
+			
+			if (Params.EndTimeStep >= 0)
+			{
+				int32 RequestedEndRelative = Params.EndTimeStep - ShardStartTimeStep + 1;
+				LoadEnd = FMath::Min(LoadEnd, RequestedEndRelative);
+			}
+			
+			// Ensure we stay within the shard's time step interval
+			LoadStart = FMath::Clamp(LoadStart, 0, ShardHeader.TimeStepIntervalSize);
+			LoadEnd = FMath::Clamp(LoadEnd, 0, ShardHeader.TimeStepIntervalSize);
+			
+			if (LoadStart >= LoadEnd)
+			{
+				return; // No samples to load from this shard for this trajectory
+			}
+			
+			// Calculate position data offset for the first sample to load
+			int32 PosDataStart = Offset + (LoadStart * 12);
+			
+			// Validate we have enough data
+			int64 PosDataSize = (LoadEnd - LoadStart) * 12;
+			if (EntryOffset + PosDataStart + PosDataSize > MappedSize)
+			{
+				return; // Not enough data
+			}
+			
+			// Get pointer to the position data array (as binary structs)
+			const uint8* PosDataPtr = MappedData + EntryOffset + PosDataStart;
+			const FPositionSampleBinary* BinarySamples = reinterpret_cast<const FPositionSampleBinary*>(PosDataPtr);
+			
+			// FAST PATH: Sample rate 1 - bulk load all consecutive samples with single memcpy
+			if (Params.SampleRate == 1)
+			{
+				// Calculate exact number of samples
+				int32 NumSamples = LoadEnd - LoadStart;
 				
-				// Check if this time step is within the requested range
-				if (Params.StartTimeStep >= 0 && AbsoluteTimeStep < Params.StartTimeStep)
-					continue;
-				if (Params.EndTimeStep >= 0 && AbsoluteTimeStep > Params.EndTimeStep)
-					continue;
+				// Pre-allocate array to exact size
+				ShardSamples.Reserve(NumSamples);
+				ShardSamples.SetNum(NumSamples);
 				
-				// Check if this sample is valid (within the trajectory's valid range in this interval)
-				// StartTimeStepInInterval is relative to the start of this shard interval (0..TimeStepIntervalSize-1)
-				// ValidSampleCount tells us how many consecutive samples are valid starting from StartTimeStepInInterval
-				if (TimeStepIdx < StartTimeStepInInterval || TimeStepIdx >= (StartTimeStepInInterval + ValidSampleCount))
+				// Bulk copy all position data at once (most efficient method)
+				// Source: binary struct array from mapped memory
+				// Dest: FVector array in ShardSamples (FTrajectoryPositionSample wraps FVector)
+				FMemory::Memcpy(ShardSamples.GetData(), BinarySamples, NumSamples * sizeof(FPositionSampleBinary));
+			}
+			else
+			{
+				// SLOW PATH: Sample rate > 1 - load individual samples with skipping
+				int32 NumSamplesToLoad = ((LoadEnd - LoadStart) + Params.SampleRate - 1) / Params.SampleRate;
+				ShardSamples.Reserve(NumSamplesToLoad);
+				
+				for (int32 TimeStepIdx = LoadStart; TimeStepIdx < LoadEnd; TimeStepIdx += Params.SampleRate)
 				{
-					continue;
+					int32 SampleIdx = TimeStepIdx - LoadStart;
+					const FPositionSampleBinary& BinarySample = BinarySamples[SampleIdx];
+					
+					// Create sample with position data
+					FTrajectoryPositionSample Sample;
+					Sample.Position = FVector(BinarySample.X, BinarySample.Y, BinarySample.Z);
+					
+					// Filter out NaN samples
+					if (!FMath::IsNaN(BinarySample.X) && !FMath::IsNaN(BinarySample.Y) && !FMath::IsNaN(BinarySample.Z))
+					{
+						ShardSamples.Add(Sample);
+					}
 				}
-				
-				// Read position data
-				int32 PosOffset = Offset + (TimeStepIdx * 12);
-				if (EntryOffset + PosOffset + 12 > MappedSize)
-				{
-					break;
-				}
-				
-				float X, Y, Z;
-				FMemory::Memcpy(&X, MappedData + EntryOffset + PosOffset, sizeof(float));
-				FMemory::Memcpy(&Y, MappedData + EntryOffset + PosOffset + 4, sizeof(float));
-				FMemory::Memcpy(&Z, MappedData + EntryOffset + PosOffset + 8, sizeof(float));
-				
-				FTrajectoryPositionSample Sample;
-				Sample.TimeStep = AbsoluteTimeStep;
-				Sample.Position = FVector(X, Y, Z);
-				Sample.bIsValid = !FMath::IsNaN(X) && !FMath::IsNaN(Y) && !FMath::IsNaN(Z);
-				
-				ShardSamples.Add(Sample);
 			}
 			
 			// Add samples to the trajectory (thread-safe)
@@ -464,17 +508,16 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		});
 	}
 
-	// Convert map to array and sort samples by time step
+	// Convert map to array
 	TArray<FLoadedTrajectory> NewTrajectories;
 	for (auto& TrajEntry : TrajectoryMap)
 	{
 		FLoadedTrajectory& Traj = TrajEntry.Value;
 		
-		// Sort samples by time step (since they came from multiple shards)
-		Traj.Samples.Sort([](const FTrajectoryPositionSample& A, const FTrajectoryPositionSample& B)
-		{
-			return A.TimeStep < B.TimeStep;
-		});
+		// Note: Samples are already in temporal order because:
+		// 1. Shards are processed sequentially in time order
+		// 2. Within each shard, samples are loaded in consecutive order
+		// No sorting needed!
 		
 		// Calculate memory usage
 		int64 TrajMemory = sizeof(FLoadedTrajectory) + Traj.Samples.Num() * sizeof(FTrajectoryPositionSample);
