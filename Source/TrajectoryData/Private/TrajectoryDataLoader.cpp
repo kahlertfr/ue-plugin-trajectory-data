@@ -251,43 +251,51 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 	// Discover all shard files and build time-range information table
 	TMap<int32, FShardInfo> ShardInfoTable = DiscoverShardFiles(Params.DatasetPath, DatasetMeta);
 
-	// Group trajectories by shard file for efficient batch loading
-	TMap<int32, TArray<const FTrajectoryMetaBinary*>> ShardGroups = GroupTrajectoriesByShard(TrajectoryIds, TrajMetaMap);
-
 	// Filter shards to only load those containing data in the requested time range
-	ShardGroups = FilterShardsByTimeRange(ShardGroups, ShardInfoTable, StartTime, EndTime);
+	TArray<int32> RelevantShards;
+	for (const auto& ShardEntry : ShardInfoTable)
+	{
+		const FShardInfo& ShardInfo = ShardEntry.Value;
+		if (ShardInfo.ContainsTimeRange(StartTime, EndTime))
+		{
+			RelevantShards.Add(ShardEntry.Key);
+			UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Will load from shard %d (time steps %d-%d)"),
+				ShardEntry.Key, ShardInfo.StartTimeStep, ShardInfo.EndTimeStep);
+		}
+	}
 
 	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Loading from %d shard(s) for time range %d-%d"),
-		ShardGroups.Num(), StartTime, EndTime);
+		RelevantShards.Num(), StartTime, EndTime);
 
-	// Load trajectories using memory-mapped files and parallel processing
-	TArray<FLoadedTrajectory> NewTrajectories;
-	NewTrajectories.Reserve(TrajectoryIds.Num());
+	// Initialize trajectory data structures - one per requested trajectory
+	TMap<int64, FLoadedTrajectory> TrajectoryMap;
+	for (int64 TrajId : TrajectoryIds)
+	{
+		const FTrajectoryMetaBinary* TrajMeta = TrajMetaMap.Find(TrajId);
+		if (TrajMeta)
+		{
+			FLoadedTrajectory& LoadedTraj = TrajectoryMap.Add(TrajId);
+			LoadedTraj.TrajectoryId = TrajId;
+			LoadedTraj.StartTimeStep = TrajMeta->StartTimeStep;
+			LoadedTraj.EndTimeStep = TrajMeta->EndTimeStep;
+			LoadedTraj.Extent = FVector(TrajMeta->Extent[0], TrajMeta->Extent[1], TrajMeta->Extent[2]);
+			LoadedTraj.Samples.Reserve((EndTime - StartTime) / Params.SampleRate);
+		}
+	}
 	
-	int32 LoadedCount = 0;
 	int64 MemoryUsed = 0;
 	FCriticalSection ResultMutex;  // For thread-safe access to shared state
 
-	// Process each shard group
-	for (const auto& ShardGroup : ShardGroups)
+	// Process each relevant shard to accumulate trajectory data across time intervals
+	for (int32 ShardIndex : RelevantShards)
 	{
-		int32 ShardIndex = ShardGroup.Key;
-		const TArray<const FTrajectoryMetaBinary*>& TrajMetasInShard = ShardGroup.Value;
-
-		// Get shard file path from ShardInfoTable (which has the actual discovered path)
-		FString ShardPath;
 		const FShardInfo* ShardInfo = ShardInfoTable.Find(ShardIndex);
-		if (ShardInfo && !ShardInfo->FilePath.IsEmpty())
+		if (!ShardInfo)
 		{
-			// Use the discovered file path
-			ShardPath = ShardInfo->FilePath;
+			continue;
 		}
-		else
-		{
-			// Fallback: construct path (for backward compatibility if shard wasn't discovered)
-			ShardPath = GetShardFilePath(Params.DatasetPath, ShardIndex);
-			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Using fallback path construction for shard %d"), ShardIndex);
-		}
+
+		FString ShardPath = ShardInfo->FilePath;
 
 		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
 		if (!PlatformFile.FileExists(*ShardPath))
@@ -296,7 +304,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			continue;
 		}
 
-		// Memory-map the shard file once for all trajectories in this shard
+		// Memory-map the shard file once for all trajectories
 		TSharedPtr<FMappedShardFile> MappedShard = MapShardFile(ShardPath);
 		if (!MappedShard.IsValid())
 		{
@@ -315,75 +323,148 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			continue;
 		}
 
-		// Load trajectories from this shard in parallel
-		TArray<FLoadedTrajectory> ShardTrajectories;
-		TArray<bool> LoadSuccess;
-		ShardTrajectories.SetNum(TrajMetasInShard.Num());
-		LoadSuccess.SetNum(TrajMetasInShard.Num());
+		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Processing shard %d with %d trajectory entries"),
+			ShardIndex, ShardHeader.TrajectoryEntryCount);
 
-		// Note: DatasetMeta, Params, and MappedData are read-only in the lambda and safe for concurrent access
-		// Explicit capture list to document thread safety
-		ParallelFor(TrajMetasInShard.Num(), [this, &TrajMetasInShard, &ShardTrajectories, &LoadSuccess, MappedData, MappedSize, &ShardHeader, &DatasetMeta, &Params](int32 Index)
-		{
-			const FTrajectoryMetaBinary* TrajMeta = TrajMetasInShard[Index];
-			
-			// Load trajectory using memory-mapped data (zero-copy)
-			// Each thread writes to its own index in ShardTrajectories and LoadSuccess arrays
-			FLoadedTrajectory& LoadedTraj = ShardTrajectories[Index];
-			LoadSuccess[Index] = LoadTrajectoryFromShardMapped(MappedData, MappedSize, ShardHeader, *TrajMeta, DatasetMeta, Params, LoadedTraj);
-		});
-
-		// Accumulate results (no longer in critical section for each trajectory)
-		TArray<FLoadedTrajectory> ValidTrajectories;
-		int64 ShardMemoryUsed = 0;
+		// For each requested trajectory, try to load samples from this shard (in parallel)
+		// Note: Not all trajectories will have data in every shard
+		TArray<int64> TrajIdsArray = TrajectoryIds;
 		
-		for (int32 Index = 0; Index < ShardTrajectories.Num(); ++Index)
+		ParallelFor(TrajIdsArray.Num(), [this, &TrajIdsArray, &TrajMetaMap, &TrajectoryMap, &ResultMutex,
+			MappedData, MappedSize, &ShardHeader, &DatasetMeta, &Params, &ShardInfo](int32 Index)
 		{
-			if (LoadSuccess[Index])
+			int64 TrajId = TrajIdsArray[Index];
+			const FTrajectoryMetaBinary* TrajMeta = TrajMetaMap.Find(TrajId);
+			
+			if (!TrajMeta)
 			{
-				FLoadedTrajectory& LoadedTraj = ShardTrajectories[Index];
-				// Calculate memory used by this trajectory
-				int64 TrajMemory = sizeof(FLoadedTrajectory) + LoadedTraj.Samples.Num() * sizeof(FTrajectoryPositionSample);
-				ShardMemoryUsed += TrajMemory;
-				ValidTrajectories.Add(MoveTemp(LoadedTraj));
+				return;
 			}
-		}
-
-		// Update shared state in a single critical section
-		int32 CurrentLoadedCount = 0;
-		{
-			// Count before the move operation (ValidTrajectories will be moved below)
-			int32 NumValidTrajectoriesInShard = ValidTrajectories.Num();
 			
-			FScopeLock Lock(&ResultMutex);
-			MemoryUsed += ShardMemoryUsed;
-			NewTrajectories.Append(MoveTemp(ValidTrajectories));
-			LoadedCount += NumValidTrajectoriesInShard;
-			CurrentLoadedCount = LoadedCount; // Capture count inside lock
-		}
-
-		// Report progress for async loads (outside critical section, once per shard)
-		if (bIsLoadingAsync)
-		{
-			float Progress = (float)CurrentLoadedCount / TrajectoryIds.Num() * 100.0f;
-			int32 TotalTraj = TrajectoryIds.Num();
-			
-			// Broadcast on game thread - use weak reference to prevent crashes
-			TWeakObjectPtr<UTrajectoryDataLoader> WeakThis(this);
-			AsyncTask(ENamedThreads::GameThread, [WeakThis, CurrentLoadedCount, TotalTraj, Progress]()
+			// Check if this trajectory has data in this time interval
+			if (TrajMeta->EndTimeStep < ShardInfo->StartTimeStep || TrajMeta->StartTimeStep > ShardInfo->EndTimeStep)
 			{
-				if (WeakThis.IsValid() && WeakThis->OnLoadProgress.IsBound())
+				// Trajectory doesn't exist in this time interval
+				return;
+			}
+			
+			// Load samples from this shard for this trajectory
+			// We need to find the trajectory's entry in this shard
+			// The shard contains entries for multiple trajectories, we need to search for ours
+			// For now, we'll scan through entries (can be optimized with an index later)
+			
+			// Calculate data section start
+			int64 DataSectionStart = ShardHeader.DataSectionOffset;
+			int32 EntrySize = DatasetMeta.EntrySizeBytes;
+			
+			// Search for this trajectory's entry in the shard
+			bool FoundEntry = false;
+			for (int32 EntryIdx = 0; EntryIdx < ShardHeader.TrajectoryEntryCount; ++EntryIdx)
+			{
+				int64 EntryOffset = DataSectionStart + (EntryIdx * EntrySize);
+				if (EntryOffset + sizeof(uint64) > MappedSize)
 				{
-					WeakThis->OnLoadProgress.Broadcast(CurrentLoadedCount, TotalTraj, Progress);
+					break;
 				}
-			});
-		}
+				
+				// Read trajectory ID from entry
+				uint64 EntryTrajId;
+				FMemory::Memcpy(&EntryTrajId, MappedData + EntryOffset, sizeof(uint64));
+				
+				if (EntryTrajId == TrajId)
+				{
+					// Found the entry for this trajectory in this shard
+					FoundEntry = true;
+					
+					// Parse the entry to extract samples
+					int32 Offset = sizeof(uint64);
+					
+					int32 StartTimeStepInInterval;
+					FMemory::Memcpy(&StartTimeStepInInterval, MappedData + EntryOffset + Offset, sizeof(int32));
+					Offset += sizeof(int32);
+					
+					int32 ValidSampleCount;
+					FMemory::Memcpy(&ValidSampleCount, MappedData + EntryOffset + Offset, sizeof(int32));
+					Offset += sizeof(int32);
+					
+					// Extract samples for the requested time range
+					TArray<FTrajectoryPositionSample> ShardSamples;
+					
+					for (int32 TimeStepIdx = 0; TimeStepIdx < ShardHeader.TimeStepIntervalSize; TimeStepIdx += Params.SampleRate)
+					{
+						// Calculate absolute time step
+						int32 AbsoluteTimeStep = ShardInfo->StartTimeStep + TimeStepIdx;
+						
+						// Check if this time step is within the requested range
+						if (AbsoluteTimeStep < Params.StartTimeStep && Params.StartTimeStep >= 0)
+							continue;
+						if (AbsoluteTimeStep > Params.EndTimeStep && Params.EndTimeStep >= 0)
+							continue;
+						
+						// Check if this sample is valid (within the trajectory's valid range in this interval)
+						int32 RelativeTimeStep = TimeStepIdx - StartTimeStepInInterval;
+						if (RelativeTimeStep < 0 || RelativeTimeStep >= ValidSampleCount)
+						{
+							continue;
+						}
+						
+						// Read position data
+						int32 PosOffset = Offset + (TimeStepIdx * 12);
+						if (EntryOffset + PosOffset + 12 > MappedSize)
+						{
+							break;
+						}
+						
+						float X, Y, Z;
+						FMemory::Memcpy(&X, MappedData + EntryOffset + PosOffset, sizeof(float));
+						FMemory::Memcpy(&Y, MappedData + EntryOffset + PosOffset + 4, sizeof(float));
+						FMemory::Memcpy(&Z, MappedData + EntryOffset + PosOffset + 8, sizeof(float));
+						
+						FTrajectoryPositionSample Sample;
+						Sample.TimeStep = AbsoluteTimeStep;
+						Sample.Position = FVector(X, Y, Z);
+						Sample.bIsValid = !FMath::IsNaN(X) && !FMath::IsNaN(Y) && !FMath::IsNaN(Z);
+						
+						ShardSamples.Add(Sample);
+					}
+					
+					// Add samples to the trajectory (thread-safe)
+					if (ShardSamples.Num() > 0)
+					{
+						FScopeLock Lock(&ResultMutex);
+						FLoadedTrajectory* LoadedTraj = TrajectoryMap.Find(TrajId);
+						if (LoadedTraj)
+						{
+							LoadedTraj->Samples.Append(ShardSamples);
+						}
+					}
+					
+					break; // Found and processed this trajectory's entry
+				}
+			}
+		});
+	}
+
+	// Convert map to array and sort samples by time step
+	TArray<FLoadedTrajectory> NewTrajectories;
+	for (auto& TrajEntry : TrajectoryMap)
+	{
+		FLoadedTrajectory& Traj = TrajEntry.Value;
 		
-		// Mapped file will be automatically unmapped when MappedShard goes out of scope
+		// Sort samples by time step (since they came from multiple shards)
+		Traj.Samples.Sort([](const FTrajectoryPositionSample& A, const FTrajectoryPositionSample& B)
+		{
+			return A.TimeStep < B.TimeStep;
+		});
+		
+		// Calculate memory usage
+		int64 TrajMemory = sizeof(FLoadedTrajectory) + Traj.Samples.Num() * sizeof(FTrajectoryPositionSample);
+		MemoryUsed += TrajMemory;
+		
+		NewTrajectories.Add(MoveTemp(Traj));
 	}
 
 	// Update loaded data
-	// Note: This replaces any previously loaded data
 	LoadedTrajectories = MoveTemp(NewTrajectories);
 	CurrentMemoryUsage = MemoryUsed;
 
@@ -392,7 +473,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 	Result.MemoryUsedBytes = MemoryUsed;
 
 	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Successfully loaded %d trajectories, using %s memory"),
-		LoadedCount, *UTrajectoryDataBlueprintLibrary::FormatMemorySize(MemoryUsed));
+		LoadedTrajectories.Num(), *UTrajectoryDataBlueprintLibrary::FormatMemorySize(MemoryUsed));
 
 	return Result;
 }
