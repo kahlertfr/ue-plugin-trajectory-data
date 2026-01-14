@@ -150,12 +150,6 @@ private:
 	/** Memory-mapped version: Read shard file header from mapped region */
 	bool ReadShardHeaderMapped(const uint8* MappedData, int64 MappedSize, FDataBlockHeaderBinary& OutHeader);
 
-	/** Memory-mapped version: Load trajectory data from mapped shard file */
-	bool LoadTrajectoryFromShardMapped(const uint8* MappedData, int64 MappedSize,
-		const FDataBlockHeaderBinary& Header, const FTrajectoryMetaBinary& TrajMeta,
-		const FDatasetMetaBinary& DatasetMeta, const FTrajectoryLoadParams& Params,
-		FLoadedTrajectory& OutTrajectory);
-
 	/** Open and map a shard file for reading */
 	TSharedPtr<FMappedShardFile> MapShardFile(const FString& ShardPath);
 
