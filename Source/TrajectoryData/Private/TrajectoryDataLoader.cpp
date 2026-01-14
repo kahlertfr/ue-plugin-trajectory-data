@@ -130,8 +130,10 @@ FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTraje
 	// Check against available memory
 	UTrajectoryDataMemoryEstimator* MemEstimator = UTrajectoryDataMemoryEstimator::Get();
 	FTrajectoryDataMemoryInfo MemInfo = MemEstimator->GetMemoryInfo();
-	int64 CurrentUsage = MemInfo.CurrentEstimatedUsage + CurrentMemoryUsage;
-	int64 Available = MemInfo.MaxTrajectoryDataMemory - CurrentUsage;
+	// Convert GB to bytes for comparison
+	const double BytesToGB = 1.0 / (1024.0 * 1024.0 * 1024.0);
+	int64 CurrentUsage = static_cast<int64>(MemInfo.CurrentEstimatedUsageGB / BytesToGB) + CurrentMemoryUsage;
+	int64 Available = static_cast<int64>(MemInfo.MaxTrajectoryDataMemoryGB / BytesToGB) - CurrentUsage;
 
 	if (Validation.EstimatedMemoryBytes > Available)
 	{
