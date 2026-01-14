@@ -68,6 +68,19 @@ struct FDataBlockHeaderBinary
 #pragma pack(pop)
 
 /**
+ * Binary structure for raw position data as stored in shard files
+ * Matches the exact layout in shard-*.bin files for blob copy optimization
+ */
+#pragma pack(push, 1)
+struct FPositionSampleBinary
+{
+	float X;
+	float Y;
+	float Z;
+};
+#pragma pack(pop)
+
+/**
  * Blueprint-exposed structure for a single 3D position sample
  */
 USTRUCT(BlueprintType)

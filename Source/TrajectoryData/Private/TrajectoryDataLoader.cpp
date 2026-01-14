@@ -888,7 +888,25 @@ bool UTrajectoryDataLoader::LoadTrajectoryFromShardMapped(const uint8* MappedDat
 	int32 StartTime = (Params.StartTimeStep < 0) ? 0 : Params.StartTimeStep;
 	int32 EndTime = (Params.EndTimeStep < 0) ? Header.TimeStepIntervalSize : Params.EndTimeStep;
 
-	// Parse positions (zero-copy read from mapped memory)
+	// Calculate number of samples we'll load
+	int32 NumSamplesToLoad = 0;
+	for (int32 TimeStep = StartTime; TimeStep < EndTime && TimeStep < Header.TimeStepIntervalSize; TimeStep += Params.SampleRate)
+	{
+		int32 RelativeTimeStep = TimeStep - StartTimeStepInInterval;
+		if (RelativeTimeStep >= 0 && RelativeTimeStep < ValidSampleCount)
+		{
+			NumSamplesToLoad++;
+		}
+	}
+
+	// Pre-allocate samples array for efficient bulk loading
+	int32 InitialSampleCount = OutTrajectory.Samples.Num();
+	OutTrajectory.Samples.Reserve(InitialSampleCount + NumSamplesToLoad);
+
+	// Pointer to raw position data in shard file (matches FPositionSampleBinary layout)
+	const FPositionSampleBinary* PositionData = reinterpret_cast<const FPositionSampleBinary*>(EntryData + Offset);
+
+	// Load samples using direct pointer access to binary data
 	for (int32 TimeStep = StartTime; TimeStep < EndTime && TimeStep < Header.TimeStepIntervalSize; TimeStep += Params.SampleRate)
 	{
 		int32 RelativeTimeStep = TimeStep - StartTimeStepInInterval;
@@ -896,19 +914,15 @@ bool UTrajectoryDataLoader::LoadTrajectoryFromShardMapped(const uint8* MappedDat
 		{
 			continue;
 		}
-		
-		int32 PosOffset = Offset + (RelativeTimeStep * 12);
-		
-		// Direct read from mapped memory
-		float X, Y, Z;
-		FMemory::Memcpy(&X, EntryData + PosOffset, sizeof(float));
-		FMemory::Memcpy(&Y, EntryData + PosOffset + 4, sizeof(float));
-		FMemory::Memcpy(&Z, EntryData + PosOffset + 8, sizeof(float));
 
+		// Direct access to binary position data (zero-copy)
+		const FPositionSampleBinary& BinaryPos = PositionData[RelativeTimeStep];
+
+		// Create sample with direct field assignment
 		FTrajectoryPositionSample Sample;
 		Sample.TimeStep = TimeStep;
-		Sample.Position = FVector(X, Y, Z);
-		Sample.bIsValid = !FMath::IsNaN(X) && !FMath::IsNaN(Y) && !FMath::IsNaN(Z);
+		Sample.Position = FVector(BinaryPos.X, BinaryPos.Y, BinaryPos.Z);
+		Sample.bIsValid = !FMath::IsNaN(BinaryPos.X) && !FMath::IsNaN(BinaryPos.Y) && !FMath::IsNaN(BinaryPos.Z);
 
 		OutTrajectory.Samples.Add(Sample);
 	}
