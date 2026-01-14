@@ -147,11 +147,6 @@ private:
 	/** Read shard file header */
 	bool ReadShardHeader(const FString& ShardPath, FDataBlockHeaderBinary& OutHeader);
 
-	/** Load trajectory data from shard file */
-	bool LoadTrajectoryFromShard(const FString& ShardPath, const FDataBlockHeaderBinary& Header,
-		const FTrajectoryMetaBinary& TrajMeta, const FDatasetMetaBinary& DatasetMeta,
-		const FTrajectoryLoadParams& Params, FLoadedTrajectory& OutTrajectory);
-
 	/** Memory-mapped version: Read shard file header from mapped region */
 	bool ReadShardHeaderMapped(const uint8* MappedData, int64 MappedSize, FDataBlockHeaderBinary& OutHeader);
 
