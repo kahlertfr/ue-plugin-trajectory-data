@@ -144,9 +144,12 @@ FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTraje
 	else
 	{
 		Validation.bCanLoad = true;
+		// Convert to GB for display
+		constexpr double BytesToGB = 1.0 / (1024.0 * 1024.0 * 1024.0);
+		float RequiredGB = static_cast<float>(Validation.EstimatedMemoryBytes * BytesToGB);
 		Validation.Message = FString::Printf(
-			TEXT("Can load %d trajectories with %d samples each"),
-			Validation.NumTrajectoriesToLoad, Validation.NumSamplesPerTrajectory);
+			TEXT("Can load %d trajectories with %d samples each (Estimated memory: %.2f GB)"),
+			Validation.NumTrajectoriesToLoad, Validation.NumSamplesPerTrajectory, RequiredGB);
 	}
 
 	return Validation;

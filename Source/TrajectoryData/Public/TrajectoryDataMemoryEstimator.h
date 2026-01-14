@@ -15,31 +15,31 @@ struct TRAJECTORYDATA_API FTrajectoryDataMemoryInfo
 {
 	GENERATED_BODY()
 
-	/** Total physical memory available on the system in bytes */
+	/** Total physical memory available on the system in gigabytes (GB) */
 	UPROPERTY(BlueprintReadOnly, Category = "Memory")
-	int64 TotalPhysicalMemory;
+	float TotalPhysicalMemoryGB;
 
-	/** Maximum memory available for trajectory data (75% of total) in bytes */
+	/** Maximum memory available for trajectory data (75% of total) in gigabytes (GB) */
 	UPROPERTY(BlueprintReadOnly, Category = "Memory")
-	int64 MaxTrajectoryDataMemory;
+	float MaxTrajectoryDataMemoryGB;
 
-	/** Currently estimated memory usage for loaded trajectory data in bytes */
+	/** Currently estimated memory usage for loaded trajectory data in gigabytes (GB) */
 	UPROPERTY(BlueprintReadOnly, Category = "Memory")
-	int64 CurrentEstimatedUsage;
+	float CurrentEstimatedUsageGB;
 
-	/** Remaining capacity for loading additional trajectory data in bytes */
+	/** Remaining capacity for loading additional trajectory data in gigabytes (GB) */
 	UPROPERTY(BlueprintReadOnly, Category = "Memory")
-	int64 RemainingCapacity;
+	float RemainingCapacityGB;
 
 	/** Percentage of available trajectory data memory currently used (0-100) */
 	UPROPERTY(BlueprintReadOnly, Category = "Memory")
 	float UsagePercentage;
 
 	FTrajectoryDataMemoryInfo()
-		: TotalPhysicalMemory(0)
-		, MaxTrajectoryDataMemory(0)
-		, CurrentEstimatedUsage(0)
-		, RemainingCapacity(0)
+		: TotalPhysicalMemoryGB(0.0f)
+		, MaxTrajectoryDataMemoryGB(0.0f)
+		, CurrentEstimatedUsageGB(0.0f)
+		, RemainingCapacityGB(0.0f)
 		, UsagePercentage(0.0f)
 	{
 	}
