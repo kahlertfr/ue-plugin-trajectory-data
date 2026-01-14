@@ -895,7 +895,13 @@ int64 UTrajectoryDataLoader::CalculateMemoryRequirement(const FTrajectoryLoadPar
 
 	// Bytes per sample: FTrajectoryPositionSample now only contains FVector Position (12 bytes: 3 floats)
 	static constexpr int32 BytesPerSample = sizeof(FTrajectoryPositionSample);
-	return NumTrajectories * TimeSteps * BytesPerSample;
+	
+	// Memory overhead adjustment factor: accounts for container overhead, alignment, and internal structures
+	// Set to 5.0 to match empirically observed memory usage
+	static constexpr float MemoryOverheadFactor = 5.0f;
+	
+	int64 BaseMemory = NumTrajectories * TimeSteps * BytesPerSample;
+	return static_cast<int64>(BaseMemory * MemoryOverheadFactor);
 }
 
 // FTrajectoryLoadTask implementation
