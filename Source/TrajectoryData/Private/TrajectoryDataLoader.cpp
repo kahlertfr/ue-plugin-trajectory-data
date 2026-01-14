@@ -922,21 +922,17 @@ bool UTrajectoryDataLoader::LoadTrajectoryFromShardMapped(const uint8* MappedDat
 	for (int32 TimeStep = StartTime; TimeStep < EndTime && TimeStep < Header.TimeStepIntervalSize; TimeStep += Params.SampleRate)
 	{
 		int32 RelativeTimeStep = TimeStep - StartTimeStepInInterval;
+		
+		// Bounds check: ensure index is within valid sample range
+		// This prevents out-of-bounds array access on PositionData[RelativeTimeStep]
 		if (RelativeTimeStep < 0 || RelativeTimeStep >= ValidSampleCount)
 		{
 			continue;
 		}
 
-		// Bounds check: ensure this sample index is within mapped memory
-		// (This should always pass given earlier validation, but provides defense in depth)
-		int64 SampleOffset = Offset + (RelativeTimeStep * sizeof(FPositionSampleBinary));
-		if (SampleOffset + sizeof(FPositionSampleBinary) > TotalEntrySize)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Sample at timestep %d exceeds entry bounds, skipping"), TimeStep);
-			continue;
-		}
-
 		// Direct access to binary position data (zero-copy)
+		// Safe because we validated ValidSampleCount * sizeof(FPositionSampleBinary) <= entry size
+		// and RelativeTimeStep < ValidSampleCount above
 		const FPositionSampleBinary& BinaryPos = PositionData[RelativeTimeStep];
 
 		// Create sample with direct field assignment
