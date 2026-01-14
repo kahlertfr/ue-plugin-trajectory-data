@@ -330,8 +330,12 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		// Note: Not all trajectories will have data in every shard
 		TArray<int64> TrajIdsArray = TrajectoryIds;
 		
+		// Capture ShardInfo values to avoid pointer lifetime issues
+		int32 ShardStartTimeStep = ShardInfo->StartTimeStep;
+		int32 ShardEndTimeStep = ShardInfo->EndTimeStep;
+		
 		ParallelFor(TrajIdsArray.Num(), [this, &TrajIdsArray, &TrajMetaMap, &TrajectoryMap, &ResultMutex,
-			MappedData, MappedSize, &ShardHeader, &DatasetMeta, &Params, &ShardInfo](int32 Index)
+			MappedData, MappedSize, &ShardHeader, &DatasetMeta, &Params, ShardStartTimeStep, ShardEndTimeStep](int32 Index)
 		{
 			int64 TrajId = TrajIdsArray[Index];
 			const FTrajectoryMetaBinary* TrajMeta = TrajMetaMap.Find(TrajId);
@@ -342,7 +346,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			}
 			
 			// Check if this trajectory has data in this time interval
-			if (TrajMeta->EndTimeStep < ShardInfo->StartTimeStep || TrajMeta->StartTimeStep > ShardInfo->EndTimeStep)
+			if (TrajMeta->EndTimeStep < ShardStartTimeStep || TrajMeta->StartTimeStep > ShardEndTimeStep)
 			{
 				// Trajectory doesn't exist in this time interval
 				return;
@@ -350,8 +354,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			
 			// Load samples from this shard for this trajectory
 			// We need to find the trajectory's entry in this shard
-			// The shard contains entries for multiple trajectories, we need to search for ours
-			// For now, we'll scan through entries (can be optimized with an index later)
+			// TODO: Optimize with index/hash map for large datasets - currently O(N*M) linear search
 			
 			// Calculate data section start
 			int64 DataSectionStart = ShardHeader.DataSectionOffset;
@@ -393,17 +396,18 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 					for (int32 TimeStepIdx = 0; TimeStepIdx < ShardHeader.TimeStepIntervalSize; TimeStepIdx += Params.SampleRate)
 					{
 						// Calculate absolute time step
-						int32 AbsoluteTimeStep = ShardInfo->StartTimeStep + TimeStepIdx;
+						int32 AbsoluteTimeStep = ShardStartTimeStep + TimeStepIdx;
 						
 						// Check if this time step is within the requested range
-						if (AbsoluteTimeStep < Params.StartTimeStep && Params.StartTimeStep >= 0)
+						if (Params.StartTimeStep >= 0 && AbsoluteTimeStep < Params.StartTimeStep)
 							continue;
-						if (AbsoluteTimeStep > Params.EndTimeStep && Params.EndTimeStep >= 0)
+						if (Params.EndTimeStep >= 0 && AbsoluteTimeStep > Params.EndTimeStep)
 							continue;
 						
 						// Check if this sample is valid (within the trajectory's valid range in this interval)
-						int32 RelativeTimeStep = TimeStepIdx - StartTimeStepInInterval;
-						if (RelativeTimeStep < 0 || RelativeTimeStep >= ValidSampleCount)
+						// StartTimeStepInInterval is relative to the start of this shard interval (0..TimeStepIntervalSize-1)
+						// ValidSampleCount tells us how many consecutive samples are valid starting from StartTimeStepInInterval
+						if (TimeStepIdx < StartTimeStepInInterval || TimeStepIdx >= (StartTimeStepInInterval + ValidSampleCount))
 						{
 							continue;
 						}
