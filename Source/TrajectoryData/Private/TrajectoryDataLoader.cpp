@@ -365,7 +365,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			for (int32 EntryIdx = 0; EntryIdx < ShardHeader.TrajectoryEntryCount; ++EntryIdx)
 			{
 				int64 EntryOffset = DataSectionStart + (EntryIdx * EntrySize);
-				if (EntryOffset + sizeof(uint64) > MappedSize)
+				if (EntryOffset + (int64)sizeof(uint64) > MappedSize)
 				{
 					break;
 				}
