@@ -176,19 +176,21 @@ public:
 
 	/**
 	 * Validate trajectory load parameters before loading
+	 * @param DatasetInfo Dataset information to load from
 	 * @param Params Load parameters to validate
 	 * @return Validation result with memory estimates
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Trajectory Data|Loading", meta = (DisplayName = "Validate Trajectory Load Params"))
-	static FTrajectoryLoadValidation ValidateTrajectoryLoadParams(const FTrajectoryLoadParams& Params);
+	static FTrajectoryLoadValidation ValidateTrajectoryLoadParams(const FTrajectoryDatasetInfo& DatasetInfo, const FTrajectoryLoadParams& Params);
 
 	/**
 	 * Load trajectory data synchronously (blocking)
+	 * @param DatasetInfo Dataset information to load from
 	 * @param Params Load parameters
 	 * @return Load result with trajectory data
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Trajectory Data|Loading", meta = (DisplayName = "Load Trajectories Sync"))
-	static FTrajectoryLoadResult LoadTrajectoriesSync(const FTrajectoryLoadParams& Params);
+	static FTrajectoryLoadResult LoadTrajectoriesSync(const FTrajectoryDatasetInfo& DatasetInfo, const FTrajectoryLoadParams& Params);
 
 	/**
 	 * Get the trajectory data loader singleton

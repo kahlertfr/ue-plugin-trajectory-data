@@ -73,28 +73,31 @@ public:
 
 	/**
 	 * Validate load parameters before actually loading
+	 * @param DatasetInfo Dataset information to load from
 	 * @param Params Load parameters to validate
 	 * @return Validation result with memory estimates
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Trajectory Data|Loading")
-	FTrajectoryLoadValidation ValidateLoadParams(const FTrajectoryLoadParams& Params);
+	FTrajectoryLoadValidation ValidateLoadParams(const FTrajectoryDatasetInfo& DatasetInfo, const FTrajectoryLoadParams& Params);
 
 	/**
 	 * Load trajectory data synchronously (blocking)
+	 * @param DatasetInfo Dataset information to load from
 	 * @param Params Load parameters
 	 * @return Load result with trajectory data
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Trajectory Data|Loading")
-	FTrajectoryLoadResult LoadTrajectoriesSync(const FTrajectoryLoadParams& Params);
+	FTrajectoryLoadResult LoadTrajectoriesSync(const FTrajectoryDatasetInfo& DatasetInfo, const FTrajectoryLoadParams& Params);
 
 	/**
 	 * Load trajectory data asynchronously (non-blocking)
 	 * Results delivered via OnLoadComplete delegate
+	 * @param DatasetInfo Dataset information to load from
 	 * @param Params Load parameters
 	 * @return True if loading started successfully
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Trajectory Data|Loading")
-	bool LoadTrajectoriesAsync(const FTrajectoryLoadParams& Params);
+	bool LoadTrajectoriesAsync(const FTrajectoryDatasetInfo& DatasetInfo, const FTrajectoryLoadParams& Params);
 
 	/**
 	 * Cancel ongoing async loading operation
@@ -115,16 +118,26 @@ public:
 	void UnloadAll();
 
 	/**
-	 * Get currently loaded trajectories
+	 * Get currently loaded trajectories (from all datasets)
+	 * For backward compatibility - returns all trajectories from all loaded datasets
+	 * NOTE: This creates a new combined array each time. For better performance with
+	 * multiple datasets, use GetLoadedDatasets() and iterate over individual datasets.
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Loading")
-	const TArray<FLoadedTrajectory>& GetLoadedTrajectories() const { return LoadedTrajectories; }
+	TArray<FLoadedTrajectory> GetLoadedTrajectories() const;
 
 	/**
-	 * Get current memory usage for loaded data
+	 * Get all loaded datasets
+	 * This is the preferred method for accessing loaded data when working with multiple datasets
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Loading")
-	int64 GetLoadedDataMemoryUsage() const { return CurrentMemoryUsage; }
+	const TArray<FLoadedDataset>& GetLoadedDatasets() const { return LoadedDatasets; }
+
+	/**
+	 * Get current memory usage for loaded data (sum across all datasets)
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Loading")
+	int64 GetLoadedDataMemoryUsage() const;
 
 	/** Progress callback for async loading */
 	UPROPERTY(BlueprintAssignable, Category = "Trajectory Data|Loading")
@@ -157,7 +170,7 @@ private:
 	TMap<int32, FShardInfo> DiscoverShardFiles(const FString& DatasetPath, const FDatasetMetaBinary& DatasetMeta);
 
 	/** Internal implementation of synchronous loading */
-	FTrajectoryLoadResult LoadTrajectoriesInternal(const FTrajectoryLoadParams& Params);
+	FTrajectoryLoadResult LoadTrajectoriesInternal(const FTrajectoryDatasetInfo& DatasetInfo, const FTrajectoryLoadParams& Params);
 
 	/** Build list of trajectory IDs to load based on selection strategy */
 	TArray<int64> BuildTrajectoryIdList(const FTrajectoryLoadParams& Params,
@@ -170,11 +183,11 @@ private:
 	/** Get shard file path for a given interval index */
 	FString GetShardFilePath(const FString& DatasetPath, int32 IntervalIndex);
 
-	/** Currently loaded trajectories */
+	/** Currently loaded datasets (array of datasets with their parameters and trajectories) */
 	UPROPERTY()
-	TArray<FLoadedTrajectory> LoadedTrajectories;
+	TArray<FLoadedDataset> LoadedDatasets;
 
-	/** Current memory usage in bytes */
+	/** Current total memory usage in bytes across all datasets */
 	int64 CurrentMemoryUsage;
 
 	/** Whether async loading is in progress */
@@ -198,7 +211,7 @@ private:
 class FTrajectoryLoadTask : public FRunnable
 {
 public:
-	FTrajectoryLoadTask(UTrajectoryDataLoader* InLoader, const FTrajectoryLoadParams& InParams);
+	FTrajectoryLoadTask(UTrajectoryDataLoader* InLoader, const FTrajectoryDatasetInfo& InDatasetInfo, const FTrajectoryLoadParams& InParams);
 	virtual ~FTrajectoryLoadTask();
 
 	// FRunnable interface
@@ -215,6 +228,7 @@ public:
 
 private:
 	UTrajectoryDataLoader* Loader;
+	FTrajectoryDatasetInfo DatasetInfo;
 	FTrajectoryLoadParams Params;
 	FTrajectoryLoadResult Result;
 	FRunnableThread* Thread;

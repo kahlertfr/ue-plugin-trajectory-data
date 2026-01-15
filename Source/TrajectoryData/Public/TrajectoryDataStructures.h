@@ -199,10 +199,6 @@ struct TRAJECTORYDATA_API FTrajectoryLoadParams
 {
 	GENERATED_BODY()
 
-	/** Dataset path to load from */
-	UPROPERTY(BlueprintReadWrite, Category = "Trajectory Data")
-	FString DatasetPath;
-
 	/** Start time step of interest (-1 for dataset start) */
 	UPROPERTY(BlueprintReadWrite, Category = "Trajectory Data")
 	int32 StartTimeStep;
@@ -228,12 +224,42 @@ struct TRAJECTORYDATA_API FTrajectoryLoadParams
 	TArray<FTrajectoryLoadSelection> TrajectorySelections;
 
 	FTrajectoryLoadParams()
-		: DatasetPath(TEXT(""))
-		, StartTimeStep(-1)
+		: StartTimeStep(-1)
 		, EndTimeStep(-1)
 		, SampleRate(1)
 		, SelectionStrategy(ETrajectorySelectionStrategy::FirstN)
 		, NumTrajectories(0)
+	{
+	}
+};
+
+/**
+ * Structure representing a single loaded dataset
+ * Contains the loading parameters, dataset info, and loaded trajectories
+ */
+USTRUCT(BlueprintType)
+struct TRAJECTORYDATA_API FLoadedDataset
+{
+	GENERATED_BODY()
+
+	/** Loading parameters used for this dataset */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FTrajectoryLoadParams LoadParams;
+
+	/** Dataset information including path, metadata, and scenario info */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FTrajectoryDatasetInfo DatasetInfo;
+
+	/** Array of loaded trajectories for this dataset */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	TArray<FLoadedTrajectory> Trajectories;
+
+	/** Memory used by this dataset in bytes */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	int64 MemoryUsedBytes;
+
+	FLoadedDataset()
+		: MemoryUsedBytes(0)
 	{
 	}
 };
