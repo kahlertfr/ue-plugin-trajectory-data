@@ -35,28 +35,28 @@ UTrajectoryDataLoader* UTrajectoryDataLoader::Get()
 	return Instance;
 }
 
-FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTrajectoryLoadParams& Params)
+FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTrajectoryDatasetInfo& DatasetInfo, const FTrajectoryLoadParams& Params)
 {
 	FTrajectoryLoadValidation Validation;
 	Validation.bCanLoad = false;
 
-	// Validate dataset path
-	if (Params.DatasetPath.IsEmpty())
+	// Validate dataset path from DatasetInfo
+	if (DatasetInfo.DatasetPath.IsEmpty())
 	{
 		Validation.Message = TEXT("Dataset path is empty");
 		return Validation;
 	}
 
 	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
-	if (!PlatformFile.DirectoryExists(*Params.DatasetPath))
+	if (!PlatformFile.DirectoryExists(*DatasetInfo.DatasetPath))
 	{
-		Validation.Message = FString::Printf(TEXT("Dataset directory does not exist: %s"), *Params.DatasetPath);
+		Validation.Message = FString::Printf(TEXT("Dataset directory does not exist: %s"), *DatasetInfo.DatasetPath);
 		return Validation;
 	}
 
 	// Check for required files
-	FString MetaPath = FPaths::Combine(Params.DatasetPath, TEXT("dataset-meta.bin"));
-	FString TrajMetaPath = FPaths::Combine(Params.DatasetPath, TEXT("dataset-trajmeta.bin"));
+	FString MetaPath = FPaths::Combine(DatasetInfo.DatasetPath, TEXT("dataset-meta.bin"));
+	FString TrajMetaPath = FPaths::Combine(DatasetInfo.DatasetPath, TEXT("dataset-trajmeta.bin"));
 
 	if (!PlatformFile.FileExists(*MetaPath))
 	{
@@ -72,7 +72,7 @@ FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTraje
 
 	// Read dataset metadata
 	FDatasetMetaBinary DatasetMeta;
-	if (!ReadDatasetMeta(Params.DatasetPath, DatasetMeta))
+	if (!ReadDatasetMeta(DatasetInfo.DatasetPath, DatasetMeta))
 	{
 		Validation.Message = TEXT("Failed to read dataset metadata");
 		return Validation;
@@ -97,7 +97,7 @@ FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTraje
 
 	// Read trajectory metadata
 	TArray<FTrajectoryMetaBinary> TrajMetas;
-	if (!ReadTrajectoryMeta(Params.DatasetPath, TrajMetas))
+	if (!ReadTrajectoryMeta(DatasetInfo.DatasetPath, TrajMetas))
 	{
 		Validation.Message = TEXT("Failed to read trajectory metadata");
 		return Validation;
@@ -156,13 +156,13 @@ FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTraje
 	return Validation;
 }
 
-FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesSync(const FTrajectoryLoadParams& Params)
+FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesSync(const FTrajectoryDatasetInfo& DatasetInfo, const FTrajectoryLoadParams& Params)
 {
 	FScopeLock Lock(&LoadMutex);
-	return LoadTrajectoriesInternal(Params);
+	return LoadTrajectoriesInternal(DatasetInfo, Params);
 }
 
-bool UTrajectoryDataLoader::LoadTrajectoriesAsync(const FTrajectoryLoadParams& Params)
+bool UTrajectoryDataLoader::LoadTrajectoriesAsync(const FTrajectoryDatasetInfo& DatasetInfo, const FTrajectoryLoadParams& Params)
 {
 	FScopeLock Lock(&LoadMutex);
 
@@ -173,7 +173,7 @@ bool UTrajectoryDataLoader::LoadTrajectoriesAsync(const FTrajectoryLoadParams& P
 	}
 
 	// Validate parameters first
-	FTrajectoryLoadValidation Validation = ValidateLoadParams(Params);
+	FTrajectoryLoadValidation Validation = ValidateLoadParams(DatasetInfo, Params);
 	if (!Validation.bCanLoad)
 	{
 		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataLoader: Validation failed: %s"), *Validation.Message);
@@ -181,7 +181,7 @@ bool UTrajectoryDataLoader::LoadTrajectoriesAsync(const FTrajectoryLoadParams& P
 	}
 
 	// Create and start async task
-	AsyncLoadTask = MakeShared<FTrajectoryLoadTask>(this, Params);
+	AsyncLoadTask = MakeShared<FTrajectoryLoadTask>(this, DatasetInfo, Params);
 	bIsLoadingAsync = true;
 
 	return true;
@@ -208,14 +208,14 @@ void UTrajectoryDataLoader::UnloadAll()
 	CurrentMemoryUsage = 0;
 }
 
-FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTrajectoryLoadParams& Params)
+FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTrajectoryDatasetInfo& DatasetInfo, const FTrajectoryLoadParams& Params)
 {
 	FTrajectoryLoadResult Result;
 	Result.bSuccess = false;
 
 	// Read dataset metadata
 	FDatasetMetaBinary DatasetMeta;
-	if (!ReadDatasetMeta(Params.DatasetPath, DatasetMeta))
+	if (!ReadDatasetMeta(DatasetInfo.DatasetPath, DatasetMeta))
 	{
 		Result.ErrorMessage = TEXT("Failed to read dataset metadata");
 		return Result;
@@ -223,7 +223,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 
 	// Read trajectory metadata
 	TArray<FTrajectoryMetaBinary> TrajMetas;
-	if (!ReadTrajectoryMeta(Params.DatasetPath, TrajMetas))
+	if (!ReadTrajectoryMeta(DatasetInfo.DatasetPath, TrajMetas))
 	{
 		Result.ErrorMessage = TEXT("Failed to read trajectory metadata");
 		return Result;
@@ -253,7 +253,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 	}
 
 	// Discover all shard files and build time-range information table
-	TMap<int32, FShardInfo> ShardInfoTable = DiscoverShardFiles(Params.DatasetPath, DatasetMeta);
+	TMap<int32, FShardInfo> ShardInfoTable = DiscoverShardFiles(DatasetInfo.DatasetPath, DatasetMeta);
 
 	// Filter shards to only load those containing data in the requested time range
 	TArray<int32> RelevantShards;
@@ -537,9 +537,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 	// Create a new loaded dataset entry
 	FLoadedDataset LoadedDataset;
 	LoadedDataset.LoadParams = Params;
-	LoadedDataset.DatasetPath = Params.DatasetPath;
-	LoadedDataset.LoadedStartTimeStep = Result.LoadedStartTimeStep;
-	LoadedDataset.LoadedEndTimeStep = Result.LoadedEndTimeStep;
+	LoadedDataset.DatasetInfo = DatasetInfo;
 	LoadedDataset.Trajectories = MoveTemp(NewTrajectories);
 	LoadedDataset.MemoryUsedBytes = MemoryUsed;
 
@@ -949,8 +947,9 @@ int64 UTrajectoryDataLoader::GetLoadedDataMemoryUsage() const
 
 // FTrajectoryLoadTask implementation
 
-FTrajectoryLoadTask::FTrajectoryLoadTask(UTrajectoryDataLoader* InLoader, const FTrajectoryLoadParams& InParams)
+FTrajectoryLoadTask::FTrajectoryLoadTask(UTrajectoryDataLoader* InLoader, const FTrajectoryDatasetInfo& InDatasetInfo, const FTrajectoryLoadParams& InParams)
 	: Loader(InLoader)
+	, DatasetInfo(InDatasetInfo)
 	, Params(InParams)
 	, Thread(nullptr)
 	, bShouldStop(false)
@@ -980,7 +979,7 @@ uint32 FTrajectoryLoadTask::Run()
 	// Perform loading on background thread
 	if (Loader)
 	{
-		Result = Loader->LoadTrajectoriesInternal(Params);
+		Result = Loader->LoadTrajectoriesInternal(DatasetInfo, Params);
 	}
 	else
 	{

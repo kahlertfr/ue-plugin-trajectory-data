@@ -42,9 +42,8 @@ void ExampleLoadFirstN()
 		return;
 	}
 	
-	// Create load parameters
+	// Create load parameters (no longer need to set DatasetPath in Params)
 	FTrajectoryLoadParams Params;
-	Params.DatasetPath = DatasetInfo.DatasetPath;
 	Params.StartTimeStep = -1;  // Use dataset start
 	Params.EndTimeStep = -1;    // Use dataset end
 	Params.SampleRate = 1;      // Load every sample
@@ -55,7 +54,7 @@ void ExampleLoadFirstN()
 	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
 	
 	// Validate parameters
-	FTrajectoryLoadValidation Validation = Loader->ValidateLoadParams(Params);
+	FTrajectoryLoadValidation Validation = Loader->ValidateLoadParams(DatasetInfo, Params);
 	if (!Validation.bCanLoad)
 	{
 		UE_LOG(LogTemp, Error, TEXT("Cannot load: %s"), *Validation.Message);
@@ -68,7 +67,7 @@ void ExampleLoadFirstN()
 		*UTrajectoryDataBlueprintLibrary::FormatMemorySize(Validation.EstimatedMemoryBytes));
 	
 	// Load synchronously
-	FTrajectoryLoadResult Result = Loader->LoadTrajectoriesSync(Params);
+	FTrajectoryLoadResult Result = Loader->LoadTrajectoriesSync(DatasetInfo, Params);
 	
 	if (Result.bSuccess)
 	{
@@ -113,7 +112,6 @@ void ExampleLoadDistributed()
 	}
 	
 	FTrajectoryLoadParams Params;
-	Params.DatasetPath = DatasetInfo.DatasetPath;
 	Params.StartTimeStep = 0;
 	Params.EndTimeStep = 500;
 	Params.SampleRate = 2;  // Load every 2nd sample
@@ -121,7 +119,7 @@ void ExampleLoadDistributed()
 	Params.NumTrajectories = 50;  // Load 50 trajectories distributed across dataset
 	
 	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
-	FTrajectoryLoadResult Result = Loader->LoadTrajectoriesSync(Params);
+	FTrajectoryLoadResult Result = Loader->LoadTrajectoriesSync(DatasetInfo, Params);
 	
 	if (Result.bSuccess)
 	{
@@ -140,7 +138,6 @@ void ExampleLoadExplicitList()
 	}
 	
 	FTrajectoryLoadParams Params;
-	Params.DatasetPath = DatasetInfo.DatasetPath;
 	Params.SampleRate = 1;
 	Params.SelectionStrategy = ETrajectorySelectionStrategy::ExplicitList;
 	
@@ -164,7 +161,7 @@ void ExampleLoadExplicitList()
 	Params.TrajectorySelections.Add(Sel3);
 	
 	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
-	FTrajectoryLoadResult Result = Loader->LoadTrajectoriesSync(Params);
+	FTrajectoryLoadResult Result = Loader->LoadTrajectoriesSync(DatasetInfo, Params);
 	
 	if (Result.bSuccess)
 	{
@@ -195,7 +192,6 @@ public:
 		
 		// Create load parameters for larger dataset
 		FTrajectoryLoadParams Params;
-		Params.DatasetPath = DatasetInfo.DatasetPath;
 		Params.StartTimeStep = -1;
 		Params.EndTimeStep = -1;
 		Params.SampleRate = 1;
@@ -203,7 +199,7 @@ public:
 		Params.NumTrajectories = 1000;
 		
 		// Start async load
-		if (Loader->LoadTrajectoriesAsync(Params))
+		if (Loader->LoadTrajectoriesAsync(DatasetInfo, Params))
 		{
 			UE_LOG(LogTemp, Log, TEXT("Async loading started"));
 		}
@@ -283,14 +279,13 @@ void ExampleDataStreaming()
 	
 	// Load initial time window
 	FTrajectoryLoadParams Params;
-	Params.DatasetPath = DatasetInfo.DatasetPath;
 	Params.StartTimeStep = 0;
 	Params.EndTimeStep = 100;
 	Params.SampleRate = 1;
 	Params.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
 	Params.NumTrajectories = 50;
 	
-	FTrajectoryLoadResult Result = Loader->LoadTrajectoriesSync(Params);
+	FTrajectoryLoadResult Result = Loader->LoadTrajectoriesSync(DatasetInfo, Params);
 	if (Result.bSuccess)
 	{
 		UE_LOG(LogTemp, Log, TEXT("Loaded time window 0-100"));
@@ -303,7 +298,7 @@ void ExampleDataStreaming()
 	Params.StartTimeStep = 100;
 	Params.EndTimeStep = 200;
 	
-	Result = Loader->LoadTrajectoriesSync(Params);
+	Result = Loader->LoadTrajectoriesSync(DatasetInfo, Params);
 	if (Result.bSuccess)
 	{
 		UE_LOG(LogTemp, Log, TEXT("Loaded time window 100-200"));
@@ -344,14 +339,18 @@ void ExampleMemoryManagement()
 void ExampleErrorHandling()
 {
 	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
+	UTrajectoryDataManager* Manager = UTrajectoryDataManager::Get();
+	
+	// Create a fake dataset info for testing
+	FTrajectoryDatasetInfo DatasetInfo;
+	DatasetInfo.DatasetPath = TEXT("C:/NonExistent/Path");
 	
 	FTrajectoryLoadParams Params;
-	Params.DatasetPath = TEXT("C:/NonExistent/Path");
 	Params.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
 	Params.NumTrajectories = 100;
 	
 	// Always validate first
-	FTrajectoryLoadValidation Validation = Loader->ValidateLoadParams(Params);
+	FTrajectoryLoadValidation Validation = Loader->ValidateLoadParams(DatasetInfo, Params);
 	if (!Validation.bCanLoad)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Validation failed: %s"), *Validation.Message);
@@ -371,7 +370,7 @@ void ExampleErrorHandling()
 	}
 	
 	// Load
-	FTrajectoryLoadResult Result = Loader->LoadTrajectoriesSync(Params);
+	FTrajectoryLoadResult Result = Loader->LoadTrajectoriesSync(DatasetInfo, Params);
 	if (!Result.bSuccess)
 	{
 		UE_LOG(LogTemp, Error, TEXT("Load failed: %s"), *Result.ErrorMessage);
@@ -393,14 +392,13 @@ void ExampleMultipleDatasets()
 	if (Manager->GetDatasetInfo(TEXT("bubbles"), Dataset1))
 	{
 		FTrajectoryLoadParams Params1;
-		Params1.DatasetPath = Dataset1.DatasetPath;
 		Params1.StartTimeStep = -1;
 		Params1.EndTimeStep = -1;
 		Params1.SampleRate = 1;
 		Params1.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
 		Params1.NumTrajectories = 50;
 		
-		FTrajectoryLoadResult Result1 = Loader->LoadTrajectoriesSync(Params1);
+		FTrajectoryLoadResult Result1 = Loader->LoadTrajectoriesSync(Dataset1, Params1);
 		if (Result1.bSuccess)
 		{
 			UE_LOG(LogTemp, Log, TEXT("Loaded %d trajectories from bubbles dataset"), 
@@ -413,14 +411,13 @@ void ExampleMultipleDatasets()
 	if (Manager->GetDatasetInfo(TEXT("particles"), Dataset2))
 	{
 		FTrajectoryLoadParams Params2;
-		Params2.DatasetPath = Dataset2.DatasetPath;
 		Params2.StartTimeStep = -1;
 		Params2.EndTimeStep = -1;
 		Params2.SampleRate = 1;
 		Params2.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
 		Params2.NumTrajectories = 30;
 		
-		FTrajectoryLoadResult Result2 = Loader->LoadTrajectoriesSync(Params2);
+		FTrajectoryLoadResult Result2 = Loader->LoadTrajectoriesSync(Dataset2, Params2);
 		if (Result2.bSuccess)
 		{
 			UE_LOG(LogTemp, Log, TEXT("Loaded %d trajectories from particles dataset"), 
@@ -435,10 +432,10 @@ void ExampleMultipleDatasets()
 	for (int32 i = 0; i < LoadedDatasets.Num(); ++i)
 	{
 		const FLoadedDataset& Dataset = LoadedDatasets[i];
-		UE_LOG(LogTemp, Log, TEXT("Dataset %d: %s"), i, *Dataset.DatasetPath);
+		UE_LOG(LogTemp, Log, TEXT("Dataset %d: %s"), i, *Dataset.DatasetInfo.DatasetPath);
 		UE_LOG(LogTemp, Log, TEXT("  Trajectories: %d"), Dataset.Trajectories.Num());
 		UE_LOG(LogTemp, Log, TEXT("  Time range: %d - %d"), 
-			Dataset.LoadedStartTimeStep, Dataset.LoadedEndTimeStep);
+			Dataset.LoadParams.StartTimeStep, Dataset.LoadParams.EndTimeStep);
 		UE_LOG(LogTemp, Log, TEXT("  Memory: %s"),
 			*UTrajectoryDataBlueprintLibrary::FormatMemorySize(Dataset.MemoryUsedBytes));
 	}
@@ -457,7 +454,7 @@ void ExampleMultipleDatasets()
 	for (const FLoadedDataset& Dataset : LoadedDatasets)
 	{
 		// Different visualization or processing per dataset
-		if (Dataset.DatasetPath.Contains(TEXT("bubbles")))
+		if (Dataset.DatasetInfo.DatasetPath.Contains(TEXT("bubbles")))
 		{
 			// Process bubbles with specific visualization
 			for (const FLoadedTrajectory& Traj : Dataset.Trajectories)
@@ -465,7 +462,7 @@ void ExampleMultipleDatasets()
 				// Visualize as bubbles...
 			}
 		}
-		else if (Dataset.DatasetPath.Contains(TEXT("particles")))
+		else if (Dataset.DatasetInfo.DatasetPath.Contains(TEXT("particles")))
 		{
 			// Process particles with different visualization
 			for (const FLoadedTrajectory& Traj : Dataset.Trajectories)

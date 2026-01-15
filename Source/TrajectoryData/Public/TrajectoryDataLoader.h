@@ -73,28 +73,31 @@ public:
 
 	/**
 	 * Validate load parameters before actually loading
+	 * @param DatasetInfo Dataset information to load from
 	 * @param Params Load parameters to validate
 	 * @return Validation result with memory estimates
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Trajectory Data|Loading")
-	FTrajectoryLoadValidation ValidateLoadParams(const FTrajectoryLoadParams& Params);
+	FTrajectoryLoadValidation ValidateLoadParams(const FTrajectoryDatasetInfo& DatasetInfo, const FTrajectoryLoadParams& Params);
 
 	/**
 	 * Load trajectory data synchronously (blocking)
+	 * @param DatasetInfo Dataset information to load from
 	 * @param Params Load parameters
 	 * @return Load result with trajectory data
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Trajectory Data|Loading")
-	FTrajectoryLoadResult LoadTrajectoriesSync(const FTrajectoryLoadParams& Params);
+	FTrajectoryLoadResult LoadTrajectoriesSync(const FTrajectoryDatasetInfo& DatasetInfo, const FTrajectoryLoadParams& Params);
 
 	/**
 	 * Load trajectory data asynchronously (non-blocking)
 	 * Results delivered via OnLoadComplete delegate
+	 * @param DatasetInfo Dataset information to load from
 	 * @param Params Load parameters
 	 * @return True if loading started successfully
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Trajectory Data|Loading")
-	bool LoadTrajectoriesAsync(const FTrajectoryLoadParams& Params);
+	bool LoadTrajectoriesAsync(const FTrajectoryDatasetInfo& DatasetInfo, const FTrajectoryLoadParams& Params);
 
 	/**
 	 * Cancel ongoing async loading operation
@@ -167,7 +170,7 @@ private:
 	TMap<int32, FShardInfo> DiscoverShardFiles(const FString& DatasetPath, const FDatasetMetaBinary& DatasetMeta);
 
 	/** Internal implementation of synchronous loading */
-	FTrajectoryLoadResult LoadTrajectoriesInternal(const FTrajectoryLoadParams& Params);
+	FTrajectoryLoadResult LoadTrajectoriesInternal(const FTrajectoryDatasetInfo& DatasetInfo, const FTrajectoryLoadParams& Params);
 
 	/** Build list of trajectory IDs to load based on selection strategy */
 	TArray<int64> BuildTrajectoryIdList(const FTrajectoryLoadParams& Params,
@@ -208,7 +211,7 @@ private:
 class FTrajectoryLoadTask : public FRunnable
 {
 public:
-	FTrajectoryLoadTask(UTrajectoryDataLoader* InLoader, const FTrajectoryLoadParams& InParams);
+	FTrajectoryLoadTask(UTrajectoryDataLoader* InLoader, const FTrajectoryDatasetInfo& InDatasetInfo, const FTrajectoryLoadParams& InParams);
 	virtual ~FTrajectoryLoadTask();
 
 	// FRunnable interface
@@ -225,6 +228,7 @@ public:
 
 private:
 	UTrajectoryDataLoader* Loader;
+	FTrajectoryDatasetInfo DatasetInfo;
 	FTrajectoryLoadParams Params;
 	FTrajectoryLoadResult Result;
 	FRunnableThread* Thread;

@@ -251,16 +251,9 @@ struct TRAJECTORYDATA_API FLoadedDataset
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FTrajectoryLoadParams LoadParams;
 
-	/** Dataset metadata (from dataset-meta.bin) */
+	/** Dataset information including path, metadata, and scenario info */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	FString DatasetPath;
-
-	/** Actual time step range loaded */
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	int32 LoadedStartTimeStep;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	int32 LoadedEndTimeStep;
+	FTrajectoryDatasetInfo DatasetInfo;
 
 	/** Array of loaded trajectories for this dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
@@ -271,10 +264,7 @@ struct TRAJECTORYDATA_API FLoadedDataset
 	int64 MemoryUsedBytes;
 
 	FLoadedDataset()
-		: DatasetPath(TEXT(""))
-		, LoadedStartTimeStep(0)
-		, LoadedEndTimeStep(0)
-		, MemoryUsedBytes(0)
+		: MemoryUsedBytes(0)
 	{
 	}
 };
