@@ -239,6 +239,47 @@ struct TRAJECTORYDATA_API FTrajectoryLoadParams
 };
 
 /**
+ * Structure representing a single loaded dataset
+ * Contains the loading parameters, dataset info, and loaded trajectories
+ */
+USTRUCT(BlueprintType)
+struct TRAJECTORYDATA_API FLoadedDataset
+{
+	GENERATED_BODY()
+
+	/** Loading parameters used for this dataset */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FTrajectoryLoadParams LoadParams;
+
+	/** Dataset metadata (from dataset-meta.bin) */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString DatasetPath;
+
+	/** Actual time step range loaded */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	int32 LoadedStartTimeStep;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	int32 LoadedEndTimeStep;
+
+	/** Array of loaded trajectories for this dataset */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	TArray<FLoadedTrajectory> Trajectories;
+
+	/** Memory used by this dataset in bytes */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	int64 MemoryUsedBytes;
+
+	FLoadedDataset()
+		: DatasetPath(TEXT(""))
+		, LoadedStartTimeStep(0)
+		, LoadedEndTimeStep(0)
+		, MemoryUsedBytes(0)
+	{
+	}
+};
+
+/**
  * Result structure for loaded trajectory data
  */
 USTRUCT(BlueprintType)

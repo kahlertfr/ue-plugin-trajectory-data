@@ -115,16 +115,23 @@ public:
 	void UnloadAll();
 
 	/**
-	 * Get currently loaded trajectories
+	 * Get currently loaded trajectories (from all datasets)
+	 * For backward compatibility - returns all trajectories from all loaded datasets
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Loading")
-	const TArray<FLoadedTrajectory>& GetLoadedTrajectories() const { return LoadedTrajectories; }
+	TArray<FLoadedTrajectory> GetLoadedTrajectories() const;
 
 	/**
-	 * Get current memory usage for loaded data
+	 * Get all loaded datasets
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Loading")
-	int64 GetLoadedDataMemoryUsage() const { return CurrentMemoryUsage; }
+	const TArray<FLoadedDataset>& GetLoadedDatasets() const { return LoadedDatasets; }
+
+	/**
+	 * Get current memory usage for loaded data (sum across all datasets)
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Loading")
+	int64 GetLoadedDataMemoryUsage() const;
 
 	/** Progress callback for async loading */
 	UPROPERTY(BlueprintAssignable, Category = "Trajectory Data|Loading")
@@ -170,11 +177,11 @@ private:
 	/** Get shard file path for a given interval index */
 	FString GetShardFilePath(const FString& DatasetPath, int32 IntervalIndex);
 
-	/** Currently loaded trajectories */
+	/** Currently loaded datasets (array of datasets with their parameters and trajectories) */
 	UPROPERTY()
-	TArray<FLoadedTrajectory> LoadedTrajectories;
+	TArray<FLoadedDataset> LoadedDatasets;
 
-	/** Current memory usage in bytes */
+	/** Current total memory usage in bytes across all datasets */
 	int64 CurrentMemoryUsage;
 
 	/** Whether async loading is in progress */

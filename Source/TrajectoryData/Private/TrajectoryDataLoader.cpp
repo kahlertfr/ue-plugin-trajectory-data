@@ -204,7 +204,7 @@ void UTrajectoryDataLoader::UnloadAll()
 {
 	FScopeLock Lock(&LoadMutex);
 
-	LoadedTrajectories.Empty();
+	LoadedDatasets.Empty();
 	CurrentMemoryUsage = 0;
 }
 
@@ -534,16 +534,26 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		NewTrajectories.Add(MoveTemp(Traj));
 	}
 
-	// Update loaded data
-	LoadedTrajectories = MoveTemp(NewTrajectories);
-	CurrentMemoryUsage = MemoryUsed;
+	// Create a new loaded dataset entry
+	FLoadedDataset LoadedDataset;
+	LoadedDataset.LoadParams = Params;
+	LoadedDataset.DatasetPath = Params.DatasetPath;
+	LoadedDataset.LoadedStartTimeStep = Result.LoadedStartTimeStep;
+	LoadedDataset.LoadedEndTimeStep = Result.LoadedEndTimeStep;
+	LoadedDataset.Trajectories = MoveTemp(NewTrajectories);
+	LoadedDataset.MemoryUsedBytes = MemoryUsed;
+
+	// Add to loaded datasets array
+	LoadedDatasets.Add(MoveTemp(LoadedDataset));
+	CurrentMemoryUsage += MemoryUsed;
 
 	Result.bSuccess = true;
-	Result.Trajectories = LoadedTrajectories;
+	Result.Trajectories = LoadedDatasets.Last().Trajectories;
 	Result.MemoryUsedBytes = MemoryUsed;
 
-	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Successfully loaded %d trajectories, using %s memory"),
-		LoadedTrajectories.Num(), *UTrajectoryDataBlueprintLibrary::FormatMemorySize(MemoryUsed));
+	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Successfully loaded %d trajectories, using %s memory (Total datasets: %d, Total memory: %s)"),
+		Result.Trajectories.Num(), *UTrajectoryDataBlueprintLibrary::FormatMemorySize(MemoryUsed),
+		LoadedDatasets.Num(), *UTrajectoryDataBlueprintLibrary::FormatMemorySize(CurrentMemoryUsage));
 
 	return Result;
 }
@@ -902,6 +912,24 @@ int64 UTrajectoryDataLoader::CalculateMemoryRequirement(const FTrajectoryLoadPar
 	
 	int64 BaseMemory = NumTrajectories * TimeSteps * BytesPerSample;
 	return static_cast<int64>(BaseMemory * MemoryOverheadFactor);
+}
+
+TArray<FLoadedTrajectory> UTrajectoryDataLoader::GetLoadedTrajectories() const
+{
+	// For backward compatibility - return all trajectories from all loaded datasets
+	TArray<FLoadedTrajectory> AllTrajectories;
+	
+	for (const FLoadedDataset& Dataset : LoadedDatasets)
+	{
+		AllTrajectories.Append(Dataset.Trajectories);
+	}
+	
+	return AllTrajectories;
+}
+
+int64 UTrajectoryDataLoader::GetLoadedDataMemoryUsage() const
+{
+	return CurrentMemoryUsage;
 }
 
 // FTrajectoryLoadTask implementation
