@@ -117,12 +117,15 @@ public:
 	/**
 	 * Get currently loaded trajectories (from all datasets)
 	 * For backward compatibility - returns all trajectories from all loaded datasets
+	 * NOTE: This creates a new combined array each time. For better performance with
+	 * multiple datasets, use GetLoadedDatasets() and iterate over individual datasets.
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Loading")
 	TArray<FLoadedTrajectory> GetLoadedTrajectories() const;
 
 	/**
 	 * Get all loaded datasets
+	 * This is the preferred method for accessing loaded data when working with multiple datasets
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Loading")
 	const TArray<FLoadedDataset>& GetLoadedDatasets() const { return LoadedDatasets; }

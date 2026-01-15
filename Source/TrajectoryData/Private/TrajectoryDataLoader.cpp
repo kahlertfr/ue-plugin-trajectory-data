@@ -555,6 +555,21 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		Result.Trajectories.Num(), *UTrajectoryDataBlueprintLibrary::FormatMemorySize(MemoryUsed),
 		LoadedDatasets.Num(), *UTrajectoryDataBlueprintLibrary::FormatMemorySize(CurrentMemoryUsage));
 
+	// Warn if accumulating many datasets or high memory usage
+	if (LoadedDatasets.Num() > 10)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: %d datasets are currently loaded. Consider calling UnloadAll() if you no longer need previous datasets to free memory."),
+			LoadedDatasets.Num());
+	}
+
+	// Warn if memory usage is high (e.g., > 10 GB)
+	constexpr int64 HighMemoryThreshold = 10LL * 1024 * 1024 * 1024; // 10 GB
+	if (CurrentMemoryUsage > HighMemoryThreshold)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: High memory usage detected (%s). Consider calling UnloadAll() to free memory if you no longer need previous datasets."),
+			*UTrajectoryDataBlueprintLibrary::FormatMemorySize(CurrentMemoryUsage));
+	}
+
 	return Result;
 }
 
