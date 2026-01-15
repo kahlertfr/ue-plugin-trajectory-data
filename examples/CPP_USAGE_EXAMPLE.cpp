@@ -381,3 +381,100 @@ void ExampleErrorHandling()
 	// Success
 	UE_LOG(LogTemp, Log, TEXT("Loaded %d trajectories"), Result.Trajectories.Num());
 }
+
+// Example 9: Loading and managing multiple datasets
+void ExampleMultipleDatasets()
+{
+	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
+	UTrajectoryDataManager* Manager = UTrajectoryDataManager::Get();
+	
+	// Load trajectories from first dataset
+	FTrajectoryDatasetInfo Dataset1;
+	if (Manager->GetDatasetInfo(TEXT("bubbles"), Dataset1))
+	{
+		FTrajectoryLoadParams Params1;
+		Params1.DatasetPath = Dataset1.DatasetPath;
+		Params1.StartTimeStep = -1;
+		Params1.EndTimeStep = -1;
+		Params1.SampleRate = 1;
+		Params1.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
+		Params1.NumTrajectories = 50;
+		
+		FTrajectoryLoadResult Result1 = Loader->LoadTrajectoriesSync(Params1);
+		if (Result1.bSuccess)
+		{
+			UE_LOG(LogTemp, Log, TEXT("Loaded %d trajectories from bubbles dataset"), 
+				Result1.Trajectories.Num());
+		}
+	}
+	
+	// Load trajectories from second dataset (appends to the first)
+	FTrajectoryDatasetInfo Dataset2;
+	if (Manager->GetDatasetInfo(TEXT("particles"), Dataset2))
+	{
+		FTrajectoryLoadParams Params2;
+		Params2.DatasetPath = Dataset2.DatasetPath;
+		Params2.StartTimeStep = -1;
+		Params2.EndTimeStep = -1;
+		Params2.SampleRate = 1;
+		Params2.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
+		Params2.NumTrajectories = 30;
+		
+		FTrajectoryLoadResult Result2 = Loader->LoadTrajectoriesSync(Params2);
+		if (Result2.bSuccess)
+		{
+			UE_LOG(LogTemp, Log, TEXT("Loaded %d trajectories from particles dataset"), 
+				Result2.Trajectories.Num());
+		}
+	}
+	
+	// Access all loaded datasets
+	const TArray<FLoadedDataset>& LoadedDatasets = Loader->GetLoadedDatasets();
+	UE_LOG(LogTemp, Log, TEXT("Total loaded datasets: %d"), LoadedDatasets.Num());
+	
+	for (int32 i = 0; i < LoadedDatasets.Num(); ++i)
+	{
+		const FLoadedDataset& Dataset = LoadedDatasets[i];
+		UE_LOG(LogTemp, Log, TEXT("Dataset %d: %s"), i, *Dataset.DatasetPath);
+		UE_LOG(LogTemp, Log, TEXT("  Trajectories: %d"), Dataset.Trajectories.Num());
+		UE_LOG(LogTemp, Log, TEXT("  Time range: %d - %d"), 
+			Dataset.LoadedStartTimeStep, Dataset.LoadedEndTimeStep);
+		UE_LOG(LogTemp, Log, TEXT("  Memory: %s"),
+			*UTrajectoryDataBlueprintLibrary::FormatMemorySize(Dataset.MemoryUsedBytes));
+	}
+	
+	// Get all trajectories from all datasets (backward compatible)
+	TArray<FLoadedTrajectory> AllTrajectories = Loader->GetLoadedTrajectories();
+	UE_LOG(LogTemp, Log, TEXT("Total trajectories across all datasets: %d"), 
+		AllTrajectories.Num());
+	
+	// Get total memory usage across all datasets
+	int64 TotalMemory = Loader->GetLoadedDataMemoryUsage();
+	UE_LOG(LogTemp, Log, TEXT("Total memory usage: %s"),
+		*UTrajectoryDataBlueprintLibrary::FormatMemorySize(TotalMemory));
+	
+	// Process each dataset separately
+	for (const FLoadedDataset& Dataset : LoadedDatasets)
+	{
+		// Different visualization or processing per dataset
+		if (Dataset.DatasetPath.Contains(TEXT("bubbles")))
+		{
+			// Process bubbles with specific visualization
+			for (const FLoadedTrajectory& Traj : Dataset.Trajectories)
+			{
+				// Visualize as bubbles...
+			}
+		}
+		else if (Dataset.DatasetPath.Contains(TEXT("particles")))
+		{
+			// Process particles with different visualization
+			for (const FLoadedTrajectory& Traj : Dataset.Trajectories)
+			{
+				// Visualize as particles...
+			}
+		}
+	}
+	
+	// Clean up all loaded datasets
+	Loader->UnloadAll();
+}
