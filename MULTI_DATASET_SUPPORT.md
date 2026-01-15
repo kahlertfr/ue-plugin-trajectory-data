@@ -20,12 +20,10 @@ Each loaded dataset is stored as an `FLoadedDataset` structure containing:
 ```cpp
 struct FLoadedDataset
 {
-    FTrajectoryLoadParams LoadParams;      // Original loading parameters
-    FString DatasetPath;                   // Path to the dataset
-    int32 LoadedStartTimeStep;             // Actual start time step loaded
-    int32 LoadedEndTimeStep;               // Actual end time step loaded
-    TArray<FLoadedTrajectory> Trajectories; // Array of loaded trajectories
-    int64 MemoryUsedBytes;                 // Memory used by this dataset
+    FTrajectoryLoadParams LoadParams;           // Original loading parameters (includes time steps)
+    FTrajectoryDatasetInfo DatasetInfo;         // Complete dataset information (path, metadata, etc.)
+    TArray<FLoadedTrajectory> Trajectories;     // Array of loaded trajectories
+    int64 MemoryUsedBytes;                      // Memory used by this dataset
 };
 ```
 
@@ -36,28 +34,44 @@ The `UTrajectoryDataLoader` now maintains:
 - Per-dataset memory tracking
 - Cumulative memory usage across all datasets
 
+### API Changes
+
+Loading methods now require `FTrajectoryDatasetInfo` to be passed explicitly:
+- `ValidateLoadParams(DatasetInfo, Params)`
+- `LoadTrajectoriesSync(DatasetInfo, Params)`
+- `LoadTrajectoriesAsync(DatasetInfo, Params)`
+
+This removes the need for `DatasetPath` in `FTrajectoryLoadParams` and ensures all dataset metadata is available.
+
 ## Usage Examples
 
 ### Loading Multiple Datasets
 
 ```cpp
 UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
+UTrajectoryDataManager* Manager = UTrajectoryDataManager::Get();
 
-// Load first dataset
-FTrajectoryLoadParams Params1;
-Params1.DatasetPath = TEXT("C:/Data/Scenarios/Experiment1/bubbles");
-Params1.NumTrajectories = 50;
-Params1.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
+// Get dataset info for first dataset
+FTrajectoryDatasetInfo Dataset1Info;
+if (Manager->GetDatasetInfo(TEXT("bubbles"), Dataset1Info))
+{
+    FTrajectoryLoadParams Params1;
+    Params1.NumTrajectories = 50;
+    Params1.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
+    
+    FTrajectoryLoadResult Result1 = Loader->LoadTrajectoriesSync(Dataset1Info, Params1);
+}
 
-FTrajectoryLoadResult Result1 = Loader->LoadTrajectoriesSync(Params1);
-
-// Load second dataset (appends to first, doesn't replace)
-FTrajectoryLoadParams Params2;
-Params2.DatasetPath = TEXT("C:/Data/Scenarios/Experiment1/particles");
-Params2.NumTrajectories = 30;
-Params2.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
-
-FTrajectoryLoadResult Result2 = Loader->LoadTrajectoriesSync(Params2);
+// Get dataset info for second dataset (appends to first, doesn't replace)
+FTrajectoryDatasetInfo Dataset2Info;
+if (Manager->GetDatasetInfo(TEXT("particles"), Dataset2Info))
+{
+    FTrajectoryLoadParams Params2;
+    Params2.NumTrajectories = 30;
+    Params2.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
+    
+    FTrajectoryLoadResult Result2 = Loader->LoadTrajectoriesSync(Dataset2Info, Params2);
+}
 ```
 
 ### Accessing Individual Datasets
@@ -69,13 +83,16 @@ const TArray<FLoadedDataset>& LoadedDatasets = Loader->GetLoadedDatasets();
 // Iterate through each dataset
 for (const FLoadedDataset& Dataset : LoadedDatasets)
 {
-    UE_LOG(LogTemp, Log, TEXT("Dataset: %s"), *Dataset.DatasetPath);
+    UE_LOG(LogTemp, Log, TEXT("Dataset: %s"), *Dataset.DatasetInfo.DatasetPath);
+    UE_LOG(LogTemp, Log, TEXT("  Unique Name: %s"), *Dataset.DatasetInfo.UniqueDSName);
     UE_LOG(LogTemp, Log, TEXT("  Trajectories: %d"), Dataset.Trajectories.Num());
     UE_LOG(LogTemp, Log, TEXT("  Time range: %d - %d"), 
-        Dataset.LoadedStartTimeStep, Dataset.LoadedEndTimeStep);
+        Dataset.LoadParams.StartTimeStep, Dataset.LoadParams.EndTimeStep);
     UE_LOG(LogTemp, Log, TEXT("  Memory: %lld bytes"), Dataset.MemoryUsedBytes);
     
-    // Access loading parameters
+    // Access dataset metadata
+    UE_LOG(LogTemp, Log, TEXT("  Total trajectories in dataset: %lld"), 
+        Dataset.DatasetInfo.TotalTrajectories);
     UE_LOG(LogTemp, Log, TEXT("  Sample rate: %d"), Dataset.LoadParams.SampleRate);
 }
 ```
@@ -86,7 +103,7 @@ for (const FLoadedDataset& Dataset : LoadedDatasets)
 // Process each dataset with different logic
 for (const FLoadedDataset& Dataset : LoadedDatasets)
 {
-    if (Dataset.DatasetPath.Contains(TEXT("bubbles")))
+    if (Dataset.DatasetInfo.DatasetPath.Contains(TEXT("bubbles")))
     {
         // Visualize as bubbles with specific color/size
         for (const FLoadedTrajectory& Traj : Dataset.Trajectories)
@@ -94,7 +111,7 @@ for (const FLoadedDataset& Dataset : LoadedDatasets)
             // Blue visualization for bubbles
         }
     }
-    else if (Dataset.DatasetPath.Contains(TEXT("particles")))
+    else if (Dataset.DatasetInfo.DatasetPath.Contains(TEXT("particles")))
     {
         // Visualize as particles with different style
         for (const FLoadedTrajectory& Traj : Dataset.Trajectories)
@@ -132,7 +149,7 @@ UE_LOG(LogTemp, Log, TEXT("Total memory: %s"),
 for (const FLoadedDataset& Dataset : Loader->GetLoadedDatasets())
 {
     UE_LOG(LogTemp, Log, TEXT("Dataset %s uses %s"),
-        *Dataset.DatasetPath,
+        *Dataset.DatasetInfo.DatasetPath,
         *UTrajectoryDataBlueprintLibrary::FormatMemorySize(Dataset.MemoryUsedBytes));
 }
 
@@ -155,15 +172,27 @@ All new functionality is exposed to Blueprints:
 Load different types of objects from the same simulation:
 
 ```cpp
+UTrajectoryDataManager* Manager = UTrajectoryDataManager::Get();
+
 // Load vehicles
-FTrajectoryLoadParams VehicleParams;
-VehicleParams.DatasetPath = TEXT(".../vehicles");
-Loader->LoadTrajectoriesSync(VehicleParams);
+FTrajectoryDatasetInfo VehicleInfo;
+if (Manager->GetDatasetInfo(TEXT("vehicles"), VehicleInfo))
+{
+    FTrajectoryLoadParams VehicleParams;
+    VehicleParams.NumTrajectories = 100;
+    VehicleParams.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
+    Loader->LoadTrajectoriesSync(VehicleInfo, VehicleParams);
+}
 
 // Load pedestrians
-FTrajectoryLoadParams PedestrianParams;
-PedestrianParams.DatasetPath = TEXT(".../pedestrians");
-Loader->LoadTrajectoriesSync(PedestrianParams);
+FTrajectoryDatasetInfo PedestrianInfo;
+if (Manager->GetDatasetInfo(TEXT("pedestrians"), PedestrianInfo))
+{
+    FTrajectoryLoadParams PedestrianParams;
+    PedestrianParams.NumTrajectories = 50;
+    PedestrianParams.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
+    Loader->LoadTrajectoriesSync(PedestrianInfo, PedestrianParams);
+}
 
 // Visualize both simultaneously with different styles
 ```
@@ -173,19 +202,25 @@ Loader->LoadTrajectoriesSync(PedestrianParams);
 Load the same scene with different parameters:
 
 ```cpp
-// Load with low sample rate
-FTrajectoryLoadParams LowResParams;
-LowResParams.DatasetPath = DatasetPath;
-LowResParams.SampleRate = 10;
-Loader->LoadTrajectoriesSync(LowResParams);
+FTrajectoryDatasetInfo DatasetInfo;
+if (Manager->GetDatasetInfo(TEXT("experiment1"), DatasetInfo))
+{
+    // Load with low sample rate
+    FTrajectoryLoadParams LowResParams;
+    LowResParams.SampleRate = 10;
+    LowResParams.NumTrajectories = 100;
+    LowResParams.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
+    Loader->LoadTrajectoriesSync(DatasetInfo, LowResParams);
 
-// Load with high sample rate for comparison
-FTrajectoryLoadParams HighResParams;
-HighResParams.DatasetPath = DatasetPath;
-HighResParams.SampleRate = 1;
-Loader->LoadTrajectoriesSync(HighResParams);
+    // Load with high sample rate for comparison
+    FTrajectoryLoadParams HighResParams;
+    HighResParams.SampleRate = 1;
+    HighResParams.NumTrajectories = 100;
+    HighResParams.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
+    Loader->LoadTrajectoriesSync(DatasetInfo, HighResParams);
 
-// Compare the two loaded versions
+    // Compare the two loaded versions
+}
 ```
 
 ### Time Window Management
@@ -193,32 +228,67 @@ Loader->LoadTrajectoriesSync(HighResParams);
 Load different time windows without losing previous data:
 
 ```cpp
-// Load early time window
-Params.StartTimeStep = 0;
-Params.EndTimeStep = 1000;
-Loader->LoadTrajectoriesSync(Params);
+FTrajectoryDatasetInfo DatasetInfo;
+if (Manager->GetDatasetInfo(TEXT("experiment1"), DatasetInfo))
+{
+    FTrajectoryLoadParams Params;
+    Params.NumTrajectories = 50;
+    Params.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
+    
+    // Load early time window
+    Params.StartTimeStep = 0;
+    Params.EndTimeStep = 1000;
+    Loader->LoadTrajectoriesSync(DatasetInfo, Params);
 
-// Load late time window (appends, doesn't replace)
-Params.StartTimeStep = 5000;
-Params.EndTimeStep = 6000;
-Loader->LoadTrajectoriesSync(Params);
+    // Load late time window (appends, doesn't replace)
+    Params.StartTimeStep = 5000;
+    Params.EndTimeStep = 6000;
+    Loader->LoadTrajectoriesSync(DatasetInfo, Params);
 
-// Both time windows are now available
+    // Both time windows are now available
+}
 ```
 
 ## Migration Guide
 
+### API Changes
+
+**Old API:**
+```cpp
+FTrajectoryLoadParams Params;
+Params.DatasetPath = TEXT("C:/Data/dataset");
+Params.NumTrajectories = 100;
+Loader->LoadTrajectoriesSync(Params);
+```
+
+**New API:**
+```cpp
+UTrajectoryDataManager* Manager = UTrajectoryDataManager::Get();
+FTrajectoryDatasetInfo DatasetInfo;
+if (Manager->GetDatasetInfo(TEXT("dataset_name"), DatasetInfo))
+{
+    FTrajectoryLoadParams Params;
+    Params.NumTrajectories = 100;
+    // No need to set DatasetPath - it comes from DatasetInfo
+    Loader->LoadTrajectoriesSync(DatasetInfo, Params);
+}
+```
+
 ### If You Were Using LoadTrajectoriesSync/Async
 
-No changes needed! The loader now appends instead of replacing, but you can call `UnloadAll()` first to maintain the old behavior:
+The loader now requires `FTrajectoryDatasetInfo` and appends instead of replacing:
 
 ```cpp
-// Old behavior (replace):
-Loader->UnloadAll();  // Add this line
+// Old approach:
+Loader->UnloadAll();  // Clear previous
+Params.DatasetPath = TEXT("...");
 Loader->LoadTrajectoriesSync(Params);
 
-// New behavior (append):
-Loader->LoadTrajectoriesSync(Params);  // Appends to existing datasets
+// New approach:
+Loader->UnloadAll();  // Clear previous (optional)
+FTrajectoryDatasetInfo Info;
+Manager->GetDatasetInfo(TEXT("dataset_name"), Info);
+Loader->LoadTrajectoriesSync(Info, Params);  // Appends to existing datasets
 ```
 
 ### If You Were Iterating Over Loaded Trajectories
