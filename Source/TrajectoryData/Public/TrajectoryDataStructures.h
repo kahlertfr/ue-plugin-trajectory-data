@@ -199,10 +199,6 @@ struct TRAJECTORYDATA_API FTrajectoryLoadParams
 {
 	GENERATED_BODY()
 
-	/** Dataset path to load from */
-	UPROPERTY(BlueprintReadWrite, Category = "Trajectory Data")
-	FString DatasetPath;
-
 	/** Start time step of interest (-1 for dataset start) */
 	UPROPERTY(BlueprintReadWrite, Category = "Trajectory Data")
 	int32 StartTimeStep;
@@ -228,8 +224,7 @@ struct TRAJECTORYDATA_API FTrajectoryLoadParams
 	TArray<FTrajectoryLoadSelection> TrajectorySelections;
 
 	FTrajectoryLoadParams()
-		: DatasetPath(TEXT(""))
-		, StartTimeStep(-1)
+		: StartTimeStep(-1)
 		, EndTimeStep(-1)
 		, SampleRate(1)
 		, SelectionStrategy(ETrajectorySelectionStrategy::FirstN)
