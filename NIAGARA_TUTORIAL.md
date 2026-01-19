@@ -41,10 +41,25 @@ Trajectory lines on screen
 ### Texture Layout
 
 **Per Texture**:
-- Width: MaxSamplesPerTrajectory (e.g., 2048)
+- Width: **Actual MaxSamplesPerTrajectory** (based on longest trajectory in dataset)
+  - This keeps texture size minimal by using only the needed width
+  - Example: If longest trajectory has 850 samples, width = 850 (not 2048)
 - Height: Up to 1024 trajectories
-- Format: RGBA32F (Float16)
+- Format: PF_FloatRGBA (Float16, 8 bytes per texel)
 - Channels: RGB = Position XYZ, A = TimeStep
+
+**Float16 Encoding**:
+- Float32 positions automatically converted to Float16 (half precision)
+- Range: ±65504 (maximum representable value)
+- Precision: ~3 decimal digits
+- Calculation: `FFloat16(float_value)` performs IEEE 754 half-precision conversion
+- Special values: NaN preserved for invalid positions
+
+**Invalid Position Handling**:
+- Texels where no trajectory data exists are set to **NaN** (Not a Number)
+- This occurs when a trajectory has fewer samples than MaxSamplesPerTrajectory
+- In HLSL, detect with: `isnan(Position.x) || isnan(Position.y) || isnan(Position.z)`
+- Example: Trajectory with 500 samples in a 850-wide texture → samples 500-849 are NaN
 
 **Texture Array**:
 - Texture 0: Trajectories [0, 1023]
@@ -182,10 +197,20 @@ else
 float3 Position = TexelData.rgb;
 float TimeStep = TexelData.a;
 
+// Check for invalid position (NaN marker)
+// This indicates no trajectory data exists at this sample index
+bool bIsValidPosition = !isnan(Position.x) && !isnan(Position.y) && !isnan(Position.z);
+
 // Set particle attributes
 Particles.Position = Position;
 Particles.RibbonID = GlobalTrajectoryIndex;
 Particles.RibbonLinkOrder = SampleIndex;
+
+// Optional: Hide invalid particles by setting scale to zero
+if (!bIsValidPosition)
+{
+    Particles.Scale = float3(0, 0, 0);
+}
 
 // Optional: Color by trajectory using HSV
 float Hue = float(GlobalTrajectoryIndex) / float(NumTrajectories);
@@ -445,10 +470,19 @@ else if (TextureIndex == 3 && NumTextures > 3)
 float3 Position = TexelData.rgb;
 float TimeStep = TexelData.a;
 
+// Check for invalid position (NaN marker indicates no data available)
+bool bIsValidPosition = !isnan(Position.x) && !isnan(Position.y) && !isnan(Position.z);
+
 // Set particle attributes
 Particles.Position = Position;
 Particles.RibbonID = GlobalTrajectoryIndex;
 Particles.RibbonLinkOrder = SampleIndex;
+
+// Hide invalid particles (trajectories with fewer samples than MaxSamplesPerTrajectory)
+if (!bIsValidPosition)
+{
+    Particles.Scale = float3(0, 0, 0);
+}
 
 // Color by trajectory
 float Hue = float(GlobalTrajectoryIndex) / float(NumTrajectories);
@@ -465,23 +499,87 @@ Particles.TrajectoryID = GlobalTrajectoryIndex;
 // }
 ```
 
+## Texture Encoding Details
+
+### Float16 Conversion
+
+Position values are encoded as Float16 (half precision floating point):
+
+**Conversion Process**:
+```cpp
+// C++ side (in TrajectoryTextureProvider.cpp)
+FFloat16(Pos.X)  // Converts Float32 to Float16 using IEEE 754 half-precision
+```
+
+**Float16 Characteristics**:
+- **Range**: ±65504 (values outside this range are clamped to infinity)
+- **Precision**: ~3 decimal digits (11-bit mantissa)
+- **Special Values**: 
+  - NaN (Not a Number) is preserved
+  - Infinity is represented
+  - Zero has sign bit
+
+**Position Encoding**:
+```
+Original Float32 Position: (123.456, 789.012, -345.678) meters
+↓ FFloat16 conversion
+Float16 Texture Value: (123.5, 789.0, -345.7) in texture
+↓ GPU sampling (automatic conversion back to Float32)
+HLSL float3: (123.5, 789.0, -345.7)
+```
+
+**Invalid Position Marker**:
+```cpp
+// C++ side: Mark invalid positions
+const float InvalidValue = NAN;  // IEEE 754 NaN
+FFloat16Color(FFloat16(NAN), FFloat16(NAN), FFloat16(NAN), FFloat16(NAN))
+```
+
+```hlsl
+// HLSL side: Detect invalid positions
+bool bIsValid = !isnan(Position.x) && !isnan(Position.y) && !isnan(Position.z);
+```
+
+### Texture Size Optimization
+
+**Width Calculation**:
+- Texture width = Maximum sample count across all trajectories in the dataset
+- This keeps textures as small as possible
+- Example: If longest trajectory has 723 samples, texture width = 723 (not 1024 or 2048)
+
+**Memory Savings**:
+```
+Fixed 2048 width approach:
+- 1000 trajectories × 2048 samples × 8 bytes = 16 MB
+
+Actual width (723 samples):
+- 1000 trajectories × 723 samples × 8 bytes = 5.6 MB
+- Savings: 65% reduction in memory usage
+```
+
 ## Performance Considerations
 
 ### Memory Usage
 
 **Texture Memory**:
 ```
-Per texture: 1024 × MaxSamples × 8 bytes
-Example: 1024 × 2048 × 8 = 16 MB per texture
+Per texture: 1024 × ActualMaxSamples × 8 bytes
+Note: ActualMaxSamples is based on the longest trajectory, not a fixed value
 
-For 5000 trajectories:
-- Textures needed: 5 (ceil(5000/1024))
-- Total memory: 5 × 16 MB = 80 MB
+Example 1 (short trajectories):
+- ActualMaxSamples: 512
+- Per texture: 1024 × 512 × 8 = 4 MB per texture
+- For 5000 trajectories: 5 textures × 4 MB = 20 MB total
+
+Example 2 (long trajectories):
+- ActualMaxSamples: 2048
+- Per texture: 1024 × 2048 × 8 = 16 MB per texture
+- For 5000 trajectories: 5 textures × 16 MB = 80 MB total
 ```
 
 **Particle Memory**:
 ```
-Particles: NumTrajectories × MaxSamples × ~128 bytes
+Particles: NumTrajectories × ActualMaxSamples × ~128 bytes
 Example: 5000 × 2048 × 128 = 1.28 GB
 
 Use LOD and sample rate reduction for large datasets!

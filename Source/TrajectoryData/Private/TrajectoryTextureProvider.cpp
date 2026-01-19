@@ -35,6 +35,7 @@ bool UTrajectoryTextureProvider::UpdateFromDataset(int32 DatasetIndex)
 	}
 
 	// Find maximum samples across all trajectories
+	// This determines the actual texture width based on the dataset's time range
 	int32 MaxSamples = 0;
 	for (const FLoadedTrajectory& Traj : Dataset.Trajectories)
 	{
@@ -46,6 +47,8 @@ bool UTrajectoryTextureProvider::UpdateFromDataset(int32 DatasetIndex)
 		UE_LOG(LogTemp, Error, TEXT("TrajectoryTextureProvider: No samples in trajectories"));
 		return false;
 	}
+	
+	UE_LOG(LogTemp, Log, TEXT("TrajectoryTextureProvider: Texture width set to %d based on actual max samples"), MaxSamples);
 
 	// Calculate number of textures needed (1024 trajectories per texture)
 	const int32 MaxTrajPerTexture = 1024;
@@ -134,6 +137,8 @@ void UTrajectoryTextureProvider::PackTrajectories(const FLoadedDataset& Dataset,
 					float TimeStep = static_cast<float>(Traj.StartTimeStep + SampleIdx);
 					
 					// Pack into Float16 RGBA: XYZ + TimeStep
+					// Float32 positions are automatically converted to Float16
+					// This provides ~3 decimal digit precision with range ±65504
 					OutTextureDataArray[TexIdx][TexelIndex] = FFloat16Color(
 						FFloat16(Pos.X),
 						FFloat16(Pos.Y),
@@ -143,12 +148,14 @@ void UTrajectoryTextureProvider::PackTrajectories(const FLoadedDataset& Dataset,
 				}
 				else
 				{
-					// Pad with zeros for trajectories with fewer samples
+					// Mark invalid positions with NaN for trajectories with fewer samples
+					// In HLSL, use isnan(Position.x) to detect invalid positions
+					const float InvalidValue = FTrajectoryTextureMetadata::InvalidPositionValue;
 					OutTextureDataArray[TexIdx][TexelIndex] = FFloat16Color(
-						FFloat16(0.0f),
-						FFloat16(0.0f),
-						FFloat16(0.0f),
-						FFloat16(0.0f)
+						FFloat16(InvalidValue),
+						FFloat16(InvalidValue),
+						FFloat16(InvalidValue),
+						FFloat16(InvalidValue)
 					);
 				}
 			}

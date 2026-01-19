@@ -31,21 +31,24 @@ We propose using **multi-texture array data transfer** with direct HLSL code in 
 #### 1. Multi-Texture Packing Strategy
 
 **Trajectory Position Textures (2D Array)**
-- Format: `RGBA32F` (4 × Float16 channels, 8 bytes per texel)
+- Format: `PF_FloatRGBA` (4 × Float16 channels, 8 bytes per texel)
 - Layout: Row = Trajectory, Column = Time Sample
 - Multiple textures for large datasets (max 1024 trajectories per texture)
 - Channels:
-  - **R**: Position X (float)
-  - **G**: Position Y (float)  
-  - **B**: Position Z (float)
-  - **A**: Time Step (float)
+  - **R**: Position X (Float16 encoding of Float32 world position)
+  - **G**: Position Y (Float16 encoding of Float32 world position)
+  - **B**: Position Z (Float16 encoding of Float32 world position)
+  - **A**: Time Step (Float16 encoding of integer time step)
 
 **Texture Dimensions**:
 ```
 Per Texture:
-  Width = MaxSamplesPerTrajectory (e.g., 2048)
+  Width = Actual MaxSamplesPerTrajectory (based on longest trajectory)
+    - NOT a fixed value like 2048
+    - Dynamically sized to minimize memory usage
+    - Example: If longest trajectory has 723 samples, width = 723
   Height = Up to 1024 trajectories
-  Max Capacity per texture = 2048 × 1024 = ~2M samples
+  Capacity per texture = Width × 1024 samples
 
 Multiple Textures:
   Texture 0: Trajectories [0, 1023]
@@ -53,16 +56,33 @@ Multiple Textures:
   Texture 2: Trajectories [2048, 3071]
   ...and so on
 
-Example: 5000 trajectories
+Example: 5000 trajectories with 723 max samples
   → 5 textures (ceil(5000/1024))
-  → Total: 5 × 2048 × 1024 × 8 bytes = 80 MB
+  → Total: 5 × 723 × 1024 × 8 bytes = 28.5 MB (vs 80 MB with fixed 2048 width)
 ```
 
 **Memory Calculation**:
 ```
 MemoryPerSample = 4 channels × 2 bytes (Float16) = 8 bytes
-MemoryPerTexture = Width × 1024 × 8 bytes
-Example: 2048 × 1024 × 8 = 16 MB per texture
+MemoryPerTexture = ActualWidth × 1024 × 8 bytes
+Example (short trajectories): 512 × 1024 × 8 = 4 MB per texture
+Example (long trajectories): 2048 × 1024 × 8 = 16 MB per texture
+```
+
+**Float16 Encoding**:
+```
+C++: FFloat16(Float32_value) → IEEE 754 half-precision conversion
+Range: ±65504
+Precision: ~3 decimal digits
+Special: NaN preserved for invalid positions
+```
+
+**Invalid Position Handling**:
+```
+Invalid marker: NaN (Not a Number)
+Used when: Trajectory has fewer samples than MaxSamplesPerTrajectory
+Detection: isnan(Position.x) in HLSL
+Purpose: Allows variable-length trajectories without wasting memory
 ```
 
 **Texture Addressing**:
@@ -70,7 +90,7 @@ Example: 2048 × 1024 × 8 = 16 MB per texture
 GlobalTrajectoryIndex = ParticleID or TrajectoryID
 TextureIndex = GlobalTrajectoryIndex / 1024
 LocalTrajectoryIndex = GlobalTrajectoryIndex % 1024
-UV = (SampleIndex / Width, LocalTrajectoryIndex / 1024)
+UV = (SampleIndex / ActualWidth, LocalTrajectoryIndex / 1024)
 ```
 
 #### 2. C++ Texture Provider Component

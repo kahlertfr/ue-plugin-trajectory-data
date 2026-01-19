@@ -20,7 +20,11 @@ struct TRAJECTORYDATA_API FTrajectoryTextureMetadata
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int32 NumTrajectories = 0;
 
-	/** Maximum samples per trajectory */
+	/** 
+	 * Maximum samples per trajectory (actual texture width)
+	 * This is calculated from the longest trajectory in the dataset,
+	 * keeping texture size minimal based on actual data range.
+	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int32 MaxSamplesPerTrajectory = 0;
 
@@ -47,11 +51,40 @@ struct TRAJECTORYDATA_API FTrajectoryTextureMetadata
 	/** Last time step in dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int32 LastTimeStep = 0;
+	
+	/**
+	 * Invalid position marker value (NaN)
+	 * Texels with this value indicate no position data is available.
+	 * Use isnan() in HLSL to detect invalid positions.
+	 */
+	static constexpr float InvalidPositionValue = NAN;
 };
 
 /**
  * Component that converts trajectory data into GPU textures for Niagara
  * Supports multiple textures for datasets with more than 1024 trajectories
+ * 
+ * Texture Encoding Details:
+ * - Format: PF_FloatRGBA (4 channels of 16-bit float, 8 bytes per texel)
+ * - Width: Based on actual maximum samples in the dataset (not fixed)
+ * - Height: Up to 1024 trajectories per texture
+ * - Channels:
+ *   - R: Position X (Float16 encoding of float position in world units)
+ *   - G: Position Y (Float16 encoding of float position in world units)
+ *   - B: Position Z (Float16 encoding of float position in world units)
+ *   - A: Time Step (Float16 encoding of integer time step value)
+ * 
+ * Float16 Encoding:
+ * - Float32 values are automatically converted to Float16 by FFloat16 constructor
+ * - Range: ±65504 (max representable value)
+ * - Precision: ~3 decimal digits
+ * - Special values: NaN preserved, infinity clamped to max
+ * - Invalid positions marked with NaN in all RGB channels
+ * 
+ * Invalid Position Handling:
+ * - Texels where no trajectory data exists are set to NaN
+ * - In HLSL, check with: isnan(Position.x) || isnan(Position.y) || isnan(Position.z)
+ * - This occurs when trajectory has fewer samples than MaxSamplesPerTrajectory
  */
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class TRAJECTORYDATA_API UTrajectoryTextureProvider : public UActorComponent
