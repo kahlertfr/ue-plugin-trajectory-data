@@ -139,24 +139,22 @@ void UTrajectoryTextureProvider::PackTrajectories(const FLoadedDataset& Dataset,
 					// Pack into Float16 RGBA: XYZ + TimeStep
 					// Float32 positions are automatically converted to Float16
 					// This provides ~3 decimal digit precision with range ±65504
-					OutTextureDataArray[TexIdx][TexelIndex] = FFloat16Color(
-						FFloat16(Pos.X),
-						FFloat16(Pos.Y),
-						FFloat16(Pos.Z),
-						FFloat16(TimeStep)
-					);
+					FFloat16Color& Texel = OutTextureDataArray[TexIdx][TexelIndex];
+					Texel.R = FFloat16(Pos.X);
+					Texel.G = FFloat16(Pos.Y);
+					Texel.B = FFloat16(Pos.Z);
+					Texel.A = FFloat16(TimeStep);
 				}
 				else
 				{
 					// Mark invalid positions with NaN for trajectories with fewer samples
 					// In HLSL, use isnan(Position.x) to detect invalid positions
 					const float InvalidValue = FTrajectoryTextureMetadata::InvalidPositionValue;
-					OutTextureDataArray[TexIdx][TexelIndex] = FFloat16Color(
-						FFloat16(InvalidValue),
-						FFloat16(InvalidValue),
-						FFloat16(InvalidValue),
-						FFloat16(InvalidValue)
-					);
+					FFloat16Color& Texel = OutTextureDataArray[TexIdx][TexelIndex];
+					Texel.R = FFloat16(InvalidValue);
+					Texel.G = FFloat16(InvalidValue);
+					Texel.B = FFloat16(InvalidValue);
+					Texel.A = FFloat16(InvalidValue);
 				}
 			}
 		}
