@@ -994,11 +994,14 @@ uint32 FTrajectoryLoadTask::Run()
 	{
 		if (WeakLoader.IsValid())
 		{
+			// Reset the async loading flag BEFORE broadcasting the delegate
+			// This allows OnLoadComplete handlers to start new async loads
+			WeakLoader->bIsLoadingAsync = false;
+			
 			if (WeakLoader->OnLoadComplete.IsBound())
 			{
 				WeakLoader->OnLoadComplete.Broadcast(ResultCopy.bSuccess, ResultCopy);
 			}
-			WeakLoader->bIsLoadingAsync = false;
 		}
 	});
 
