@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "Engine/Texture2D.h"
+#include "Engine/Texture2DArray.h"
 #include "TrajectoryDataStructures.h"
 #include "TrajectoryTextureProvider.generated.h"
 
@@ -28,13 +28,13 @@ struct TRAJECTORYDATA_API FTrajectoryTextureMetadata
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int32 MaxSamplesPerTrajectory = 0;
 
-	/** Maximum trajectories per texture (1024 for standard GPUs) */
+	/** Maximum trajectories per texture slice (1024 for standard GPUs) */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int32 MaxTrajectoriesPerTexture = 1024;
 
-	/** Number of textures created */
+	/** Number of texture slices in the array */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	int32 NumTextures = 0;
+	int32 NumTextureSlices = 0;
 
 	/** Dataset bounding box minimum */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
@@ -61,13 +61,14 @@ struct TRAJECTORYDATA_API FTrajectoryTextureMetadata
 };
 
 /**
- * Component that converts trajectory data into GPU textures for Niagara
- * Supports multiple textures for datasets with more than 1024 trajectories
+ * Component that converts trajectory data into a GPU Texture2DArray for Niagara
+ * Uses Texture2DArray for dynamic texture count - no need to know trajectory count at design time
  * 
  * Texture Encoding Details:
  * - Format: PF_FloatRGBA (4 channels of 16-bit float, 8 bytes per texel)
  * - Width: Based on actual maximum samples in the dataset (not fixed)
- * - Height: Up to 1024 trajectories per texture
+ * - Height: Up to 1024 trajectories per slice
+ * - Depth: Number of slices = ceil(NumTrajectories / 1024)
  * - Channels:
  *   - R: Position X (Float16 encoding of float position in world units)
  *   - G: Position Y (Float16 encoding of float position in world units)
@@ -85,6 +86,12 @@ struct TRAJECTORYDATA_API FTrajectoryTextureMetadata
  * - Texels where no trajectory data exists are set to NaN
  * - In HLSL, check with: isnan(Position.x) || isnan(Position.y) || isnan(Position.z)
  * - This occurs when trajectory has fewer samples than MaxSamplesPerTrajectory
+ * 
+ * Texture2DArray Advantages:
+ * - Single texture parameter in Niagara (no need for PositionTexture0, 1, 2, etc.)
+ * - Dynamic slice count determined at runtime
+ * - HLSL: Texture2DArraySample(PositionTextureArray, Sampler, UV, SliceIndex)
+ * - All slices have same dimensions (Width × 1024)
  */
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class TRAJECTORYDATA_API UTrajectoryTextureProvider : public UActorComponent
@@ -95,7 +102,7 @@ public:
 	UTrajectoryTextureProvider();
 
 	/**
-	 * Update textures from a loaded dataset
+	 * Update texture array from a loaded dataset
 	 * @param DatasetIndex Index into LoadedDatasets array
 	 * @return True if successful
 	 */
@@ -103,16 +110,10 @@ public:
 	bool UpdateFromDataset(int32 DatasetIndex);
 
 	/**
-	 * Get all position textures (array for multiple texture support)
+	 * Get the position texture array (single parameter for Niagara)
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
-	TArray<UTexture2D*> GetPositionTextures() const { return PositionTextures; }
-
-	/**
-	 * Get a specific position texture by index
-	 */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
-	UTexture2D* GetPositionTexture(int32 TextureIndex) const;
+	UTexture2DArray* GetPositionTextureArray() const { return PositionTextureArray; }
 
 	/**
 	 * Get texture metadata
@@ -134,9 +135,9 @@ public:
 	TArray<int32> GetTrajectoryIds() const { return TrajectoryIds; }
 
 protected:
-	/** Array of position textures (one per 1024 trajectories) */
+	/** Position texture array (single texture with multiple slices) */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	TArray<UTexture2D*> PositionTextures;
+	UTexture2DArray* PositionTextureArray;
 
 	/** Metadata for current dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
@@ -150,6 +151,6 @@ private:
 	/** Pack trajectory data into texture buffers */
 	void PackTrajectories(const FLoadedDataset& Dataset, TArray<TArray<FFloat16Color>>& OutTextureDataArray);
 	
-	/** Create or update texture resources */
-	void UpdateTextureResources(const TArray<TArray<FFloat16Color>>& TextureDataArray, int32 Width);
+	/** Create or update texture array resource */
+	void UpdateTextureArrayResource(const TArray<TArray<FFloat16Color>>& TextureDataArray, int32 Width);
 };

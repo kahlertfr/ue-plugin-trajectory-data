@@ -2,12 +2,13 @@
 
 #include "TrajectoryTextureProvider.h"
 #include "TrajectoryDataLoader.h"
-#include "Engine/Texture2D.h"
+#include "Engine/Texture2DArray.h"
 #include "TextureResource.h"
 
 UTrajectoryTextureProvider::UTrajectoryTextureProvider()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+	PositionTextureArray = nullptr;
 }
 
 bool UTrajectoryTextureProvider::UpdateFromDataset(int32 DatasetIndex)
@@ -50,15 +51,15 @@ bool UTrajectoryTextureProvider::UpdateFromDataset(int32 DatasetIndex)
 	
 	UE_LOG(LogTemp, Log, TEXT("TrajectoryTextureProvider: Texture width set to %d based on actual max samples"), MaxSamples);
 
-	// Calculate number of textures needed (1024 trajectories per texture)
+	// Calculate number of texture slices needed (1024 trajectories per slice)
 	const int32 MaxTrajPerTexture = 1024;
-	int32 NumTextures = FMath::DivideAndRoundUp(Dataset.Trajectories.Num(), MaxTrajPerTexture);
+	int32 NumSlices = FMath::DivideAndRoundUp(Dataset.Trajectories.Num(), MaxTrajPerTexture);
 
 	// Update metadata
 	Metadata.NumTrajectories = Dataset.Trajectories.Num();
 	Metadata.MaxSamplesPerTrajectory = MaxSamples;
 	Metadata.MaxTrajectoriesPerTexture = MaxTrajPerTexture;
-	Metadata.NumTextures = NumTextures;
+	Metadata.NumTextureSlices = NumSlices;
 	Metadata.BoundsMin = Dataset.DatasetInfo.Metadata.BoundingBoxMin;
 	Metadata.BoundsMax = Dataset.DatasetInfo.Metadata.BoundingBoxMax;
 	Metadata.FirstTimeStep = Dataset.DatasetInfo.Metadata.FirstTimeStep;
@@ -71,26 +72,17 @@ bool UTrajectoryTextureProvider::UpdateFromDataset(int32 DatasetIndex)
 		TrajectoryIds[i] = static_cast<int32>(Dataset.Trajectories[i].TrajectoryId);
 	}
 
-	// Pack data into texture buffers
+	// Pack data into texture buffers (one per slice)
 	TArray<TArray<FFloat16Color>> TextureDataArray;
 	PackTrajectories(Dataset, TextureDataArray);
 
-	// Update texture resources
-	UpdateTextureResources(TextureDataArray, MaxSamples);
+	// Update texture array resource
+	UpdateTextureArrayResource(TextureDataArray, MaxSamples);
 
-	UE_LOG(LogTemp, Log, TEXT("TrajectoryTextureProvider: Created %d textures (%dx%d each) for %d trajectories"),
-		NumTextures, MaxSamples, MaxTrajPerTexture, Dataset.Trajectories.Num());
+	UE_LOG(LogTemp, Log, TEXT("TrajectoryTextureProvider: Created Texture2DArray with %d slices (%dx%d each) for %d trajectories"),
+		NumSlices, MaxSamples, MaxTrajPerTexture, Dataset.Trajectories.Num());
 
 	return true;
-}
-
-UTexture2D* UTrajectoryTextureProvider::GetPositionTexture(int32 TextureIndex) const
-{
-	if (PositionTextures.IsValidIndex(TextureIndex))
-	{
-		return PositionTextures[TextureIndex];
-	}
-	return nullptr;
 }
 
 int64 UTrajectoryTextureProvider::GetTrajectoryId(int32 TrajectoryIndex) const
@@ -106,21 +98,34 @@ void UTrajectoryTextureProvider::PackTrajectories(const FLoadedDataset& Dataset,
 {
 	const int32 Width = Metadata.MaxSamplesPerTrajectory;
 	const int32 MaxTrajPerTexture = Metadata.MaxTrajectoriesPerTexture;
-	const int32 NumTextures = Metadata.NumTextures;
+	const int32 NumSlices = Metadata.NumTextureSlices;
 
-	// Initialize texture data arrays
-	OutTextureDataArray.SetNum(NumTextures);
+	// Initialize texture data arrays (one per slice)
+	OutTextureDataArray.SetNum(NumSlices);
 	
-	for (int32 TexIdx = 0; TexIdx < NumTextures; ++TexIdx)
+	for (int32 SliceIdx = 0; SliceIdx < NumSlices; ++SliceIdx)
 	{
-		// Calculate height for this texture (last texture might have fewer trajectories)
-		int32 StartTraj = TexIdx * MaxTrajPerTexture;
+		// Calculate height for this slice (last slice might have fewer trajectories)
+		int32 StartTraj = SliceIdx * MaxTrajPerTexture;
 		int32 EndTraj = FMath::Min(StartTraj + MaxTrajPerTexture, Dataset.Trajectories.Num());
 		int32 Height = EndTraj - StartTraj;
 		
-		OutTextureDataArray[TexIdx].SetNum(Width * Height);
+		// Note: For Texture2DArray, all slices must have same dimensions
+		// So we always use MaxTrajPerTexture height, padding with invalid data if needed
+		OutTextureDataArray[SliceIdx].SetNum(Width * MaxTrajPerTexture);
 		
-		// Pack trajectories for this texture
+		// Initialize all with invalid data first
+		const float InvalidValue = FTrajectoryTextureMetadata::InvalidPositionValue;
+		for (int32 i = 0; i < OutTextureDataArray[SliceIdx].Num(); ++i)
+		{
+			FFloat16Color& Texel = OutTextureDataArray[SliceIdx][i];
+			Texel.R = FFloat16(InvalidValue);
+			Texel.G = FFloat16(InvalidValue);
+			Texel.B = FFloat16(InvalidValue);
+			Texel.A = FFloat16(InvalidValue);
+		}
+		
+		// Pack actual trajectories for this slice
 		for (int32 LocalTrajIdx = 0; LocalTrajIdx < Height; ++LocalTrajIdx)
 		{
 			int32 GlobalTrajIdx = StartTraj + LocalTrajIdx;
@@ -139,63 +144,78 @@ void UTrajectoryTextureProvider::PackTrajectories(const FLoadedDataset& Dataset,
 					// Pack into Float16 RGBA: XYZ + TimeStep
 					// Float32 positions are automatically converted to Float16
 					// This provides ~3 decimal digit precision with range ±65504
-					FFloat16Color& Texel = OutTextureDataArray[TexIdx][TexelIndex];
+					FFloat16Color& Texel = OutTextureDataArray[SliceIdx][TexelIndex];
 					Texel.R = FFloat16(Pos.X);
 					Texel.G = FFloat16(Pos.Y);
 					Texel.B = FFloat16(Pos.Z);
 					Texel.A = FFloat16(TimeStep);
 				}
-				else
-				{
-					// Mark invalid positions with NaN for trajectories with fewer samples
-					// In HLSL, use isnan(Position.x) to detect invalid positions
-					const float InvalidValue = FTrajectoryTextureMetadata::InvalidPositionValue;
-					FFloat16Color& Texel = OutTextureDataArray[TexIdx][TexelIndex];
-					Texel.R = FFloat16(InvalidValue);
-					Texel.G = FFloat16(InvalidValue);
-					Texel.B = FFloat16(InvalidValue);
-					Texel.A = FFloat16(InvalidValue);
-				}
+				// else: Already initialized with invalid data above
 			}
 		}
 	}
 }
 
-void UTrajectoryTextureProvider::UpdateTextureResources(const TArray<TArray<FFloat16Color>>& TextureDataArray, int32 Width)
+void UTrajectoryTextureProvider::UpdateTextureArrayResource(const TArray<TArray<FFloat16Color>>& TextureDataArray, int32 Width)
 {
-	const int32 MaxTrajPerTexture = Metadata.MaxTrajectoriesPerTexture;
+	const int32 Height = Metadata.MaxTrajectoriesPerTexture;  // Always 1024 for Texture2DArray
+	const int32 NumSlices = TextureDataArray.Num();
 
-	// Resize texture array if needed
-	if (PositionTextures.Num() != TextureDataArray.Num())
+	// Create new texture array if needed or if dimensions changed
+	if (!PositionTextureArray || 
+		PositionTextureArray->GetSizeX() != Width || 
+		PositionTextureArray->GetSizeY() != Height ||
+		PositionTextureArray->GetArraySize() != NumSlices)
 	{
-		PositionTextures.SetNum(TextureDataArray.Num());
-	}
-
-	for (int32 TexIdx = 0; TexIdx < TextureDataArray.Num(); ++TexIdx)
-	{
-		// Calculate height for this texture
-		int32 Height = TextureDataArray[TexIdx].Num() / Width;
-
-		// Create new texture if needed
-		if (!PositionTextures[TexIdx] || 
-			PositionTextures[TexIdx]->GetSizeX() != Width || 
-			PositionTextures[TexIdx]->GetSizeY() != Height)
-		{
-			PositionTextures[TexIdx] = UTexture2D::CreateTransient(Width, Height, PF_FloatRGBA);
-			PositionTextures[TexIdx]->CompressionSettings = TC_HDR;
-			PositionTextures[TexIdx]->SRGB = 0;
-			PositionTextures[TexIdx]->Filter = TF_Nearest;  // No filtering for exact data
-			PositionTextures[TexIdx]->AddressX = TA_Clamp;
-			PositionTextures[TexIdx]->AddressY = TA_Clamp;
-		}
-
-		// Update texture data
-		FTexture2DMipMap& Mip = PositionTextures[TexIdx]->GetPlatformData()->Mips[0];
-		void* TextureDataPtr = Mip.BulkData.Lock(LOCK_READ_WRITE);
-		FMemory::Memcpy(TextureDataPtr, TextureDataArray[TexIdx].GetData(), 
-			TextureDataArray[TexIdx].Num() * sizeof(FFloat16Color));
-		Mip.BulkData.Unlock();
+		// Create new Texture2DArray
+		PositionTextureArray = NewObject<UTexture2DArray>(this);
 		
-		PositionTextures[TexIdx]->UpdateResource();
+		// Initialize with correct settings
+		PositionTextureArray->Init(Width, Height, NumSlices, PF_FloatRGBA);
+		PositionTextureArray->CompressionSettings = TC_HDR;
+		PositionTextureArray->SRGB = 0;
+		PositionTextureArray->Filter = TF_Nearest;  // No filtering for exact data
+		PositionTextureArray->AddressX = TA_Clamp;
+		PositionTextureArray->AddressY = TA_Clamp;
+		PositionTextureArray->AddressZ = TA_Clamp;
 	}
+
+	// Update texture data for each slice
+	for (int32 SliceIdx = 0; SliceIdx < NumSlices; ++SliceIdx)
+	{
+		if (TextureDataArray.IsValidIndex(SliceIdx))
+		{
+			FTexture2DArrayResource* Resource = (FTexture2DArrayResource*)PositionTextureArray->GetResource();
+			if (Resource)
+			{
+				// Update mip 0 for this slice
+				FUpdateTextureRegion2D UpdateRegion(0, 0, 0, 0, Width, Height);
+				const FFloat16Color* SourceData = TextureDataArray[SliceIdx].GetData();
+				uint32 SourcePitch = Width * sizeof(FFloat16Color);
+				
+				// Queue texture update on render thread
+				ENQUEUE_RENDER_COMMAND(UpdateTrajectoryTextureArraySlice)(
+					[Resource, SliceIdx, UpdateRegion, SourceData, SourcePitch, Width, Height](FRHICommandListImmediate& RHICmdList)
+					{
+						// Copy data to the slice
+						FUpdateTextureRegion3D Region3D(
+							UpdateRegion.DestX, UpdateRegion.DestY, SliceIdx,
+							UpdateRegion.SrcX, UpdateRegion.SrcY, 0,
+							UpdateRegion.Width, UpdateRegion.Height, 1
+						);
+						
+						RHICmdList.UpdateTexture3D(
+							Resource->GetTexture2DArrayRHI(),
+							0,  // Mip level
+							Region3D,
+							SourcePitch,
+							SourcePitch * Height,
+							(uint8*)SourceData
+						);
+					});
+			}
+		}
+	}
+
+	PositionTextureArray->UpdateResource();
 }
