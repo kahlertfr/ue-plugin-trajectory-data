@@ -204,12 +204,12 @@ FString UTrajectoryDataBlueprintLibrary::FormatMemorySize(int64 Bytes)
 
 // Trajectory Loading Functions
 
-FTrajectoryLoadValidation UTrajectoryDataBlueprintLibrary::ValidateTrajectoryLoadParams(const FTrajectoryLoadParams& Params)
+FTrajectoryLoadValidation UTrajectoryDataBlueprintLibrary::ValidateTrajectoryLoadParams(const FTrajectoryDatasetInfo& DatasetInfo, const FTrajectoryLoadParams& Params)
 {
 	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
 	if (Loader)
 	{
-		return Loader->ValidateLoadParams(Params);
+		return Loader->ValidateLoadParams(DatasetInfo, Params);
 	}
 	
 	FTrajectoryLoadValidation Validation;
@@ -218,12 +218,12 @@ FTrajectoryLoadValidation UTrajectoryDataBlueprintLibrary::ValidateTrajectoryLoa
 	return Validation;
 }
 
-FTrajectoryLoadResult UTrajectoryDataBlueprintLibrary::LoadTrajectoriesSync(const FTrajectoryLoadParams& Params)
+FTrajectoryLoadResult UTrajectoryDataBlueprintLibrary::LoadTrajectoriesSync(const FTrajectoryDatasetInfo& DatasetInfo, const FTrajectoryLoadParams& Params)
 {
 	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
 	if (Loader)
 	{
-		return Loader->LoadTrajectoriesSync(Params);
+		return Loader->LoadTrajectoriesSync(DatasetInfo, Params);
 	}
 	
 	FTrajectoryLoadResult Result;
