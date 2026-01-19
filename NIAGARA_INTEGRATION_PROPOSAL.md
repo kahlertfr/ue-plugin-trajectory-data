@@ -14,271 +14,886 @@ The plugin currently supports:
 
 ## Proposed Integration Method
 
-### Approach: Niagara Data Interface (NDI)
+### Approach: Texture-Based Data Transfer with Direct HLSL
 
-We propose implementing a **Niagara Data Interface** as the primary method for exposing trajectory data to Niagara systems. This approach offers:
+We propose using **texture-based data transfer** with direct HLSL code in Niagara custom modules. This approach offers:
 
-1. **Efficient Data Access**: Direct access to trajectory data from Niagara modules
-2. **GPU-Friendly**: Can be optimized for GPU readbacks or structured buffers
-3. **Extensible**: Easy to add more attributes (velocity, acceleration, etc.) in future iterations
-4. **Standard UE Pattern**: Follows Unreal Engine's recommended approach for custom data in Niagara
+1. **Version Independent**: No dependency on Niagara Data Interface API that changes between UE versions
+2. **GPU-Optimized**: Trajectory data directly accessible in GPU texture memory
+3. **Maximum Performance**: Efficient texture sampling, no CPU-GPU sync overhead
+4. **Direct Control**: Complete HLSL code provided for copy-paste into Niagara modules
+5. **Extensible**: Additional channels for velocity, acceleration in future iterations
 
 ### Architecture Components
 
-#### 1. Niagara Data Interface (C++)
-**Class**: `UNiagaraDataInterfaceTrajectoryData`
+#### 1. Texture Packing Strategy
 
-**Purpose**: Bridge between trajectory data loader and Niagara systems
+**Trajectory Position Texture (2D)**
+- Format: `RGBA32F` (4 × 32-bit float channels)
+- Layout: Row = Trajectory, Column = Time Sample
+- Channels:
+  - **R**: Position X (float)
+  - **G**: Position Y (float)  
+  - **B**: Position Z (float)
+  - **A**: Time Step (float) or metadata
+
+**Texture Dimensions**:
+```
+Width = MaxSamplesPerTrajectory (e.g., 2048)
+Height = NumTrajectories (e.g., 1024)
+Max Capacity = 2048 × 1024 = ~2M samples
+```
+
+**Memory Calculation**:
+```
+MemoryPerSample = 4 channels × 4 bytes = 16 bytes
+TotalMemory = Width × Height × 16 bytes
+Example: 2048 × 1024 × 16 = 32 MB
+```
+
+#### 2. C++ Texture Provider Component
+
+**Class**: `UTrajectoryTextureProvider` (Actor Component)
+
+**Purpose**: Converts loaded trajectory data into GPU textures
 
 **Key Functions**:
-- `GetNumTrajectories()` - Returns number of loaded trajectories
-- `GetTrajectoryNumSamples(int32 TrajectoryIndex)` - Returns sample count for a trajectory
-- `GetTrajectoryPosition(int32 TrajectoryIndex, int32 SampleIndex)` - Returns position at index
-- `GetTrajectoryTimeStep(int32 TrajectoryIndex, int32 SampleIndex)` - Returns time step at index
-- `GetTrajectoryStartTime(int32 TrajectoryIndex)` - Returns start time step
-- `GetTrajectoryEndTime(int32 TrajectoryIndex)` - Returns end time step
-- `GetTrajectoryExtent(int32 TrajectoryIndex)` - Returns object extent
-- `GetTrajectoryId(int32 TrajectoryIndex)` - Returns trajectory ID
+```cpp
+// Update texture from loaded dataset
+void UpdateFromDataset(int32 DatasetIndex);
 
-**Data Source**: References `UTrajectoryDataLoader` singleton to access loaded data
+// Get the trajectory position texture
+UTexture2D* GetPositionTexture() const;
 
-#### 2. Data Interface Provider Component (C++)
-**Class**: `UTrajectoryDataProviderComponent` (Actor Component)
+// Get metadata for indexing
+FTrajectoryTextureMetadata GetMetadata() const;
+```
 
-**Purpose**: Allows selecting which dataset to visualize in the Niagara system
+**Texture Update Process**:
+1. Access loaded dataset from `UTrajectoryDataLoader`
+2. Pack trajectory positions into texture buffer
+3. Update GPU texture resource
+4. Expose texture as Niagara user parameter
 
-**Key Properties**:
-- `FString DatasetName` - Which dataset to visualize
-- `int32 DatasetIndex` - Which loaded dataset index to use
-- `bool bAutoRefresh` - Auto-update when data changes
+#### 3. Niagara Custom HLSL Modules
 
-**Usage**: Attach to an actor that hosts the Niagara system, configure which dataset to visualize
+Direct HLSL code to sample trajectory data from textures (see HLSL Code section below).
 
-#### 3. Niagara Module Scripts (HLSL/Simulation)
+## Data Packing Format
 
-**Module**: `Generate Trajectory Particles`
-- Generates particles for each trajectory sample point
-- Outputs: Position, TrajectoryID, SampleIndex, TimeStep
+### Position Texture Layout
 
-**Module**: `Generate Trajectory Lines`
-- Generates particle ribbons/lines following trajectory paths
-- Uses Niagara Ribbon Renderer for line visualization
-- Outputs: Position, RibbonID, RibbonWidth
+```
+       Sample0   Sample1   Sample2   ...   SampleN
+Traj0  [XYZ0]   [XYZ1]    [XYZ2]          [XYZN]
+Traj1  [XYZ0]   [XYZ1]    [XYZ2]          [XYZN]
+Traj2  [XYZ0]   [XYZ1]    [XYZ2]          [XYZN]
+...
+TrajM  [XYZ0]   [XYZ1]    [XYZ2]          [XYZN]
+```
 
-## Visualization Strategy
+Each texel stores: `(PosX, PosY, PosZ, TimeStep)` in RGBA channels
 
-### Method 1: Line/Ribbon Rendering (Recommended)
+### Metadata Structure
 
-**Niagara System Setup**:
-1. **Emitter**: Trajectory Line Emitter
-   - Spawn particles for each trajectory sample
-   - Use Ribbon Renderer to connect particles into lines
-   - Particle lifetime: Persistent (or based on time step)
+Passed as Niagara user parameters:
+```cpp
+struct FTrajectoryTextureMetadata
+{
+    int32 NumTrajectories;           // Height of texture
+    int32 MaxSamplesPerTrajectory;   // Width of texture
+    FVector BoundsMin;               // Dataset bounding box
+    FVector BoundsMax;
+    int32 FirstTimeStep;
+    int32 LastTimeStep;
+};
+```
 
-2. **Data Flow**:
-   ```
-   Trajectory Data Interface
-   → Read trajectory positions
-   → Spawn particles at each position
-   → Ribbon renderer connects sequential particles
-   → Result: Continuous lines following trajectories
-   ```
 
-3. **Advantages**:
-   - Native Niagara ribbon system handles line rendering efficiently
-   - Automatic line smoothing and width control
-   - Easy to add colors, fade effects, and animations
-   - Good performance for thousands of trajectories
+## HLSL Code for Niagara Custom Modules
 
-### Method 2: Mesh Rendering (Alternative)
+### Module 1: Sample Trajectory Position
 
-**For Future Consideration**:
-- Spawn mesh particles (spheres/cylinders) at trajectory points
-- More expensive but allows for complex per-point visualization
-- Useful for showing trajectory metadata (extent, velocity vectors)
+**Purpose**: Sample position from trajectory texture
 
-## Implementation Details
+**Copy-Paste HLSL Code**:
+```hlsl
+// ----- Niagara Module: SampleTrajectoryPosition -----
+// Module Inputs:
+//   - Texture2D PositionTexture (User Parameter)
+//   - SamplerState PositionTextureSampler (User Parameter)
+//   - int TrajectoryIndex (Particle attribute or parameter)
+//   - int SampleIndex (Particle attribute or parameter)
+//   - int NumTrajectories (User Parameter)
+//   - int MaxSamplesPerTrajectory (User Parameter)
 
-### C++ Data Interface Implementation
+// Calculate UV coordinates for texture sampling
+float U = (float(SampleIndex) + 0.5) / float(MaxSamplesPerTrajectory);
+float V = (float(TrajectoryIndex) + 0.5) / float(NumTrajectories);
+
+// Sample the texture
+float4 TexelData = Texture2DSample(PositionTexture, PositionTextureSampler, float2(U, V));
+
+// Extract position (XYZ in RGB channels)
+float3 Position = TexelData.rgb;
+
+// Extract time step (stored in Alpha channel)
+float TimeStep = TexelData.a;
+
+// Output to particle attributes
+Particles.Position = Position;
+Particles.TimeStep = TimeStep;
+```
+
+### Module 2: Spawn Trajectory Ribbon Particles
+
+**Purpose**: Initialize particles for ribbon rendering
+
+**Copy-Paste HLSL Code**:
+```hlsl
+// ----- Niagara Module: SpawnTrajectoryRibbonParticles -----
+// Module Inputs:
+//   - Texture2D PositionTexture (User Parameter)
+//   - SamplerState PositionTextureSampler (User Parameter)
+//   - int NumTrajectories (User Parameter)
+//   - int MaxSamplesPerTrajectory (User Parameter)
+//   - float NormalizedAge (Built-in)
+
+// Calculate which trajectory and sample this particle represents
+int TrajectoryIndex = Particles.UniqueID;  // One particle stream per trajectory
+int SampleIndex = floor(NormalizedAge * float(MaxSamplesPerTrajectory - 1));
+
+// Calculate UV
+float U = (float(SampleIndex) + 0.5) / float(MaxSamplesPerTrajectory);
+float V = (float(TrajectoryIndex) + 0.5) / float(NumTrajectories);
+
+// Sample position
+float4 TexelData = Texture2DSample(PositionTexture, PositionTextureSampler, float2(U, V));
+Particles.Position = TexelData.rgb;
+
+// Store trajectory ID for ribbon identification
+Particles.RibbonID = TrajectoryIndex;
+Particles.RibbonLinkOrder = SampleIndex;
+
+// Optional: Color by trajectory
+float3 Color = HSVtoRGB(float3(float(TrajectoryIndex) / float(NumTrajectories), 0.8, 1.0));
+Particles.Color = float4(Color, 1.0);
+```
+
+### Module 3: Update Trajectory Animation
+
+**Purpose**: Animate trajectory visualization over time
+
+**Copy-Paste HLSL Code**:
+```hlsl
+// ----- Niagara Module: UpdateTrajectoryAnimation -----
+// Module Inputs:
+//   - Texture2D PositionTexture (User Parameter)
+//   - SamplerState PositionTextureSampler (User Parameter)
+//   - int TrajectoryIndex (Particle attribute)
+//   - int NumTrajectories (User Parameter)
+//   - int MaxSamplesPerTrajectory (User Parameter)
+//   - float AnimationTime (User Parameter - range 0 to 1)
+//   - float EngineTime (Built-in)
+
+// Calculate sample index based on animation time
+int SampleIndex = floor(AnimationTime * float(MaxSamplesPerTrajectory - 1));
+
+// Calculate UV
+float U = (float(SampleIndex) + 0.5) / float(MaxSamplesPerTrajectory);
+float V = (float(TrajectoryIndex) + 0.5) / float(NumTrajectories);
+
+// Sample new position
+float4 TexelData = Texture2DSample(PositionTexture, PositionTextureSampler, float2(U, V));
+Particles.Position = TexelData.rgb;
+
+// Update age for ribbon ordering
+Particles.NormalizedAge = AnimationTime;
+```
+
+### Helper Function: HSV to RGB
+
+**Include this in custom modules if using color coding**:
+```hlsl
+// ----- Helper: HSV to RGB Conversion -----
+float3 HSVtoRGB(float3 HSV)
+{
+    float3 RGB = 0;
+    float C = HSV.z * HSV.y;
+    float H = HSV.x * 6.0;
+    float X = C * (1.0 - abs(fmod(H, 2.0) - 1.0));
+    
+    if (HSV.y != 0)
+    {
+        float m = HSV.z - C;
+        if (H < 1.0)      RGB = float3(C, X, 0);
+        else if (H < 2.0) RGB = float3(X, C, 0);
+        else if (H < 3.0) RGB = float3(0, C, X);
+        else if (H < 4.0) RGB = float3(0, X, C);
+        else if (H < 5.0) RGB = float3(X, 0, C);
+        else              RGB = float3(C, 0, X);
+        
+        RGB += m;
+    }
+    else
+    {
+        RGB = float3(HSV.z, HSV.z, HSV.z);
+    }
+    
+    return RGB;
+}
+```
+
+## Visualization Strategy: Ribbon Rendering
+
+### Niagara System Setup
+
+**Approach**: Use Niagara Ribbon Renderer with texture-sampled positions
+
+**Data Flow**:
+```
+Loaded Trajectories (CPU)
+    ↓
+Pack into RGBA32F Texture (C++)
+    ↓
+Upload to GPU as UTexture2D
+    ↓
+Pass as User Parameter to Niagara
+    ↓
+Sample in Custom HLSL Module
+    ↓
+Ribbon Renderer draws lines
+```
+
+### Rendering Methods
+
+#### Method 1: Static Trajectory Lines (Best Performance)
+
+**Use Case**: Display all trajectories as static lines
+
+**Setup**:
+1. Spawn burst: N particles (one per trajectory)
+2. Each particle represents one trajectory line
+3. Use Ribbon Renderer with ribbon ID per trajectory
+4. Particles sample texture sequentially along ribbon
+
+**Particle Count**: `NumTrajectories × SamplesPerTrajectory`
+
+**Pros**: All trajectories visible at once, simple setup
+**Cons**: High particle count for many samples
+
+#### Method 2: Animated Trajectory Growth
+
+**Use Case**: Animate trajectories drawing over time
+
+**Setup**:
+1. Spawn burst: N particles per trajectory
+2. Control visible samples via AnimationTime parameter (0-1)
+3. Particles fade in/out based on time
+4. Ribbon grows as animation progresses
+
+**Particle Count**: `NumTrajectories × VisibleSamples`
+
+**Pros**: Cinematic effect, lower particle count
+**Cons**: Requires animation control logic
+
+#### Method 3: Time-Slice Visualization
+
+**Use Case**: Show trajectory state at specific time step
+
+**Setup**:
+1. Spawn burst: N particles (one per trajectory)
+2. Sample texture at specific time index
+3. Render as points or short line segments
+4. Update sample index to scrub through time
+
+**Particle Count**: `NumTrajectories`
+
+**Pros**: Minimal particles, fast updates
+**Cons**: Only shows one time slice
+
+## Detailed Niagara System Setup Guide
+
+### Step 1: Create Texture Provider Component (C++)
+
+First, implement the C++ component that converts trajectory data to textures.
+
+**In your level/actor Blueprint**:
 
 ```cpp
-// UNiagaraDataInterfaceTrajectoryData.h
-UCLASS(EditInlineNew, Category = "Trajectory Data", meta = (DisplayName = "Trajectory Data"))
-class TRAJECTORYDATA_API UNiagaraDataInterfaceTrajectoryData : public UNiagaraDataInterface
+// Blueprint pseudo-code
+Event BeginPlay
+  ↓
+Create TrajectoryTextureProvider Component
+  ↓
+Set DatasetIndex = 0 (or desired dataset)
+  ↓
+Call UpdateFromDataset()
+  ↓
+Get PositionTexture
+  ↓
+Pass to Niagara System as User Parameter
+```
+
+### Step 2: Create Niagara System
+
+1. **Create New Niagara System**
+   - Content Browser → Right Click → Niagara System
+   - Choose "Empty" template
+   - Name: `NS_TrajectoryVisualization`
+
+2. **Add Required User Parameters**
+   - Click "+" next to User Parameters
+   - Add parameters:
+     ```
+     PositionTexture (Texture2D)
+     PositionTextureSampler (Texture Sampler)
+     NumTrajectories (int32)
+     MaxSamplesPerTrajectory (int32)
+     AnimationTime (float) - range 0 to 1
+     ```
+
+3. **Create Emitter**
+   - Add new emitter: `TrajectoryLines`
+   - Emitter Properties:
+     - Simulation Target: CPU Simulation
+     - Calculate Bounds Mode: Dynamic
+
+### Step 3: Configure Emitter Spawn
+
+**Add Module: Spawn Burst Instantaneous**
+```
+Spawn Count = NumTrajectories * MaxSamplesPerTrajectory
+Spawn Time = 0.0
+```
+
+**Alternative for Ribbon-per-Trajectory**:
+```
+Spawn Count = NumTrajectories
+Spawn Time = 0.0
+```
+
+### Step 4: Configure Particle Initialization
+
+**Add Module: Initialize Particle**
+- Lifetime Mode: Infinite
+- Mass: 1.0
+
+**Add Custom Module: Initialize Trajectory Data**
+
+Create new Custom HLSL script and paste:
+
+```hlsl
+// Calculate trajectory index and sample index from UniqueID
+int TotalSamplesPerTrajectory = MaxSamplesPerTrajectory;
+int TrajectoryIndex = Particles.UniqueID / TotalSamplesPerTrajectory;
+int SampleIndex = Particles.UniqueID % TotalSamplesPerTrajectory;
+
+// Sample position from texture
+float U = (float(SampleIndex) + 0.5) / float(MaxSamplesPerTrajectory);
+float V = (float(TrajectoryIndex) + 0.5) / float(NumTrajectories);
+float4 TexelData = Texture2DSample(PositionTexture, PositionTextureSampler, float2(U, V));
+
+// Set particle attributes
+Particles.Position = TexelData.rgb;
+Particles.RibbonID = TrajectoryIndex;
+Particles.RibbonLinkOrder = SampleIndex;
+
+// Optional: Color by trajectory using HSV
+float Hue = float(TrajectoryIndex) / float(NumTrajectories);
+Particles.Color = float4(HSVtoRGB(float3(Hue, 0.8, 1.0)), 1.0);
+```
+
+### Step 5: Add Ribbon Renderer
+
+**Add Renderer: Ribbon Renderer**
+
+**Settings**:
+- Ribbon Link Order: `Particles.RibbonLinkOrder`
+- Ribbon ID: `Particles.RibbonID`
+- Ribbon Width: 2.0 (adjust as needed)
+- Ribbon Facing: Screen Aligned
+- UV0 Mode: Normalized Age
+- UV1 Mode: Normalized Link Order
+
+**Material**:
+- Use default ribbon material or create custom
+- For custom: Use Particle Color for trajectory colors
+
+### Step 6: Connect in Blueprint
+
+**In Actor/Level Blueprint**:
+```
+Event BeginPlay
+  ↓
+Load Trajectory Data (using TrajectoryDataLoader)
+  ↓
+Create TrajectoryTextureProvider Component
+  ↓
+Call UpdateFromDataset(DatasetIndex)
+  ↓
+Get Niagara Component Reference
+  ↓
+Set User Parameters:
+  - SetTextureParameter("PositionTexture", Provider->GetPositionTexture())
+  - SetIntParameter("NumTrajectories", Metadata.NumTrajectories)
+  - SetIntParameter("MaxSamplesPerTrajectory", Metadata.MaxSamplesPerTrajectory)
+  - SetFloatParameter("AnimationTime", 1.0)  // Full trajectory
+  ↓
+Activate Niagara System
+```
+
+### Step 7: Optional Animation
+
+**For animated trajectory growth**:
+
+Add Timeline or Event Tick:
+```
+Every Frame
+  ↓
+Calculate AnimationTime (0 to 1 over desired duration)
+  ↓
+NiagaraComponent->SetFloatParameter("AnimationTime", AnimationTime)
+  ↓
+Update visible portion of trajectories
+```
+
+## C++ Implementation Details
+
+### TrajectoryTextureProvider Component
+
+**Header File**: `TrajectoryTextureProvider.h`
+
+```cpp
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Components/ActorComponent.h"
+#include "Engine/Texture2D.h"
+#include "TrajectoryDataStructures.h"
+#include "TrajectoryTextureProvider.generated.h"
+
+/**
+ * Metadata for trajectory texture
+ */
+USTRUCT(BlueprintType)
+struct TRAJECTORYDATA_API FTrajectoryTextureMetadata
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+    int32 NumTrajectories = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+    int32 MaxSamplesPerTrajectory = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+    FVector BoundsMin = FVector::ZeroVector;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+    FVector BoundsMax = FVector::ZeroVector;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+    int32 FirstTimeStep = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+    int32 LastTimeStep = 0;
+};
+
+/**
+ * Component that converts trajectory data into GPU textures for Niagara
+ */
+UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
+class TRAJECTORYDATA_API UTrajectoryTextureProvider : public UActorComponent
 {
     GENERATED_BODY()
 
 public:
-    // Which loaded dataset to use (by index in LoadedDatasets array)
-    UPROPERTY(EditAnywhere, Category = "Trajectory Data")
-    int32 DatasetIndex = 0;
+    UTrajectoryTextureProvider();
 
-    // Override UNiagaraDataInterface methods
-    virtual void GetFunctions(TArray<FNiagaraFunctionSignature>& OutFunctions) override;
-    virtual void GetVMExternalFunction(const FVMExternalFunctionBindingInfo& BindingInfo, void* InstanceData, FVMExternalFunction& OutFunc) override;
-    
-    // VM functions (callable from Niagara)
-    void GetNumTrajectories(FVectorVMExternalFunctionContext& Context);
-    void GetTrajectoryNumSamples(FVectorVMExternalFunctionContext& Context);
-    void GetTrajectoryPosition(FVectorVMExternalFunctionContext& Context);
-    void GetTrajectoryTimeStep(FVectorVMExternalFunctionContext& Context);
-    void GetTrajectoryStartTime(FVectorVMExternalFunctionContext& Context);
-    void GetTrajectoryEndTime(FVectorVMExternalFunctionContext& Context);
-    
+    /**
+     * Update texture from a loaded dataset
+     * @param DatasetIndex Index into LoadedDatasets array
+     * @return True if successful
+     */
+    UFUNCTION(BlueprintCallable, Category = "Trajectory Data")
+    bool UpdateFromDataset(int32 DatasetIndex);
+
+    /**
+     * Get the position texture
+     */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
+    UTexture2D* GetPositionTexture() const { return PositionTexture; }
+
+    /**
+     * Get texture metadata
+     */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
+    FTrajectoryTextureMetadata GetMetadata() const { return Metadata; }
+
+protected:
+    /** Position texture (RGBA32F) */
+    UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+    UTexture2D* PositionTexture;
+
+    /** Metadata for current dataset */
+    UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+    FTrajectoryTextureMetadata Metadata;
+
 private:
-    // Cached reference to loader
-    UTrajectoryDataLoader* GetLoader() const;
+    /** Pack trajectory data into texture buffer */
+    void PackTrajectories(const FLoadedDataset& Dataset, TArray<FFloat16Color>& OutTextureData);
+    
+    /** Create or update texture resource */
+    void UpdateTextureResource(const TArray<FFloat16Color>& TextureData, int32 Width, int32 Height);
 };
 ```
 
-### Niagara System Setup Guide
+**Implementation File**: `TrajectoryTextureProvider.cpp`
 
-#### Step 1: Create Niagara System
-1. Create new Niagara System (Content Browser → Niagara System)
-2. Choose "Empty" template
+```cpp
+// Copyright Epic Games, Inc. All Rights Reserved.
 
-#### Step 2: Add Emitter
-1. Add new emitter to system
-2. Configure emitter properties:
-   - Emitter State: Active
-   - Spawn Rate: 0 (we'll spawn programmatically)
+#include "TrajectoryTextureProvider.h"
+#include "TrajectoryDataLoader.h"
+#include "Engine/Texture2D.h"
+#include "TextureResource.h"
 
-#### Step 3: Add Trajectory Data Interface
-1. In System parameters, add User Parameter
-2. Type: Niagara Data Interface → Trajectory Data
-3. Name: "TrajectoryDataSource"
+UTrajectoryTextureProvider::UTrajectoryTextureProvider()
+{
+    PrimaryComponentTick.bCanEverTick = false;
+    PositionTexture = nullptr;
+}
 
-#### Step 4: Configure Spawn Module
-1. Add module: "Spawn Burst Instantaneous"
-2. Set Spawn Count = `TrajectoryDataSource.GetNumTrajectories()`
-3. This spawns one particle per trajectory
+bool UTrajectoryTextureProvider::UpdateFromDataset(int32 DatasetIndex)
+{
+    UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
+    if (!Loader)
+    {
+        UE_LOG(LogTemp, Error, TEXT("TrajectoryTextureProvider: Failed to get loader"));
+        return false;
+    }
 
-#### Step 5: Configure Particle Update Module
-1. Add custom module or script
-2. Read positions from data interface:
-   ```
-   int TrajectoryIndex = Particles.UniqueID;
-   int NumSamples = TrajectoryDataSource.GetTrajectoryNumSamples(TrajectoryIndex);
-   
-   // Calculate which sample to show based on time
-   float NormalizedTime = (Engine.Time - StartTime) / Duration;
-   int SampleIndex = floor(NormalizedTime * NumSamples);
-   
-   // Get position
-   Particles.Position = TrajectoryDataSource.GetTrajectoryPosition(TrajectoryIndex, SampleIndex);
-   ```
+    const TArray<FLoadedDataset>& Datasets = Loader->GetLoadedDatasets();
+    if (!Datasets.IsValidIndex(DatasetIndex))
+    {
+        UE_LOG(LogTemp, Error, TEXT("TrajectoryTextureProvider: Invalid dataset index %d"), DatasetIndex);
+        return false;
+    }
 
-#### Step 6: Add Ribbon Renderer
-1. Add "Ribbon Renderer" to emitter
-2. Configure:
-   - Ribbon Width: 5-10 units
-   - Material: Default sprite material or custom line material
-   - UV Mode: Normalized Age
+    const FLoadedDataset& Dataset = Datasets[DatasetIndex];
+    
+    // Find maximum samples across all trajectories
+    int32 MaxSamples = 0;
+    for (const FLoadedTrajectory& Traj : Dataset.Trajectories)
+    {
+        MaxSamples = FMath::Max(MaxSamples, Traj.Samples.Num());
+    }
 
-#### Step 7: Connect Data in Blueprint
-1. Place Niagara System in level
-2. Set "TrajectoryDataSource" parameter to reference the data interface
-3. The data interface automatically pulls from loaded datasets
+    if (MaxSamples == 0 || Dataset.Trajectories.Num() == 0)
+    {
+        UE_LOG(LogTemp, Error, TEXT("TrajectoryTextureProvider: No trajectory data"));
+        return false;
+    }
+
+    // Update metadata
+    Metadata.NumTrajectories = Dataset.Trajectories.Num();
+    Metadata.MaxSamplesPerTrajectory = MaxSamples;
+    Metadata.BoundsMin = Dataset.DatasetInfo.Metadata.BoundingBoxMin;
+    Metadata.BoundsMax = Dataset.DatasetInfo.Metadata.BoundingBoxMax;
+    Metadata.FirstTimeStep = Dataset.DatasetInfo.Metadata.FirstTimeStep;
+    Metadata.LastTimeStep = Dataset.DatasetInfo.Metadata.LastTimeStep;
+
+    // Pack data into texture buffer
+    TArray<FFloat16Color> TextureData;
+    PackTrajectories(Dataset, TextureData);
+
+    // Update texture resource
+    UpdateTextureResource(TextureData, MaxSamples, Dataset.Trajectories.Num());
+
+    UE_LOG(LogTemp, Log, TEXT("TrajectoryTextureProvider: Updated texture %dx%d for %d trajectories"),
+        MaxSamples, Dataset.Trajectories.Num(), Dataset.Trajectories.Num());
+
+    return true;
+}
+
+void UTrajectoryTextureProvider::PackTrajectories(const FLoadedDataset& Dataset, TArray<FFloat16Color>& OutTextureData)
+{
+    int32 Width = Metadata.MaxSamplesPerTrajectory;
+    int32 Height = Metadata.NumTrajectories;
+    
+    // Initialize texture data (RGBA = XYZ + TimeStep)
+    OutTextureData.SetNum(Width * Height);
+
+    for (int32 TrajIdx = 0; TrajIdx < Dataset.Trajectories.Num(); ++TrajIdx)
+    {
+        const FLoadedTrajectory& Traj = Dataset.Trajectories[TrajIdx];
+        
+        for (int32 SampleIdx = 0; SampleIdx < Width; ++SampleIdx)
+        {
+            int32 TexelIndex = TrajIdx * Width + SampleIdx;
+            
+            if (SampleIdx < Traj.Samples.Num())
+            {
+                const FTrajectoryPositionSample& Sample = Traj.Samples[SampleIdx];
+                FVector Pos = Sample.Position;
+                float TimeStep = static_cast<float>(Traj.StartTimeStep + SampleIdx);
+                
+                // Pack into Float16 RGBA
+                OutTextureData[TexelIndex] = FFloat16Color(
+                    FFloat16(Pos.X),
+                    FFloat16(Pos.Y),
+                    FFloat16(Pos.Z),
+                    FFloat16(TimeStep)
+                );
+            }
+            else
+            {
+                // Pad with zeros for trajectories with fewer samples
+                OutTextureData[TexelIndex] = FFloat16Color(
+                    FFloat16(0.0f),
+                    FFloat16(0.0f),
+                    FFloat16(0.0f),
+                    FFloat16(0.0f)
+                );
+            }
+        }
+    }
+}
+
+void UTrajectoryTextureProvider::UpdateTextureResource(const TArray<FFloat16Color>& TextureData, int32 Width, int32 Height)
+{
+    if (!PositionTexture || PositionTexture->GetSizeX() != Width || PositionTexture->GetSizeY() != Height)
+    {
+        // Create new texture
+        PositionTexture = UTexture2D::CreateTransient(Width, Height, PF_FloatRGBA);
+        PositionTexture->CompressionSettings = TC_HDR;
+        PositionTexture->SRGB = 0;
+        PositionTexture->Filter = TF_Nearest;  // No filtering for exact data
+        PositionTexture->AddressX = TA_Clamp;
+        PositionTexture->AddressY = TA_Clamp;
+    }
+
+    // Update texture data
+    FTexture2DMipMap& Mip = PositionTexture->GetPlatformData()->Mips[0];
+    void* TextureDataPtr = Mip.BulkData.Lock(LOCK_READ_WRITE);
+    FMemory::Memcpy(TextureDataPtr, TextureData.GetData(), TextureData.Num() * sizeof(FFloat16Color));
+    Mip.BulkData.Unlock();
+    
+    PositionTexture->UpdateResource();
+}
+```
 
 ## Data Flow Diagram
 
 ```
-[Trajectory Data Loader]
+[UTrajectoryDataLoader]
          ↓
-[Loaded Datasets Array]
+  [LoadedDatasets Array]
          ↓
-[Niagara Data Interface] ← DatasetIndex selection
+[UTrajectoryTextureProvider] ← UpdateFromDataset(DatasetIndex)
          ↓
-[Niagara System]
-    ↓         ↓
-[Emitter]  [Renderer]
-    ↓         ↓
-[Particles] [Lines/Ribbons]
+  [Pack to RGBA32F Texture]
+         ↓
+  [UTexture2D: PositionTexture]
+         ↓
+  [Niagara User Parameter]
+         ↓
+  [Custom HLSL Module]
+    (Texture2DSample)
+         ↓
+  [Particle Position]
+         ↓
+  [Ribbon Renderer]
+         ↓
+  [Trajectory Lines on Screen]
 ```
 
 ## Performance Considerations
 
-### Memory
-- Data Interface doesn't copy data (references existing loaded data)
-- Each trajectory spawns particles for visible samples only
-- Memory usage scales with: NumTrajectories × NumVisibleSamples × ParticleSize
+### Memory Usage
 
-### CPU/GPU
-- Data Interface functions execute per-particle per-frame
-- For static trajectories, consider baking to texture/buffer
-- Optimize by:
-  - Reducing sample rate when loading data
-  - Culling trajectories outside view frustum
-  - LOD based on camera distance
+**Texture Memory**:
+```
+Bytes per texel = 4 channels × 2 bytes (Float16) = 8 bytes
+Total memory = Width × Height × 8 bytes
 
-### Scalability
-- **Small datasets** (< 1000 trajectories): Direct particle spawning works well
-- **Medium datasets** (1000-10000): Use LOD, culling, sample rate reduction
-- **Large datasets** (> 10000): Consider GPU-driven rendering, instance rendering
+Examples:
+- 1000 trajectories × 500 samples = 4 MB
+- 2000 trajectories × 1024 samples = 16 MB
+- 10000 trajectories × 2048 samples = 160 MB
+```
+
+**Particle Memory**:
+```
+Per particle: ~128 bytes (varies by attributes)
+Total = NumTrajectories × SamplesPerTrajectory × 128 bytes
+
+Examples:
+- 1000 × 500 = 500K particles = ~64 MB
+- 2000 × 1024 = 2M particles = ~256 MB
+```
+
+### Scalability Guidelines
+
+| Trajectory Count | Samples/Traj | Texture Size | Particle Count | Performance |
+|-----------------|--------------|--------------|----------------|-------------|
+| 100-500         | 100-500      | 512x512      | 50K-250K       | Excellent   |
+| 500-2000        | 500-1000     | 1024x2048    | 250K-2M        | Good        |
+| 2000-5000       | 1000-2048    | 2048x5000    | 2M-10M         | Medium      |
+| 5000+           | 2048+        | 4096x5000+   | 10M+           | Use LOD     |
+
+### Optimization Strategies
+
+1. **Texture Format**:
+   - Use `PF_FloatRGBA` (Float16) for position data (8 bytes/texel)
+   - Alternative: `PF_A32B32G32R32F` (Float32) for higher precision (16 bytes/texel)
+   - Consider lossy compression for very large datasets
+
+2. **Particle Reduction**:
+   - Use sample rate when loading data (load every Nth sample)
+   - Implement LOD: Fewer particles for distant trajectories
+   - Frustum culling: Only spawn particles for visible trajectories
+
+3. **GPU Optimization**:
+   - Use nearest-neighbor filtering (no interpolation overhead)
+   - Clamp texture addressing (avoid wrap artifacts)
+   - Batch texture updates (don't update every frame)
+
+4. **Streaming**:
+   - Load subsets of trajectories based on view frustum
+   - Update texture only when dataset changes
+   - Use texture streaming for very large datasets
+
+### CPU/GPU Performance
+
+**Texture Sampling (GPU)**:
+- Texture reads are extremely fast (cached)
+- No CPU-GPU sync required after initial upload
+- Parallel access from all particles simultaneously
+
+**Update Performance (CPU)**:
+- Pack operation: ~1-5ms for 1000 trajectories
+- Texture upload: ~5-20ms depending on size
+- One-time cost when dataset changes
 
 ## Future Extensibility
 
-The proposed architecture easily supports adding more attributes:
+### Phase 2: Additional Attributes
 
-### Phase 2 Attributes
-- Velocity vectors (for motion blur, flow visualization)
-- Acceleration (for force field visualization)
-- Custom metadata (color coding, selection state)
+The texture-based approach easily supports multiple attributes:
 
-### Implementation
-Simply add new functions to the Data Interface:
-```cpp
-void GetTrajectoryVelocity(FVectorVMExternalFunctionContext& Context);
-void GetTrajectoryAcceleration(FVectorVMExternalFunctionContext& Context);
-void GetTrajectoryColor(FVectorVMExternalFunctionContext& Context);
+**Additional Textures**:
+1. **Velocity Texture** (RGBA32F)
+   - RGB: Velocity vector (X, Y, Z)
+   - A: Speed magnitude
+
+2. **Metadata Texture** (RGBA32F)
+   - R: Object extent
+   - G: Trajectory ID
+   - B: Custom attribute 1
+   - A: Custom attribute 2
+
+**HLSL Sampling**:
+```hlsl
+// Sample velocity
+float4 VelocityData = Texture2DSample(VelocityTexture, VelocityTextureSampler, UV);
+float3 Velocity = VelocityData.rgb;
+float Speed = VelocityData.a;
+
+// Use for motion blur, flow lines, etc.
+Particles.Velocity = Velocity;
+Particles.Size = Speed * 0.1;  // Size based on speed
 ```
 
-Update data structures to include these attributes when loading.
+### Phase 3: Advanced Features
+
+1. **Time-based Visibility**:
+   - Add time range parameters
+   - Show/hide trajectories based on time window
+   - Implement temporal filtering
+
+2. **Spatial Queries**:
+   - Bounding box filtering (pass as parameters)
+   - Camera-based culling
+   - Region of interest selection
+
+3. **Visual Effects**:
+   - Trail fade-out effects
+   - Particle emission along trajectory
+   - Collision effects at specific points
 
 ## Alternative Approaches Considered
 
-### 1. Blueprint-Only Approach
-**Pros**: No C++ required
-**Cons**: 
+### Why NOT Niagara Data Interface (NDI)?
+
+**User Requirement**: Avoid version-specific API dependencies
+
+**NDI Drawbacks**:
+- API changes between UE versions (4.26, 4.27, 5.0, 5.1+)
+- Requires recompilation for each UE version
+- Complex VM function binding
+- Difficult to debug
+
+**Texture Approach Advantages**:
+- Standard texture sampling (stable API)
+- Works across all UE5 versions
+- Simple HLSL code (copy-paste ready)
+- Easy to debug (inspect textures in editor)
+- Better GPU performance for large datasets
+
+### Why NOT Actor-Based Spawning?
+
+**Drawbacks**:
+- Poor performance (thousands of actors)
+- No particle effects (ribbons, colors, etc.)
+- High overhead for updates
+- Limited visual flexibility
+
+### Why NOT Blueprint-Only?
+
+**Drawbacks**:
+- Cannot efficiently pass arrays to Niagara
 - Poor performance for large datasets
-- Limited GPU access
-- Difficult to optimize
+- No direct GPU access
+- Complex and slow
 
-### 2. Direct Texture Upload
-**Pros**: Fastest GPU access
-**Cons**: 
-- Complex implementation
-- Limited to texture size constraints
-- Less flexible for queries
+## Build Configuration
 
-### 3. Actor-Based Spawning
-**Pros**: Simple to implement
-**Cons**: 
-- Not using Niagara's strengths
-- Poor performance
-- No particle effects support
+### Update TrajectoryData.Build.cs
 
-## Recommendation
+Add minimal dependencies for texture types:
 
-Proceed with **Niagara Data Interface approach** for the following reasons:
+```csharp
+PublicDependencyModuleNames.AddRange(
+    new string[]
+    {
+        "Core",
+        "CoreUObject",
+        "Engine",
+        "Json",
+        "JsonUtilities",
+        "RenderCore",      // For texture types
+        "RHI"              // For texture formats
+    }
+);
+```
 
-1. **Standard UE Pattern**: Uses Unreal's recommended method for custom Niagara data
-2. **Performance**: Efficient access with potential for GPU optimization
-3. **Flexibility**: Easy to extend with more attributes
-4. **Maintainability**: Clean separation between data loading and visualization
-5. **User-Friendly**: Standard Niagara workflow for artists/designers
+**Note**: We do NOT need to add "Niagara" or "NiagaraCore" modules since we're not using NDI!
 
 ## Implementation Phases
 
-### Phase 1: Core Data Interface (This Iteration)
-- Implement `UNiagaraDataInterfaceTrajectoryData`
-- Expose position data only
-- Basic VM functions for trajectory queries
-- Simple example Niagara system
+### Phase 1: Core Texture Provider (This Iteration)
+- Implement `UTrajectoryTextureProvider` component
+- Pack position data into RGBA32F texture
+- Provide complete copy-paste HLSL code
+- Create detailed setup guide
 
 ### Phase 2: Enhanced Features (Future)
-- Add velocity, acceleration attributes
-- GPU buffer optimization
+- Add velocity, acceleration textures
+- Implement LOD system
 - Advanced rendering options
 - Performance profiling tools
 
@@ -291,39 +906,40 @@ Proceed with **Niagara Data Interface approach** for the following reasons:
 ## Required Files to Implement
 
 ### New C++ Files
-1. `TrajectoryDataNiagaraDataInterface.h`
-2. `TrajectoryDataNiagaraDataInterface.cpp`
+1. `TrajectoryTextureProvider.h` - Component for texture packing
+2. `TrajectoryTextureProvider.cpp` - Implementation
 
 ### Modified Files
-1. `TrajectoryData.Build.cs` - Add Niagara module dependencies
+1. `TrajectoryData.Build.cs` - Add RenderCore, RHI dependencies
 2. `README.md` - Add Niagara integration documentation
 
-### New Content Files
-1. `Content/Niagara/NE_TrajectoryLines.uasset` - Example Niagara Emitter
-2. `Content/Niagara/NS_TrajectoryVisualization.uasset` - Example Niagara System
-3. `Content/Materials/M_TrajectoryLine.uasset` - Example line material
-
 ### New Documentation
-1. `NIAGARA_SETUP_GUIDE.md` - Detailed setup instructions
-2. `examples/NIAGARA_USAGE_EXAMPLE.md` - Blueprint examples
+1. `NIAGARA_HLSL_EXAMPLES.md` - Ready-to-use HLSL code snippets
+2. `examples/NIAGARA_USAGE_EXAMPLE.md` - Complete Blueprint examples
 
-## Questions for Approval
+### Optional Content Files
+1. `Content/Niagara/NS_TrajectoryVisualization.uasset` - Example Niagara System
+2. `Content/Materials/M_TrajectoryLine.uasset` - Example line material
 
-1. **Approve overall approach?** Is the Niagara Data Interface method acceptable?
-2. **Scope for first iteration?** Is position-only data sufficient, or add more attributes now?
-3. **Example content?** Should we include example Niagara systems and materials?
-4. **Documentation depth?** How detailed should the setup guide be?
-5. **Performance targets?** Any specific performance requirements for trajectory count/sample count?
+## Summary
 
-## Next Steps (After Approval)
+**Approved Approach**: Texture-Based Data Transfer with Direct HLSL
 
-1. Update `TrajectoryData.Build.cs` to add Niagara dependencies
-2. Implement `UNiagaraDataInterfaceTrajectoryData` class
-3. Test with small dataset
-4. Create example Niagara system
-5. Document setup process
-6. Add usage examples
+**Key Benefits**:
+1. ✅ **Version Independent** - No NDI API dependencies
+2. ✅ **Maximum Performance** - Direct GPU texture sampling
+3. ✅ **Copy-Paste Ready** - Complete HLSL code provided
+4. ✅ **Extensible** - Easy to add more attribute textures
+5. ✅ **Debuggable** - Inspect textures in UE editor
+
+**Data Flow**:
+```
+CPU: LoadedTrajectories → Pack → UTexture2D
+GPU: Niagara HLSL → Texture2DSample → Particle Position → Ribbon Lines
+```
+
+**Next Steps**: Proceed with C++ implementation of `UTrajectoryTextureProvider`
 
 ---
 
-**Awaiting approval to proceed with implementation.**
+**Ready to implement upon confirmation.**
