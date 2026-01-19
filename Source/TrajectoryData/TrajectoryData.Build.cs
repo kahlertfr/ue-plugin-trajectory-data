@@ -29,7 +29,9 @@ public class TrajectoryData : ModuleRules
 				"CoreUObject",
 				"Engine",
 				"Json",
-				"JsonUtilities"
+				"JsonUtilities",
+				"RenderCore",      // For texture types
+				"RHI"              // For texture formats
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);

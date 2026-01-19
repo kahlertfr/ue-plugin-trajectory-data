@@ -14,85 +14,143 @@ The plugin currently supports:
 
 ## Proposed Integration Method
 
-### Approach: Texture-Based Data Transfer with Direct HLSL
+### Approach: Multi-Texture Data Transfer with Direct HLSL
 
-We propose using **texture-based data transfer** with direct HLSL code in Niagara custom modules. This approach offers:
+We propose using **multi-texture array data transfer** with direct HLSL code in Niagara custom modules. This approach offers:
 
 1. **Version Independent**: No dependency on Niagara Data Interface API that changes between UE versions
-2. **GPU-Optimized**: Trajectory data directly accessible in GPU texture memory
-3. **Maximum Performance**: Efficient texture sampling, no CPU-GPU sync overhead
-4. **Direct Control**: Complete HLSL code provided for copy-paste into Niagara modules
-5. **Extensible**: Additional channels for velocity, acceleration in future iterations
+2. **Scalable**: Supports unlimited trajectories via multiple textures (1024 trajectories per texture)
+3. **GPU-Optimized**: Trajectory data directly accessible in GPU texture memory
+4. **Maximum Performance**: Efficient texture sampling, no CPU-GPU sync overhead
+5. **Direct Control**: Complete HLSL code provided for copy-paste into Niagara modules
+6. **Trajectory ID Preservation**: Original trajectory IDs accessible in Niagara
+7. **GPU-Only Simulation**: Fully GPU-based for maximum particle counts
 
 ### Architecture Components
 
-#### 1. Texture Packing Strategy
+#### 1. Multi-Texture Packing Strategy
 
-**Trajectory Position Texture (2D)**
-- Format: `RGBA32F` (4 × 32-bit float channels)
+**Trajectory Position Textures (2D Array)**
+- Format: `RGBA32F` (4 × Float16 channels, 8 bytes per texel)
 - Layout: Row = Trajectory, Column = Time Sample
+- Multiple textures for large datasets (max 1024 trajectories per texture)
 - Channels:
   - **R**: Position X (float)
   - **G**: Position Y (float)  
   - **B**: Position Z (float)
-  - **A**: Time Step (float) or metadata
+  - **A**: Time Step (float)
 
 **Texture Dimensions**:
 ```
-Width = MaxSamplesPerTrajectory (e.g., 2048)
-Height = NumTrajectories (e.g., 1024)
-Max Capacity = 2048 × 1024 = ~2M samples
+Per Texture:
+  Width = MaxSamplesPerTrajectory (e.g., 2048)
+  Height = Up to 1024 trajectories
+  Max Capacity per texture = 2048 × 1024 = ~2M samples
+
+Multiple Textures:
+  Texture 0: Trajectories [0, 1023]
+  Texture 1: Trajectories [1024, 2047]
+  Texture 2: Trajectories [2048, 3071]
+  ...and so on
+
+Example: 5000 trajectories
+  → 5 textures (ceil(5000/1024))
+  → Total: 5 × 2048 × 1024 × 8 bytes = 80 MB
 ```
 
 **Memory Calculation**:
 ```
-MemoryPerSample = 4 channels × 4 bytes = 16 bytes
-TotalMemory = Width × Height × 16 bytes
-Example: 2048 × 1024 × 16 = 32 MB
+MemoryPerSample = 4 channels × 2 bytes (Float16) = 8 bytes
+MemoryPerTexture = Width × 1024 × 8 bytes
+Example: 2048 × 1024 × 8 = 16 MB per texture
+```
+
+**Texture Addressing**:
+```
+GlobalTrajectoryIndex = ParticleID or TrajectoryID
+TextureIndex = GlobalTrajectoryIndex / 1024
+LocalTrajectoryIndex = GlobalTrajectoryIndex % 1024
+UV = (SampleIndex / Width, LocalTrajectoryIndex / 1024)
 ```
 
 #### 2. C++ Texture Provider Component
 
 **Class**: `UTrajectoryTextureProvider` (Actor Component)
 
-**Purpose**: Converts loaded trajectory data into GPU textures
+**Purpose**: Converts loaded trajectory data into multiple GPU textures
 
 **Key Functions**:
 ```cpp
-// Update texture from loaded dataset
-void UpdateFromDataset(int32 DatasetIndex);
+// Update textures from loaded dataset
+bool UpdateFromDataset(int32 DatasetIndex);
 
-// Get the trajectory position texture
-UTexture2D* GetPositionTexture() const;
+// Get all position textures (array)
+TArray<UTexture2D*> GetPositionTextures() const;
+
+// Get specific texture by index
+UTexture2D* GetPositionTexture(int32 TextureIndex) const;
 
 // Get metadata for indexing
 FTrajectoryTextureMetadata GetMetadata() const;
+
+// Get trajectory ID mapping
+int64 GetTrajectoryId(int32 TrajectoryIndex) const;
+TArray<int32> GetTrajectoryIds() const;
 ```
 
 **Texture Update Process**:
 1. Access loaded dataset from `UTrajectoryDataLoader`
-2. Pack trajectory positions into texture buffer
-3. Update GPU texture resource
-4. Expose texture as Niagara user parameter
+2. Calculate number of textures needed (ceil(NumTrajectories / 1024))
+3. Pack trajectory positions into multiple texture buffers
+4. Create/update GPU texture resources
+5. Build trajectory ID mapping array
+6. Expose textures and metadata as Niagara user parameters
 
 #### 3. Niagara Custom HLSL Modules
 
-Direct HLSL code to sample trajectory data from textures (see HLSL Code section below).
+GPU-based HLSL code with multi-texture addressing (see Tutorial document for complete code).
 
 ## Data Packing Format
 
-### Position Texture Layout
+### Multi-Texture Position Layout
 
+**Texture Array Structure**:
 ```
+Texture 0: Trajectories 0-1023
        Sample0   Sample1   Sample2   ...   SampleN
 Traj0  [XYZ0]   [XYZ1]    [XYZ2]          [XYZN]
 Traj1  [XYZ0]   [XYZ1]    [XYZ2]          [XYZN]
-Traj2  [XYZ0]   [XYZ1]    [XYZ2]          [XYZN]
 ...
-TrajM  [XYZ0]   [XYZ1]    [XYZ2]          [XYZN]
+Traj1023 [XYZ0] [XYZ1]    [XYZ2]          [XYZN]
+
+Texture 1: Trajectories 1024-2047
+       Sample0   Sample1   Sample2   ...   SampleN
+Traj1024 [XYZ0] [XYZ1]    [XYZ2]          [XYZN]
+Traj1025 [XYZ0] [XYZ1]    [XYZ2]          [XYZN]
+...
+Traj2047 [XYZ0] [XYZ1]    [XYZ2]          [XYZN]
+
+...and so on for additional textures
 ```
 
 Each texel stores: `(PosX, PosY, PosZ, TimeStep)` in RGBA channels
+
+### Trajectory ID Mapping
+
+Original trajectory IDs are preserved in a separate array:
+```cpp
+TArray<int32> TrajectoryIds;
+// TrajectoryIds[0] = Original ID of trajectory 0
+// TrajectoryIds[1] = Original ID of trajectory 1
+// etc.
+```
+
+Access in Niagara:
+```hlsl
+int GlobalTrajectoryIndex = Particles.UniqueID / MaxSamplesPerTrajectory;
+// This index maps to TrajectoryIds[GlobalTrajectoryIndex]
+// Store in custom particle attribute: Particles.TrajectoryID = GlobalTrajectoryIndex
+```
 
 ### Metadata Structure
 
@@ -100,54 +158,90 @@ Passed as Niagara user parameters:
 ```cpp
 struct FTrajectoryTextureMetadata
 {
-    int32 NumTrajectories;           // Height of texture
-    int32 MaxSamplesPerTrajectory;   // Width of texture
-    FVector BoundsMin;               // Dataset bounding box
+    int32 NumTrajectories;              // Total trajectories in dataset
+    int32 MaxSamplesPerTrajectory;      // Width of each texture
+    int32 MaxTrajectoriesPerTexture;    // 1024 (height constraint)
+    int32 NumTextures;                  // Number of textures created
+    FVector BoundsMin;                  // Dataset bounding box
     FVector BoundsMax;
     int32 FirstTimeStep;
     int32 LastTimeStep;
 };
 ```
 
+## HLSL Code for Niagara Custom Modules (Multi-Texture Support)
 
-## HLSL Code for Niagara Custom Modules
+### Module 1: Initialize Trajectory Particle (GPU-Based)
 
-### Module 1: Sample Trajectory Position
-
-**Purpose**: Sample position from trajectory texture
+**Purpose**: Initialize particles with position from the correct texture in a multi-texture array
 
 **Copy-Paste HLSL Code**:
 ```hlsl
-// ----- Niagara Module: SampleTrajectoryPosition -----
-// Module Inputs:
-//   - Texture2D PositionTexture (User Parameter)
-//   - SamplerState PositionTextureSampler (User Parameter)
-//   - int TrajectoryIndex (Particle attribute or parameter)
-//   - int SampleIndex (Particle attribute or parameter)
-//   - int NumTrajectories (User Parameter)
-//   - int MaxSamplesPerTrajectory (User Parameter)
+// ----- Niagara Module: Initialize Trajectory Particle -----
+// GPU-based multi-texture trajectory visualization
+// Module Inputs (User Parameters):
+//   - Texture2D PositionTexture0, PositionTexture1, PositionTexture2, PositionTexture3
+//   - SamplerState PositionSampler
+//   - int32 NumTrajectories
+//   - int32 MaxSamplesPerTrajectory
+//   - int32 MaxTrajectoriesPerTexture (usually 1024)
+//   - int32 NumTextures
+
+// Calculate trajectory and sample indices from particle ID
+int GlobalTrajectoryIndex = Particles.UniqueID / MaxSamplesPerTrajectory;
+int SampleIndex = Particles.UniqueID % MaxSamplesPerTrajectory;
+
+// Calculate texture addressing
+int TextureIndex = GlobalTrajectoryIndex / MaxTrajectoriesPerTexture;
+int LocalTrajectoryIndex = GlobalTrajectoryIndex % MaxTrajectoriesPerTexture;
 
 // Calculate UV coordinates for texture sampling
 float U = (float(SampleIndex) + 0.5) / float(MaxSamplesPerTrajectory);
-float V = (float(TrajectoryIndex) + 0.5) / float(NumTrajectories);
+float V = (float(LocalTrajectoryIndex) + 0.5) / float(MaxTrajectoriesPerTexture);
+float2 UV = float2(U, V);
 
-// Sample the texture
-float4 TexelData = Texture2DSample(PositionTexture, PositionTextureSampler, float2(U, V));
+// Sample from the correct texture based on TextureIndex
+float4 TexelData = float4(0, 0, 0, 0);
+if (TextureIndex == 0 && NumTextures > 0)
+{
+    TexelData = Texture2DSample(PositionTexture0, PositionSampler, UV);
+}
+else if (TextureIndex == 1 && NumTextures > 1)
+{
+    TexelData = Texture2DSample(PositionTexture1, PositionSampler, UV);
+}
+else if (TextureIndex == 2 && NumTextures > 2)
+{
+    TexelData = Texture2DSample(PositionTexture2, PositionSampler, UV);
+}
+else if (TextureIndex == 3 && NumTextures > 3)
+{
+    TexelData = Texture2DSample(PositionTexture3, PositionSampler, UV);
+}
+// Add more texture slots as needed...
 
-// Extract position (XYZ in RGB channels)
+// Extract position and time step
 float3 Position = TexelData.rgb;
-
-// Extract time step (stored in Alpha channel)
 float TimeStep = TexelData.a;
 
-// Output to particle attributes
+// Set particle attributes
 Particles.Position = Position;
-Particles.TimeStep = TimeStep;
+Particles.RibbonID = GlobalTrajectoryIndex;
+Particles.RibbonLinkOrder = SampleIndex;
+
+// Optional: Color by trajectory using HSV
+float Hue = float(GlobalTrajectoryIndex) / float(NumTrajectories);
+Particles.Color = float4(HSVtoRGB(float3(Hue, 0.8, 1.0)), 1.0);
+
+// Store trajectory ID for reference (requires custom attribute)
+Particles.TrajectoryID = GlobalTrajectoryIndex;
 ```
 
-### Module 2: Spawn Trajectory Ribbon Particles
+**Note**: Add as many `PositionTextureN` parameters and conditional branches as needed for your dataset. For 5000 trajectories, add Texture0-Texture4 (5 textures).
 
-**Purpose**: Initialize particles for ribbon rendering
+### Module 2: Spawn Trajectory Ribbon Particles (Legacy - Single Texture)
+
+**Purpose**: Initialize particles for ribbon rendering (for datasets < 1024 trajectories)
 
 **Copy-Paste HLSL Code**:
 ```hlsl
