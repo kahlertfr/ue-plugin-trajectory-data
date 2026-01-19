@@ -167,55 +167,77 @@ void UTrajectoryTextureProvider::UpdateTextureArrayResource(const TArray<TArray<
 		PositionTextureArray->GetSizeY() != Height ||
 		PositionTextureArray->GetArraySize() != NumSlices)
 	{
-		// Create new Texture2DArray
-		PositionTextureArray = NewObject<UTexture2DArray>(this);
+		// Create new Texture2DArray using CreateTransient
+		PositionTextureArray = UTexture2DArray::CreateTransient(Width, Height, NumSlices, PF_FloatRGBA);
 		
-		// Initialize with correct settings
-		PositionTextureArray->Init(Width, Height, NumSlices, PF_FloatRGBA);
+		if (!PositionTextureArray)
+		{
+			UE_LOG(LogTemp, Error, TEXT("TrajectoryTextureProvider: Failed to create Texture2DArray"));
+			return;
+		}
+		
+		// Configure texture settings
 		PositionTextureArray->CompressionSettings = TC_HDR;
 		PositionTextureArray->SRGB = 0;
 		PositionTextureArray->Filter = TF_Nearest;  // No filtering for exact data
 		PositionTextureArray->AddressX = TA_Clamp;
 		PositionTextureArray->AddressY = TA_Clamp;
 		PositionTextureArray->AddressZ = TA_Clamp;
-	}
-
-	// Update texture data for each slice
-	for (int32 SliceIdx = 0; SliceIdx < NumSlices; ++SliceIdx)
-	{
-		if (TextureDataArray.IsValidIndex(SliceIdx))
+		
+		// Update with source data
+		if (PositionTextureArray->GetPlatformData())
 		{
-			FTexture2DArrayResource* Resource = (FTexture2DArrayResource*)PositionTextureArray->GetResource();
-			if (Resource)
+			auto& Mip = PositionTextureArray->GetPlatformData()->Mips[0];
+			void* TextureData = Mip.BulkData.Lock(LOCK_READ_WRITE);
+			
+			if (TextureData)
 			{
-				// Update mip 0 for this slice
-				FUpdateTextureRegion2D UpdateRegion(0, 0, 0, 0, Width, Height);
-				const FFloat16Color* SourceData = TextureDataArray[SliceIdx].GetData();
-				uint32 SourcePitch = Width * sizeof(FFloat16Color);
-				
-				// Queue texture update on render thread
-				ENQUEUE_RENDER_COMMAND(UpdateTrajectoryTextureArraySlice)(
-					[Resource, SliceIdx, UpdateRegion, SourceData, SourcePitch, Width, Height](FRHICommandListImmediate& RHICmdList)
+				// Copy all slices into the bulk data
+				const int32 SliceSize = Width * Height * sizeof(FFloat16Color);
+				for (int32 SliceIdx = 0; SliceIdx < NumSlices; ++SliceIdx)
+				{
+					if (TextureDataArray.IsValidIndex(SliceIdx))
 					{
-						// Copy data to the slice
-						FUpdateTextureRegion3D Region3D(
-							UpdateRegion.DestX, UpdateRegion.DestY, SliceIdx,
-							UpdateRegion.SrcX, UpdateRegion.SrcY, 0,
-							UpdateRegion.Width, UpdateRegion.Height, 1
-						);
-						
-						RHICmdList.UpdateTexture3D(
-							Resource->GetTexture2DArrayRHI(),
-							0,  // Mip level
-							Region3D,
-							SourcePitch,
-							SourcePitch * Height,
-							(uint8*)SourceData
-						);
-					});
+						const FFloat16Color* SourceData = TextureDataArray[SliceIdx].GetData();
+						uint8* DestData = static_cast<uint8*>(TextureData) + (SliceIdx * SliceSize);
+						FMemory::Memcpy(DestData, SourceData, SliceSize);
+					}
+				}
+				
+				Mip.BulkData.Unlock();
 			}
 		}
+		
+		// Update the resource
+		PositionTextureArray->UpdateResource();
 	}
-
-	PositionTextureArray->UpdateResource();
+	else
+	{
+		// Texture exists with correct dimensions, just update the data
+		if (PositionTextureArray->GetPlatformData())
+		{
+			auto& Mip = PositionTextureArray->GetPlatformData()->Mips[0];
+			void* TextureData = Mip.BulkData.Lock(LOCK_READ_WRITE);
+			
+			if (TextureData)
+			{
+				// Copy all slices into the bulk data
+				const int32 SliceSize = Width * Height * sizeof(FFloat16Color);
+				for (int32 SliceIdx = 0; SliceIdx < NumSlices; ++SliceIdx)
+				{
+					if (TextureDataArray.IsValidIndex(SliceIdx))
+					{
+						const FFloat16Color* SourceData = TextureDataArray[SliceIdx].GetData();
+						uint8* DestData = static_cast<uint8*>(TextureData) + (SliceIdx * SliceSize);
+						FMemory::Memcpy(DestData, SourceData, SliceSize);
+					}
+				}
+				
+				Mip.BulkData.Unlock();
+			}
+			
+			// Update the resource
+			PositionTextureArray->UpdateResource();
+		}
+	}
 }
