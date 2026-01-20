@@ -190,20 +190,19 @@ bool ADatasetVisualizationActor::ConfigureTrajectoryBufferNDI()
 		return false;
 	}
 
-	// Get the Trajectory Buffer NDI from Niagara User Parameters
-	UNiagaraDataInterfaceTrajectoryBuffer* TrajectoryBufferNDI = Cast<UNiagaraDataInterfaceTrajectoryBuffer>(
-		NiagaraComponent->GetOverrideParameter(TrajectoryBufferNDIParameterName)
-	);
-
+	// Create or get the Trajectory Buffer NDI instance
+	UNiagaraDataInterfaceTrajectoryBuffer* TrajectoryBufferNDI = NewObject<UNiagaraDataInterfaceTrajectoryBuffer>(this);
 	if (!TrajectoryBufferNDI)
 	{
-		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: Could not find TrajectoryBuffer NDI with name '%s' in Niagara system. Make sure to add a User Parameter of type 'Trajectory Position Buffer' with this name."), 
-		       *TrajectoryBufferNDIParameterName.ToString());
+		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: Failed to create TrajectoryBuffer NDI instance."));
 		return false;
 	}
 
 	// Assign our buffer provider to the NDI
 	TrajectoryBufferNDI->BufferProvider = BufferProvider;
+
+	// Set the NDI as a user parameter on the Niagara component
+	NiagaraComponent->SetVariableObject(TrajectoryBufferNDIParameterName, TrajectoryBufferNDI);
 
 	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully configured Trajectory Buffer NDI with %d positions"), 
 	       BufferProvider->GetMetadata().TotalSampleCount);
