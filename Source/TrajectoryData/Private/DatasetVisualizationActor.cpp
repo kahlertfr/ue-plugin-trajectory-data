@@ -167,13 +167,6 @@ void ADatasetVisualizationActor::SetVisualizationActive(bool bActivate)
 	}
 }
 
-bool ADatasetVisualizationActor::BindBuffersToNiagara()
-{
-	// This method is now deprecated in favor of ConfigureTrajectoryBufferNDI()
-	// Kept for backwards compatibility
-	return ConfigureTrajectoryBufferNDI();
-}
-
 bool ADatasetVisualizationActor::PopulatePositionArrayNDI()
 {
 	if (!BufferProvider || !NiagaraComponent)
@@ -250,8 +243,8 @@ void ADatasetVisualizationActor::InitializeNiagaraComponent()
 	if (NiagaraSystemTemplate)
 	{
 		NiagaraComponent->SetAsset(NiagaraSystemTemplate);
-		UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Set Niagara system template: %s. Make sure it has a '%s' User Parameter (Trajectory Position Buffer type)."), 
-		       *NiagaraSystemTemplate->GetName(), *TrajectoryBufferNDIParameterName.ToString());
+		UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Set Niagara system template: %s. Make sure it has a '%s' User Parameter (Niagara Float3 Array type)."), 
+		       *NiagaraSystemTemplate->GetName(), *PositionArrayParameterName.ToString());
 	}
 	else
 	{
