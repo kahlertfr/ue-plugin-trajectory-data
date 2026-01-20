@@ -22,22 +22,9 @@ UNiagaraDataInterfaceTrajectoryBuffer::UNiagaraDataInterfaceTrajectoryBuffer()
 }
 
 // Implement proxy connection - required for GPU simulation
-struct FNiagaraDataInterfaceParametersCS_TrajectoryBuffer : public FNiagaraDataInterfaceParametersCS
-{
-	DECLARE_TYPE_LAYOUT(FNiagaraDataInterfaceParametersCS_TrajectoryBuffer, NonVirtual);
-public:
-	void Bind(const FNiagaraDataInterfaceGPUParamInfo& ParameterInfo, const class FShaderParameterMap& ParameterMap)
-	{
-	}
-
-	void Set(FRHICommandList& RHICmdList, const FNiagaraDataInterfaceSetArgs& Context) const
-	{
-	}
-};
-
-IMPLEMENT_TYPE_LAYOUT(FNiagaraDataInterfaceParametersCS_TrajectoryBuffer);
-
-IMPLEMENT_NIAGARA_DI_PARAMETER(UNiagaraDataInterfaceTrajectoryBuffer, FNiagaraDataInterfaceParametersCS_TrajectoryBuffer);
+// Note: For UE5.3+, the parameter system has changed. This is a minimal implementation
+// that registers the NDI but doesn't expose GPU parameters directly.
+// GPU buffer binding is handled through the render thread proxy in GetComputeVMFunction.
 
 void UNiagaraDataInterfaceTrajectoryBuffer::GetFunctions(TArray<FNiagaraFunctionSignature>& OutFunctions)
 {
