@@ -402,63 +402,153 @@ UV Coordinate (UV0) → Gradient (0 = start, 1 = end) → Base Color
 
 ## Blueprint Integration
 
-### Example Blueprint Setup
+### Blueprint Editor Workflow
 
-```cpp
-// Event BeginPlay or custom event
+The structured buffer approach is now Blueprint-friendly! Follow these steps to use it from the Blueprint editor:
 
-// 1. Load trajectory data (using TrajectoryDataManager)
-UTrajectoryDataManager* Manager = UTrajectoryDataManager::Get(GetWorld());
-// ... load dataset ...
+#### Step 1: Add Component in Blueprint
 
-// 2. Create buffer provider
-UTrajectoryBufferProvider* BufferProvider = NewObject<UTrajectoryBufferProvider>(this);
-BufferProvider->RegisterComponent();
+1. Open your Actor Blueprint in the Blueprint editor
+2. Click **Add Component** → Search for `Trajectory Buffer Provider`
+3. Add the component to your actor
+4. Name it: `BufferProvider`
 
-// 3. Update from dataset
-BufferProvider->UpdateFromDataset(0);
+#### Step 2: Load Data in Blueprint Event Graph
 
-// 4. Get metadata
-FTrajectoryBufferMetadata Metadata = BufferProvider->GetMetadata();
+In your Blueprint's **Event Graph** (e.g., in **BeginPlay**):
 
-// 5. Set Niagara user parameters
-NiagaraComponent->SetIntParameter("NumTrajectories", Metadata.NumTrajectories);
-NiagaraComponent->SetIntParameter("MaxSamplesPerTrajectory", Metadata.MaxSamplesPerTrajectory);
-NiagaraComponent->SetIntParameter("TotalSampleCount", Metadata.TotalSampleCount);
+1. **Drag the BufferProvider component** into the graph to get a reference
 
-// 6. Bind structured buffer (C++ extension required)
-// See "Binding Structured Buffers" section below
+2. **Call Update From Dataset**:
+   - Drag from BufferProvider → Search for `Update From Dataset`
+   - Connect to **Event BeginPlay**
+   - Set **Dataset Index** input to `0` (or your desired dataset index)
+   - This loads trajectory data into the GPU buffer
 
-// 7. Activate Niagara system
-NiagaraComponent->Activate();
+3. **Verify Success** (Optional):
+   - Drag from BufferProvider → Search for `Is Buffer Valid`
+   - Connect to a **Branch** node
+   - Add **Print String** nodes to log success/failure
+
+4. **Get Metadata**:
+   - Drag from BufferProvider → Search for `Get Metadata`
+   - This returns `FTrajectoryBufferMetadata` struct with:
+     - **NumTrajectories**: Total number of trajectories
+     - **TotalSampleCount**: Total position samples
+     - **MaxSamplesPerTrajectory**: Longest trajectory length
+     - **BoundsMin**, **BoundsMax**: Dataset bounding box
+     - **FirstTimeStep**, **LastTimeStep**: Time range
+
+5. **Get Trajectory Info** (Optional):
+   - Drag from BufferProvider → Search for `Get Trajectory Info`
+   - Returns array of `FTrajectoryBufferInfo` with per-trajectory data:
+     - **TrajectoryId**: Original ID
+     - **StartIndex**: Position in buffer
+     - **SampleCount**: Number of samples
+     - **StartTimeStep**, **EndTimeStep**: Time range
+     - **Extent**: Object size
+
+#### Step 3: Pass Parameters to Niagara
+
+Get your **Niagara Component** reference and set parameters:
+
+```
+Event BeginPlay
+  → Get BufferProvider Component
+  → Update From Dataset (0)
+  → Get Metadata
+  → Get Niagara Component
+  → Set Int Parameter (Name: "NumTrajectories", Value: Metadata.NumTrajectories)
+  → Set Int Parameter (Name: "MaxSamplesPerTrajectory", Value: Metadata.MaxSamplesPerTrajectory)
+  → Set Int Parameter (Name: "TotalSampleCount", Value: Metadata.TotalSampleCount)
+  → Activate (Optional, if auto-activate is disabled)
+```
+
+**Blueprint Nodes to Use**:
+- `Get Metadata` → `Break FTrajectoryBufferMetadata` → Extract individual values
+- `Set Int Parameter` (on Niagara Component) for each metadata value
+- `Set Vector Parameter` for BoundsMin, BoundsMax if needed
+
+#### Step 4: Verify Buffer in Blueprint
+
+Check if the buffer loaded successfully:
+
+```
+Event BeginPlay
+  → Update From Dataset
+  → Is Buffer Valid?
+    → Branch:
+      True:
+        → Print String ("Trajectory buffer loaded successfully")
+        → Get Metadata
+        → Print String (Format: "Loaded {0} trajectories with {1} samples")
+      False:
+        → Print String ("Failed to load trajectory buffer")
 ```
 
 ## Binding Structured Buffers to Niagara
 
-**Important**: Niagara doesn't support structured buffer user parameters directly in Blueprint. You need C++ code or a plugin.
+### Important Limitation for Blueprint Users
 
-### Option 1: C++ Extension (Recommended)
+⚠️ **Current Limitation**: Unreal Engine's Niagara system does not support binding GPU structured buffers directly from Blueprint. The buffer binding requires C++ code.
 
-Create a custom Niagara Data Interface or use FNiagaraSystemInstance API:
+**What Works in Blueprint**:
+- ✅ Adding `UTrajectoryBufferProvider` component
+- ✅ Calling `UpdateFromDataset()` to load trajectory data
+- ✅ Getting metadata via `GetMetadata()` and `GetTrajectoryInfo()`
+- ✅ Passing metadata parameters to Niagara (NumTrajectories, MaxSamplesPerTrajectory, etc.)
+- ✅ Checking buffer validity with `IsBufferValid()`
+
+**What Requires C++**:
+- ❌ Binding the actual GPU `PositionBuffer` to Niagara HLSL code
+- ❌ Accessing `FTrajectoryPositionBufferResource` SRV in Niagara
+
+### Workarounds for Blueprint-Only Users
+
+**Option A: Use Texture2DArray Approach Instead** (Recommended for Blueprint)
+- The `UTrajectoryTextureProvider` component is fully Blueprint-compatible
+- Textures can be bound to Niagara directly as User Parameters
+- See `NIAGARA_TEXTURE2DARRAY_GUIDE.md` for complete Blueprint workflow
+- Trade-off: Slightly slower (5-10ms vs 0.5-1ms), but no C++ required
+
+**Option B: Create C++ Binding Helper** (For Advanced Users)
+- Create a simple C++ wrapper class that handles buffer binding
+- Expose the wrapper as a Blueprint-callable function
+- See "C++ Integration" section below
+
+### Option 1: C++ Buffer Binding Extension
+
+Create a C++ actor or component that binds the buffer:
 
 ```cpp
-// In your C++ code
-FNiagaraSystemInstance* SystemInstance = NiagaraComponent->GetSystemInstance();
-if (SystemInstance)
+// In your C++ Actor/Component
+void AYourActor::BindTrajectoryBufferToNiagara()
 {
-    FTrajectoryPositionBufferResource* BufferResource = BufferProvider->GetPositionBufferResource();
-    if (BufferResource && BufferResource->GetBufferSRV().IsValid())
+    UTrajectoryBufferProvider* BufferProvider = FindComponentByClass<UTrajectoryBufferProvider>();
+    UNiagaraComponent* NiagaraComp = FindComponentByClass<UNiagaraComponent>();
+    
+    if (BufferProvider && NiagaraComp && BufferProvider->IsBufferValid())
     {
-        // Bind buffer to Niagara
-        // This requires extending Niagara's parameter system
-        // See UE documentation on custom Niagara data interfaces
+        FTrajectoryPositionBufferResource* BufferResource = BufferProvider->GetPositionBufferResource();
+        FNiagaraSystemInstance* SystemInstance = NiagaraComp->GetSystemInstance();
+        
+        if (BufferResource && SystemInstance)
+        {
+            FShaderResourceViewRHIRef BufferSRV = BufferResource->GetBufferSRV();
+            
+            // Bind buffer to Niagara
+            // This requires custom Niagara Data Interface (see Option 2)
+            // or direct RHI parameter binding
+        }
     }
 }
 ```
 
+Make this function `UFUNCTION(BlueprintCallable)` to call it from Blueprint after loading data.
+
 ### Option 2: Custom Niagara Data Interface
 
-Create a simple NDI that exposes the buffer:
+Create a simple NDI that exposes the buffer to Niagara HLSL:
 
 ```cpp
 UCLASS()
@@ -470,14 +560,16 @@ public:
     UPROPERTY(EditAnywhere, Category = "Trajectory")
     UTrajectoryBufferProvider* BufferProvider;
 
-    // Implement GetFunctions() to expose buffer access
+    // Implement GPU buffer access
     virtual void GetFunctions(TArray<FNiagaraFunctionSignature>& OutFunctions) override;
     virtual void GetVMExternalFunction(const FVMExternalFunctionBindingInfo& BindingInfo, void* InstanceData, FVMExternalFunction& OutFunc) override;
     
-    // GPU implementation
+    // GPU HLSL implementation
     virtual bool GetFunctionHLSL(const FNiagaraDataInterfaceGPUParamInfo& ParamInfo, const FNiagaraDataInterfaceGeneratedFunction& FunctionInfo, int FunctionInstanceIndex, FString& OutHLSL) override;
 };
 ```
+
+This NDI can then be added to your Niagara system as a User Parameter and will be Blueprint-accessible.
 
 ## Performance Tips
 

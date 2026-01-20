@@ -195,8 +195,19 @@ public:
 
 	/**
 	 * Get the position buffer resource (for binding to Niagara)
+	 * Note: This returns a pointer to the GPU buffer resource. Use this in C++ code
+	 * to bind the buffer to Niagara systems. For Blueprint users, see GetBufferSRV().
 	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
 	FTrajectoryPositionBufferResource* GetPositionBufferResource() const { return PositionBufferResource; }
+	
+	/**
+	 * Get the shader resource view for the position buffer (Blueprint-friendly)
+	 * This can be used to bind the buffer to Niagara systems from Blueprint.
+	 * Note: Returns true if buffer is valid and SRV is available.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
+	bool IsBufferValid() const { return PositionBufferResource != nullptr; }
 
 protected:
 	virtual void BeginDestroy() override;
