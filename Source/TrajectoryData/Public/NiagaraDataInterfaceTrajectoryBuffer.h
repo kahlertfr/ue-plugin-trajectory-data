@@ -41,7 +41,7 @@
  * float3 Position = TrajectoryBuffer.GetPositionAtIndex(Particles.StartIndex + Particles.SampleOffset);
  * ```
  */
-UCLASS(EditInlineNew, Category = "Trajectory Data", meta = (DisplayName = "Trajectory Position Buffer"))
+UCLASS(EditInlineNew, BlueprintType, meta = (DisplayName = "Trajectory Position Buffer"))
 class TRAJECTORYDATA_API UNiagaraDataInterfaceTrajectoryBuffer : public UNiagaraDataInterface
 {
 	GENERATED_BODY()

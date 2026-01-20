@@ -21,6 +21,24 @@ UNiagaraDataInterfaceTrajectoryBuffer::UNiagaraDataInterfaceTrajectoryBuffer()
 {
 }
 
+// Implement proxy connection - required for GPU simulation
+struct FNiagaraDataInterfaceParametersCS_TrajectoryBuffer : public FNiagaraDataInterfaceParametersCS
+{
+	DECLARE_TYPE_LAYOUT(FNiagaraDataInterfaceParametersCS_TrajectoryBuffer, NonVirtual);
+public:
+	void Bind(const FNiagaraDataInterfaceGPUParamInfo& ParameterInfo, const class FShaderParameterMap& ParameterMap)
+	{
+	}
+
+	void Set(FRHICommandList& RHICmdList, const FNiagaraDataInterfaceSetArgs& Context) const
+	{
+	}
+};
+
+IMPLEMENT_TYPE_LAYOUT(FNiagaraDataInterfaceParametersCS_TrajectoryBuffer);
+
+IMPLEMENT_NIAGARA_DI_PARAMETER(UNiagaraDataInterfaceTrajectoryBuffer, FNiagaraDataInterfaceParametersCS_TrajectoryBuffer);
+
 void UNiagaraDataInterfaceTrajectoryBuffer::GetFunctions(TArray<FNiagaraFunctionSignature>& OutFunctions)
 {
 	// GetPositionAtIndex(int Index) -> float3
