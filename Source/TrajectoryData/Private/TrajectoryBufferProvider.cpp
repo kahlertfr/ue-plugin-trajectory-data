@@ -188,7 +188,7 @@ TArray<FVector> UTrajectoryBufferProvider::GetAllPositions() const
 {
 	if (PositionBufferResource)
 	{
-		return PositionBufferResource->CPUPositionData;
+		return PositionBufferResource->GetCPUPositionData();
 	}
 	return TArray<FVector>();
 }

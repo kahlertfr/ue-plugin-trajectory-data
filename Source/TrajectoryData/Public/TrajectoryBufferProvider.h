@@ -102,6 +102,9 @@ public:
 	/** Get number of elements */
 	int32 GetNumElements() const { return NumElements; }
 
+	/** Get CPU position data */
+	const TArray<FVector>& GetCPUPositionData() const { return CPUPositionData; }
+
 	// FRenderResource interface
 	virtual void InitResource(FRHICommandListBase& RHICmdList) override;
 	virtual void ReleaseResource() override;
