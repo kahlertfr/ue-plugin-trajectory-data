@@ -1,7 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "TrajectoryBufferProvider.h"
-#include "TrajectoryDataManager.h"
+#include "TrajectoryDataLoader.h"
 #include "RenderingThread.h"
 #include "RHICommandList.h"
 
@@ -114,15 +114,15 @@ void UTrajectoryBufferProvider::BeginDestroy()
 bool UTrajectoryBufferProvider::UpdateFromDataset(int32 DatasetIndex)
 {
 	// Get dataset manager
-	UTrajectoryDataManager* Manager = UTrajectoryDataManager::Get(GetWorld());
-	if (!Manager)
+	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
+	if (!Loader)
 	{
-		UE_LOG(LogTemp, Error, TEXT("TrajectoryBufferProvider: TrajectoryDataManager not found"));
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryBufferProvider: TrajectoryLoader not found"));
 		return false;
 	}
 
 	// Get loaded datasets
-	const TArray<FLoadedDataset>& LoadedDatasets = Manager->GetLoadedDatasets();
+	const TArray<FLoadedDataset>& LoadedDatasets = Loader->GetLoadedDatasets();
 	if (!LoadedDatasets.IsValidIndex(DatasetIndex))
 	{
 		UE_LOG(LogTemp, Error, TEXT("TrajectoryBufferProvider: Invalid dataset index %d"), DatasetIndex);
@@ -138,14 +138,14 @@ bool UTrajectoryBufferProvider::UpdateFromDataset(int32 DatasetIndex)
 
 	// Update metadata
 	Metadata.NumTrajectories = Dataset.Trajectories.Num();
-	Metadata.FirstTimeStep = Dataset.DatasetInfo.Meta.FirstTimeStep;
-	Metadata.LastTimeStep = Dataset.DatasetInfo.Meta.LastTimeStep;
-	Metadata.BoundsMin = FVector(Dataset.DatasetInfo.Meta.BBoxMin[0], 
-								  Dataset.DatasetInfo.Meta.BBoxMin[1], 
-								  Dataset.DatasetInfo.Meta.BBoxMin[2]);
-	Metadata.BoundsMax = FVector(Dataset.DatasetInfo.Meta.BBoxMax[0], 
-								  Dataset.DatasetInfo.Meta.BBoxMax[1], 
-								  Dataset.DatasetInfo.Meta.BBoxMax[2]);
+	Metadata.FirstTimeStep = Dataset.DatasetInfo.Metadata.FirstTimeStep;
+	Metadata.LastTimeStep = Dataset.DatasetInfo.Metadata.LastTimeStep;
+	Metadata.BoundsMin = FVector(Dataset.DatasetInfo.Metadata.BoundingBoxMin[0],
+								  Dataset.DatasetInfo.Metadata.BoundingBoxMin[1],
+								  Dataset.DatasetInfo.Metadata.BoundingBoxMin[2]);
+	Metadata.BoundsMax = FVector(Dataset.DatasetInfo.Metadata.BoundingBoxMax[0],
+								  Dataset.DatasetInfo.Metadata.BoundingBoxMax[1],
+								  Dataset.DatasetInfo.Metadata.BoundingBoxMax[2]);
 
 	// Calculate max samples per trajectory
 	Metadata.MaxSamplesPerTrajectory = 0;
@@ -223,4 +223,19 @@ void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, 
 
 	check(OutPositionData.Num() == TotalSamples);
 	check(TrajectoryInfo.Num() == Dataset.Trajectories.Num());
+}
+
+// Implementiere die Methode:
+void FTrajectoryPositionBufferResource::InitializeResource()
+{
+	// Standardm‰ﬂig: Initialisiere das Resource-Objekt auf dem Render-Thread
+	ENQUEUE_RENDER_COMMAND(InitTrajectoryPositionBuffer)(
+		[this](FRHICommandListImmediate& RHICmdList)
+		{
+			if (IsInitialized())
+			{
+				ReleaseResource();
+			}
+			InitResource(RHICmdList);
+		});
 }

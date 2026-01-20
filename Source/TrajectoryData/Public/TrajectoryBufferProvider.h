@@ -93,6 +93,9 @@ public:
 	/** Initialize with position data */
 	void Initialize(const TArray<FVector>& PositionData);
 
+	/** Initialize resource */
+	void InitializeResource();
+
 	/** Get the structured buffer SRV */
 	FShaderResourceViewRHIRef GetBufferSRV() const { return BufferSRV; }
 
@@ -108,7 +111,7 @@ private:
 	TArray<FVector> CPUPositionData;
 
 	/** GPU structured buffer */
-	FStructuredBufferRHIRef StructuredBuffer;
+	FBufferRHIRef StructuredBuffer;
 
 	/** Shader resource view */
 	FShaderResourceViewRHIRef BufferSRV;
