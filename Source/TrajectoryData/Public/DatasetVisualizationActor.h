@@ -34,7 +34,7 @@
  * - Buffer validation and error handling
  * - Support for dynamic dataset switching
  */
-UCLASS(Blueprintable, BlueprintType, ClassGroup = (TrajectoryData), meta = (BlueprintSpawnableComponent))
+UCLASS(Blueprintable, BlueprintType, ClassGroup = (TrajectoryData))
 class TRAJECTORYDATA_API ADatasetVisualizationActor : public AActor
 {
 	GENERATED_BODY()
@@ -167,4 +167,7 @@ protected:
 
 	/** Current dataset index */
 	int32 CurrentDatasetIndex = -1;
+
+	/** Cached parameter name for buffer element count */
+	FName CachedElementCountParamName;
 };

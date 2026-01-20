@@ -195,22 +195,11 @@ bool ADatasetVisualizationActor::BindBuffersToNiagara()
 	// This is the core functionality that enables Blueprint workflows without custom NDI
 	//
 	// Note: Niagara's public API doesn't directly support binding raw RHI buffers.
-	// We need to use the Niagara Data Interface Array API or create a custom approach.
-	// 
-	// Option 1: Use UNiagaraDataInterfaceArrayFunctionLibrary (indirect, limited)
-	// Option 2: Set via UserParameters (requires specific NDI setup)
-	// Option 3: Create lightweight custom NDI wrapper (most flexible)
-	//
-	// For now, we'll pass the buffer info via metadata and log a detailed message
-	// about the limitation. A future update can add a lightweight NDI wrapper.
+	// Metadata is passed automatically. For direct HLSL buffer access, see documentation
+	// for custom NDI implementation or use UTrajectoryTextureProvider.
 
-	UE_LOG(LogTemp, Warning, TEXT("DatasetVisualizationActor: Direct RHI buffer binding to Niagara requires a custom Niagara Data Interface."));
-	UE_LOG(LogTemp, Warning, TEXT("  Buffer SRV is valid and ready: %d elements"), BufferResource->GetNumElements());
-	UE_LOG(LogTemp, Warning, TEXT("  Metadata is being passed to Niagara parameters."));
-	UE_LOG(LogTemp, Warning, TEXT("  To complete the workflow:"));
-	UE_LOG(LogTemp, Warning, TEXT("    1. Create a custom Niagara Data Interface that wraps FShaderResourceViewRHIRef"));
-	UE_LOG(LogTemp, Warning, TEXT("    2. OR use UTrajectoryTextureProvider for fully Blueprint-compatible workflow"));
-	UE_LOG(LogTemp, Warning, TEXT("    3. See NIAGARA_BUFFER_GUIDE.md for implementation details"));
+	UE_LOG(LogTemp, Verbose, TEXT("DatasetVisualizationActor: Buffer ready (%d elements). Metadata passed to Niagara. For direct HLSL access, see DATASET_VISUALIZATION_ACTOR_GUIDE.md"), 
+	       BufferResource->GetNumElements());
 
 	// For now, we consider this "successful" since the buffer is ready
 	// The metadata passing will allow partial functionality
@@ -238,12 +227,16 @@ bool ADatasetVisualizationActor::PassMetadataToNiagara()
 	NiagaraComponent->SetVectorParameter(TEXT("BoundsMin"), Metadata.BoundsMin);
 	NiagaraComponent->SetVectorParameter(TEXT("BoundsMax"), Metadata.BoundsMax);
 
-	// Pass buffer element count
+	// Pass buffer element count (cache parameter name to avoid repeated string operations)
 	FTrajectoryPositionBufferResource* BufferResource = BufferProvider->GetPositionBufferResource();
 	if (BufferResource)
 	{
-		FString ElementCountParamName = FString::Printf(TEXT("%s_NumElements"), *PositionBufferParameterName.ToString());
-		NiagaraComponent->SetIntParameter(FName(*ElementCountParamName), BufferResource->GetNumElements());
+		if (CachedElementCountParamName.IsNone())
+		{
+			FString ElementCountParamName = FString::Printf(TEXT("%s_NumElements"), *PositionBufferParameterName.ToString());
+			CachedElementCountParamName = FName(*ElementCountParamName);
+		}
+		NiagaraComponent->SetIntParameter(CachedElementCountParamName, BufferResource->GetNumElements());
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Passed metadata to Niagara (%d trajectories, %d samples)"), 
