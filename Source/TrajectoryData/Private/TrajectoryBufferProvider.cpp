@@ -184,6 +184,15 @@ int64 UTrajectoryBufferProvider::GetTrajectoryId(int32 TrajectoryIndex) const
 	return -1;
 }
 
+TArray<FVector> UTrajectoryBufferProvider::GetAllPositions() const
+{
+	if (PositionBufferResource)
+	{
+		return PositionBufferResource->CPUPositionData;
+	}
+	return TArray<FVector>();
+}
+
 bool UTrajectoryBufferProvider::BindToNiagaraSystem(UNiagaraComponent* NiagaraComponent, FName BufferParameterName)
 {
 	// Validate inputs

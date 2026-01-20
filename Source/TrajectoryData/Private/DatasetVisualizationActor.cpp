@@ -5,9 +5,6 @@
 #include "NiagaraDataInterfaceArrayFunctionLibrary.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
-#include "NiagaraDataInterfaceTrajectoryBuffer.h"
-#include "RenderingThread.h"
-#include "RHICommandList.h"
 
 ADatasetVisualizationActor::ADatasetVisualizationActor()
 {
@@ -75,10 +72,10 @@ bool ADatasetVisualizationActor::LoadAndBindDataset(int32 DatasetIndex)
 		return false;
 	}
 
-	// Configure the NDI with our buffer provider
-	if (!ConfigureTrajectoryBufferNDI())
+	// Populate the Position Array NDI with position data
+	if (!PopulatePositionArrayNDI())
 	{
-		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: Failed to configure Trajectory Buffer NDI"));
+		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: Failed to populate Position Array NDI"));
 		return false;
 	}
 
@@ -97,7 +94,7 @@ bool ADatasetVisualizationActor::LoadAndBindDataset(int32 DatasetIndex)
 	bBuffersBound = true;
 	CurrentDatasetIndex = DatasetIndex;
 
-	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully loaded and bound dataset %d with NDI"), DatasetIndex);
+	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully loaded and bound dataset %d using Position Array NDI"), DatasetIndex);
 	return true;
 }
 
@@ -177,7 +174,7 @@ bool ADatasetVisualizationActor::BindBuffersToNiagara()
 	return ConfigureTrajectoryBufferNDI();
 }
 
-bool ADatasetVisualizationActor::ConfigureTrajectoryBufferNDI()
+bool ADatasetVisualizationActor::PopulatePositionArrayNDI()
 {
 	if (!BufferProvider || !NiagaraComponent)
 	{
@@ -191,22 +188,26 @@ bool ADatasetVisualizationActor::ConfigureTrajectoryBufferNDI()
 		return false;
 	}
 
-	// Create or get the Trajectory Buffer NDI instance
-	UNiagaraDataInterfaceTrajectoryBuffer* TrajectoryBufferNDI = NewObject<UNiagaraDataInterfaceTrajectoryBuffer>(this);
-	if (!TrajectoryBufferNDI)
+	// Get all positions from buffer provider as a flat array
+	FTrajectoryBufferMetadata Metadata = BufferProvider->GetMetadata();
+	TArray<FVector> AllPositions = BufferProvider->GetAllPositions();
+	
+	if (AllPositions.Num() == 0)
 	{
-		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: Failed to create TrajectoryBuffer NDI instance."));
+		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: No positions available"));
 		return false;
 	}
 
-	// Assign our buffer provider to the NDI
-	TrajectoryBufferNDI->BufferProvider = BufferProvider;
+	// Set the position array using UE5's built-in array NDI function
+	// This automatically finds or creates the Float3 Array NDI and populates it
+	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(
+		NiagaraComponent, 
+		PositionArrayParameterName, 
+		AllPositions
+	);
 
-	// Set the NDI as a user parameter on the Niagara component
-	NiagaraComponent->SetVariableObject(TrajectoryBufferNDIParameterName, TrajectoryBufferNDI);
-
-	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully configured Trajectory Buffer NDI with %d positions"), 
-	       BufferProvider->GetMetadata().TotalSampleCount);
+	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully populated Position Array NDI with %d positions"), 
+	       AllPositions.Num());
 
 	return true;
 }

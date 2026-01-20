@@ -6,38 +6,36 @@
 #include "GameFramework/Actor.h"
 #include "NiagaraComponent.h"
 #include "TrajectoryBufferProvider.h"
-#include "NiagaraDataInterfaceTrajectoryBuffer.h"
+#include "NiagaraDataInterfaceArrayFloat3.h"
 #include "DatasetVisualizationActor.generated.h"
 
 /**
- * Actor for visualizing trajectory datasets in Niagara with custom NDI
- * Provides complete GPU buffer binding for rendering trajectories as ribbons
+ * Actor for visualizing trajectory datasets in Niagara using built-in Position Array NDI
+ * Provides complete GPU buffer access for rendering trajectories as ribbons
  * 
- * This actor uses a custom lightweight Niagara Data Interface (NDI) to expose
+ * This actor uses UE5's built-in UNiagaraDataInterfaceArrayFloat3 to expose
  * trajectory position data directly to Niagara HLSL, enabling full GPU-based
- * trajectory visualization without manual buffer binding.
+ * trajectory visualization without custom NDI registration issues.
  * 
  * Features:
  * - Blueprint-spawnable and extensible
- * - Custom NDI for direct GPU buffer access in HLSL
- * - Automatic NDI configuration and binding
+ * - Built-in Position Array NDI for direct GPU buffer access in HLSL
+ * - Automatic NDI configuration and data population
  * - Automatic metadata parameter passing
  * - Support for ribbon rendering
  * - Real-time dataset switching
+ * - Works across all UE5+ versions
  * 
  * Usage in Blueprint:
  * 1. Add this actor to level or spawn in Blueprint
- * 2. Set NiagaraSystem template (must include TrajectoryBuffer User Parameter)
+ * 2. Set NiagaraSystem template (must include PositionArray User Parameter of type Float3 Array)
  * 3. Call LoadAndBindDataset(DatasetIndex) in BeginPlay
- * 4. Niagara HLSL can use: TrajectoryBuffer.GetPositionAtIndex(), etc.
+ * 4. Niagara HLSL can use: PositionArray.Get(Index), PositionArray.Length(), etc.
  * 
- * HLSL Functions Available:
- * - TrajectoryBuffer.GetPositionAtIndex(int Index) → float3
- * - TrajectoryBuffer.GetNumPositions() → int
- * - TrajectoryBuffer.GetTrajectoryStartIndex(int TrajIndex) → int
- * - TrajectoryBuffer.GetTrajectorySampleCount(int TrajIndex) → int
- * - TrajectoryBuffer.GetNumTrajectories() → int
- * - TrajectoryBuffer.GetMaxSamplesPerTrajectory() → int
+ * HLSL Functions Available (built-in Float3 Array NDI):
+ * - PositionArray.Get(int Index) → float3
+ * - PositionArray.Length() → int
+ * - Use metadata parameters for trajectory-specific information
  */
 UCLASS(Blueprintable, BlueprintType, ClassGroup = (TrajectoryData))
 class TRAJECTORYDATA_API ADatasetVisualizationActor : public AActor
@@ -114,12 +112,12 @@ public:
 
 protected:
 	/**
-	 * Bind buffers to Niagara system using custom NDI
+	 * Populate Position Array NDI with trajectory data
 	 * This is the core C++ functionality that enables Blueprint workflows
 	 * 
 	 * @return True if successful
 	 */
-	bool BindBuffersToNiagara();
+	bool PopulatePositionArrayNDI();
 
 	/**
 	 * Pass metadata parameters to Niagara
@@ -129,25 +127,18 @@ protected:
 	bool PassMetadataToNiagara();
 
 	/**
-	 * Initialize the Niagara component and NDI
+	 * Initialize the Niagara component
 	 */
 	void InitializeNiagaraComponent();
 
-	/**
-	 * Configure the trajectory buffer NDI with our buffer provider
-	 * 
-	 * @return True if successful
-	 */
-	bool ConfigureTrajectoryBufferNDI();
-
 public:
-	/** Niagara system template (set in Blueprint or editor) - must have TrajectoryBuffer User Parameter (NDI type) */
+	/** Niagara system template (set in Blueprint or editor) - must have PositionArray User Parameter (Float3 Array type) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trajectory Visualization")
 	TObjectPtr<UNiagaraSystem> NiagaraSystemTemplate;
 
-	/** Name of Trajectory Buffer NDI parameter in Niagara (User Parameter) */
+	/** Name of Position Array NDI parameter in Niagara (User Parameter of type Niagara Float3 Array) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trajectory Visualization")
-	FName TrajectoryBufferNDIParameterName = TEXT("TrajectoryBuffer");
+	FName PositionArrayParameterName = TEXT("PositionArray");
 
 	/** Auto-activate Niagara system after loading dataset */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trajectory Visualization")

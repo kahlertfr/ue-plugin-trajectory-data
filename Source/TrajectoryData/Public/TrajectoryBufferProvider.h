@@ -211,6 +211,15 @@ public:
 	bool IsBufferValid() const { return PositionBufferResource != nullptr; }
 
 	/**
+	 * Get all positions as a flat array
+	 * Returns the entire position data array for use with built-in Niagara array NDIs
+	 * 
+	 * @return Array of all position vectors in the dataset
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
+	TArray<FVector> GetAllPositions() const;
+
+	/**
 	 * Bind the position buffer to a Niagara System (Blueprint-callable)
 	 * This function allows Blueprint users to connect the trajectory buffer provider
 	 * to a Niagara system without needing C++ code.
