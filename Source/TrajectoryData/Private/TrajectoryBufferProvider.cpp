@@ -5,7 +5,6 @@
 #include "RenderingThread.h"
 #include "RHICommandList.h"
 #include "NiagaraComponent.h"
-#include "NiagaraDataInterfaceRWBase.h"
 
 // ============================================================================
 // FTrajectoryPositionBufferResource Implementation
