@@ -219,7 +219,7 @@ void FNiagaraDataInterfaceProxyTrajectoryBuffer::ConsumePerInstanceDataFromGameT
 	FInstanceData& TargetData = SystemInstancesToInstanceData.FindOrAdd(Instance);
 
 	TargetData.PositionBufferSRV = SourceData->PositionBufferSRV;
-	TargetData->TrajectoryInfoBufferSRV = SourceData->TrajectoryInfoBufferSRV;
+	TargetData.TrajectoryInfoBufferSRV = SourceData->TrajectoryInfoBufferSRV;
 	TargetData.NumPositions = SourceData->NumPositions;
 	TargetData.NumTrajectories = SourceData->NumTrajectories;
 	TargetData.MaxSamplesPerTrajectory = SourceData->MaxSamplesPerTrajectory;

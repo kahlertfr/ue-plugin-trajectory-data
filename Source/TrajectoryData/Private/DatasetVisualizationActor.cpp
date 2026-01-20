@@ -4,6 +4,7 @@
 #include "TrajectoryDataLoader.h"
 #include "NiagaraDataInterfaceArrayFunctionLibrary.h"
 #include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
 #include "NiagaraDataInterfaceTrajectoryBuffer.h"
 #include "RenderingThread.h"
 #include "RHICommandList.h"
