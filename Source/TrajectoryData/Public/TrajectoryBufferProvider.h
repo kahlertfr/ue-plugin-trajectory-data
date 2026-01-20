@@ -194,17 +194,18 @@ public:
 	int64 GetTrajectoryId(int32 TrajectoryIndex) const;
 
 	/**
-	 * Get the position buffer resource (for binding to Niagara)
-	 * Note: This returns a pointer to the GPU buffer resource. Use this in C++ code
-	 * to bind the buffer to Niagara systems. For Blueprint users, see GetBufferSRV().
+	 * Get the position buffer resource (for binding to Niagara in C++)
+	 * Note: This returns a pointer to the GPU buffer resource. This function is NOT
+	 * Blueprint-callable because Blueprint cannot handle raw C++ pointer types.
+	 * Use this in C++ code to bind the buffer to Niagara systems.
+	 * For Blueprint users, use GetMetadata() and IsBufferValid() instead.
 	 */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
 	FTrajectoryPositionBufferResource* GetPositionBufferResource() const { return PositionBufferResource; }
 	
 	/**
-	 * Get the shader resource view for the position buffer (Blueprint-friendly)
-	 * This can be used to bind the buffer to Niagara systems from Blueprint.
-	 * Note: Returns true if buffer is valid and SRV is available.
+	 * Check if the position buffer is valid and ready to use
+	 * Returns true if the buffer resource has been created and initialized.
+	 * Use this in Blueprint to verify that UpdateFromDataset() succeeded.
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
 	bool IsBufferValid() const { return PositionBufferResource != nullptr; }
