@@ -4,6 +4,7 @@
 #include "TrajectoryDataLoader.h"
 #include "NiagaraDataInterfaceArrayFunctionLibrary.h"
 #include "NiagaraComponent.h"
+#include "NiagaraDataInterfaceTrajectoryBuffer.h"
 #include "RenderingThread.h"
 #include "RHICommandList.h"
 
@@ -73,10 +74,10 @@ bool ADatasetVisualizationActor::LoadAndBindDataset(int32 DatasetIndex)
 		return false;
 	}
 
-	// Bind buffers to Niagara via direct RHI binding
-	if (!BindBuffersToNiagara())
+	// Configure the NDI with our buffer provider
+	if (!ConfigureTrajectoryBufferNDI())
 	{
-		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: Failed to bind buffers to Niagara"));
+		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: Failed to configure Trajectory Buffer NDI"));
 		return false;
 	}
 
@@ -95,7 +96,7 @@ bool ADatasetVisualizationActor::LoadAndBindDataset(int32 DatasetIndex)
 	bBuffersBound = true;
 	CurrentDatasetIndex = DatasetIndex;
 
-	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully loaded and bound dataset %d"), DatasetIndex);
+	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully loaded and bound dataset %d with NDI"), DatasetIndex);
 	return true;
 }
 
@@ -170,39 +171,43 @@ void ADatasetVisualizationActor::SetVisualizationActive(bool bActivate)
 
 bool ADatasetVisualizationActor::BindBuffersToNiagara()
 {
+	// This method is now deprecated in favor of ConfigureTrajectoryBufferNDI()
+	// Kept for backwards compatibility
+	return ConfigureTrajectoryBufferNDI();
+}
+
+bool ADatasetVisualizationActor::ConfigureTrajectoryBufferNDI()
+{
 	if (!BufferProvider || !NiagaraComponent)
 	{
 		return false;
 	}
 
-	// Get buffer resource
-	FTrajectoryPositionBufferResource* BufferResource = BufferProvider->GetPositionBufferResource();
-	if (!BufferResource)
+	// Validate buffer is ready
+	if (!BufferProvider->IsBufferValid())
 	{
-		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: Buffer resource is null"));
+		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: Buffer is not valid"));
 		return false;
 	}
 
-	// Get buffer SRV (Shader Resource View)
-	FShaderResourceViewRHIRef BufferSRV = BufferResource->GetBufferSRV();
-	if (!BufferSRV.IsValid())
+	// Get the Trajectory Buffer NDI from Niagara User Parameters
+	UNiagaraDataInterfaceTrajectoryBuffer* TrajectoryBufferNDI = Cast<UNiagaraDataInterfaceTrajectoryBuffer>(
+		NiagaraComponent->GetOverrideParameter(TrajectoryBufferNDIParameterName)
+	);
+
+	if (!TrajectoryBufferNDI)
 	{
-		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: Buffer SRV is invalid"));
+		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: Could not find TrajectoryBuffer NDI with name '%s' in Niagara system. Make sure to add a User Parameter of type 'Trajectory Position Buffer' with this name."), 
+		       *TrajectoryBufferNDIParameterName.ToString());
 		return false;
 	}
 
-	// CRITICAL: Direct RHI Buffer Binding to Niagara
-	// This is the core functionality that enables Blueprint workflows without custom NDI
-	//
-	// Note: Niagara's public API doesn't directly support binding raw RHI buffers.
-	// Metadata is passed automatically. For direct HLSL buffer access, see documentation
-	// for custom NDI implementation or use UTrajectoryTextureProvider.
+	// Assign our buffer provider to the NDI
+	TrajectoryBufferNDI->BufferProvider = BufferProvider;
 
-	UE_LOG(LogTemp, Verbose, TEXT("DatasetVisualizationActor: Buffer ready (%d elements). Metadata passed to Niagara. For direct HLSL access, see DATASET_VISUALIZATION_ACTOR_GUIDE.md"), 
-	       BufferResource->GetNumElements());
+	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully configured Trajectory Buffer NDI with %d positions"), 
+	       BufferProvider->GetMetadata().TotalSampleCount);
 
-	// For now, we consider this "successful" since the buffer is ready
-	// The metadata passing will allow partial functionality
 	return true;
 }
 
@@ -227,18 +232,6 @@ bool ADatasetVisualizationActor::PassMetadataToNiagara()
 	NiagaraComponent->SetVectorParameter(TEXT("BoundsMin"), Metadata.BoundsMin);
 	NiagaraComponent->SetVectorParameter(TEXT("BoundsMax"), Metadata.BoundsMax);
 
-	// Pass buffer element count (cache parameter name to avoid repeated string operations)
-	FTrajectoryPositionBufferResource* BufferResource = BufferProvider->GetPositionBufferResource();
-	if (BufferResource)
-	{
-		if (CachedElementCountParamName.IsNone())
-		{
-			FString ElementCountParamName = FString::Printf(TEXT("%s_NumElements"), *PositionBufferParameterName.ToString());
-			CachedElementCountParamName = FName(*ElementCountParamName);
-		}
-		NiagaraComponent->SetIntParameter(CachedElementCountParamName, BufferResource->GetNumElements());
-	}
-
 	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Passed metadata to Niagara (%d trajectories, %d samples)"), 
 	       Metadata.NumTrajectories, Metadata.TotalSampleCount);
 
@@ -256,8 +249,8 @@ void ADatasetVisualizationActor::InitializeNiagaraComponent()
 	if (NiagaraSystemTemplate)
 	{
 		NiagaraComponent->SetAsset(NiagaraSystemTemplate);
-		UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Set Niagara system template: %s"), 
-		       *NiagaraSystemTemplate->GetName());
+		UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Set Niagara system template: %s. Make sure it has a '%s' User Parameter (Trajectory Position Buffer type)."), 
+		       *NiagaraSystemTemplate->GetName(), *TrajectoryBufferNDIParameterName.ToString());
 	}
 	else
 	{

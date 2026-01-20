@@ -6,33 +6,38 @@
 #include "GameFramework/Actor.h"
 #include "NiagaraComponent.h"
 #include "TrajectoryBufferProvider.h"
+#include "NiagaraDataInterfaceTrajectoryBuffer.h"
 #include "DatasetVisualizationActor.generated.h"
 
 /**
- * Actor for visualizing trajectory datasets in Niagara
- * Provides C++ buffer binding extension with direct RHI parameter binding
+ * Actor for visualizing trajectory datasets in Niagara with custom NDI
+ * Provides complete GPU buffer binding for rendering trajectories as ribbons
  * 
- * This actor bridges the gap between structured buffers and Niagara HLSL,
- * allowing Blueprint-based workflows without custom Niagara Data Interfaces.
+ * This actor uses a custom lightweight Niagara Data Interface (NDI) to expose
+ * trajectory position data directly to Niagara HLSL, enabling full GPU-based
+ * trajectory visualization without manual buffer binding.
  * 
  * Features:
  * - Blueprint-spawnable and extensible
- * - Direct GPU buffer binding to Niagara via RHI
+ * - Custom NDI for direct GPU buffer access in HLSL
+ * - Automatic NDI configuration and binding
  * - Automatic metadata parameter passing
- * - Support for multiple Niagara systems
- * - Real-time buffer updates
+ * - Support for ribbon rendering
+ * - Real-time dataset switching
  * 
  * Usage in Blueprint:
  * 1. Add this actor to level or spawn in Blueprint
- * 2. Set NiagaraSystem template
+ * 2. Set NiagaraSystem template (must include TrajectoryBuffer User Parameter)
  * 3. Call LoadAndBindDataset(DatasetIndex) in BeginPlay
- * 4. Niagara HLSL can access: PositionBuffer, TrajectoryInfoBuffer, metadata
+ * 4. Niagara HLSL can use: TrajectoryBuffer.GetPositionAtIndex(), etc.
  * 
- * C++ Extension Features:
- * - Direct buffer SRV binding via SetNiagaraVariableObject
- * - Automatic render thread synchronization
- * - Buffer validation and error handling
- * - Support for dynamic dataset switching
+ * HLSL Functions Available:
+ * - TrajectoryBuffer.GetPositionAtIndex(int Index) → float3
+ * - TrajectoryBuffer.GetNumPositions() → int
+ * - TrajectoryBuffer.GetTrajectoryStartIndex(int TrajIndex) → int
+ * - TrajectoryBuffer.GetTrajectorySampleCount(int TrajIndex) → int
+ * - TrajectoryBuffer.GetNumTrajectories() → int
+ * - TrajectoryBuffer.GetMaxSamplesPerTrajectory() → int
  */
 UCLASS(Blueprintable, BlueprintType, ClassGroup = (TrajectoryData))
 class TRAJECTORYDATA_API ADatasetVisualizationActor : public AActor
@@ -109,7 +114,7 @@ public:
 
 protected:
 	/**
-	 * Bind buffers to Niagara system using direct RHI parameter binding
+	 * Bind buffers to Niagara system using custom NDI
 	 * This is the core C++ functionality that enables Blueprint workflows
 	 * 
 	 * @return True if successful
@@ -124,22 +129,25 @@ protected:
 	bool PassMetadataToNiagara();
 
 	/**
-	 * Initialize the Niagara component
+	 * Initialize the Niagara component and NDI
 	 */
 	void InitializeNiagaraComponent();
 
+	/**
+	 * Configure the trajectory buffer NDI with our buffer provider
+	 * 
+	 * @return True if successful
+	 */
+	bool ConfigureTrajectoryBufferNDI();
+
 public:
-	/** Niagara system template (set in Blueprint or editor) */
+	/** Niagara system template (set in Blueprint or editor) - must have TrajectoryBuffer User Parameter (NDI type) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trajectory Visualization")
 	TObjectPtr<UNiagaraSystem> NiagaraSystemTemplate;
 
-	/** Name of position buffer parameter in Niagara */
+	/** Name of Trajectory Buffer NDI parameter in Niagara (User Parameter) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trajectory Visualization")
-	FName PositionBufferParameterName = TEXT("PositionBuffer");
-
-	/** Name of trajectory info buffer parameter in Niagara */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trajectory Visualization")
-	FName TrajectoryInfoBufferParameterName = TEXT("TrajectoryInfoBuffer");
+	FName TrajectoryBufferNDIParameterName = TEXT("TrajectoryBuffer");
 
 	/** Auto-activate Niagara system after loading dataset */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trajectory Visualization")
@@ -167,7 +175,4 @@ protected:
 
 	/** Current dataset index */
 	int32 CurrentDatasetIndex = -1;
-
-	/** Cached parameter name for buffer element count */
-	FName CachedElementCountParamName;
 };
