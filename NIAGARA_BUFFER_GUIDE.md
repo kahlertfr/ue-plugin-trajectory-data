@@ -431,9 +431,9 @@ In your Blueprint's **Event Graph** (e.g., in **BeginPlay**):
    - Input 2: **Buffer Parameter Name** - Name of the parameter (e.g., `PositionBuffer`)
    - This function:
      - ✅ Validates the buffer is loaded
-     - ✅ Automatically passes metadata to Niagara (NumTrajectories, MaxSamplesPerTrajectory, etc.)
-     - ✅ Sets up parameters for HLSL access
-     - ❌ Note: Direct HLSL buffer binding still requires custom Niagara Data Interface
+     - ✅ Automatically passes metadata to Niagara as int/vector parameters (NumTrajectories, MaxSamplesPerTrajectory, BoundsMin/Max)
+     - ✅ Metadata accessible in HLSL: `int NumTrajectories`, `int MaxSamplesPerTrajectory`, etc.
+     - ❌ Direct structured buffer binding for HLSL access requires custom Niagara Data Interface (NDI)
      - ✅ Returns `true` if successful, `false` if buffer invalid or component null
 
 **Complete Blueprint Flow**:

@@ -207,25 +207,13 @@ bool UTrajectoryBufferProvider::BindToNiagaraSystem(UNiagaraComponent* NiagaraCo
 	}
 
 	// Set the buffer as a user parameter
-	// Note: Niagara user parameters for buffers are set via the SetNiagaraVariableObject method
-	// However, for structured buffers, we need to use a different approach
-	
-	// The buffer binding must be done through Niagara's user parameter system
-	// Unfortunately, UNiagaraComponent doesn't expose a direct method to bind FShaderResourceViewRHIRef
-	// from Blueprint. The typical workflow requires a Niagara Data Interface.
-	
-	// Alternative approach: Set the SRV directly if the Niagara system has the parameter exposed
-	FNiagaraUserRedirectionParameterStore& UserParameterStore = NiagaraComponent->GetOverrideParameters();
-	
-	// For structured buffers, we need to create a parameter binding
-	// This is a simplified version - full implementation would require custom Niagara Data Interface
+	// Note: Niagara structured buffers require custom Niagara Data Interface for HLSL access
+	// This function passes metadata to Niagara parameters that can be used in HLSL
 	
 	UE_LOG(LogTemp, Display, TEXT("TrajectoryBufferProvider::BindToNiagaraSystem - Binding buffer '%s' to Niagara component"), *BufferParameterName.ToString());
 	UE_LOG(LogTemp, Display, TEXT("  Buffer has %d elements"), PositionBufferResource->GetNumElements());
 	
-	// Store metadata that can be retrieved in Blueprint
-	// The actual buffer binding for HLSL access still requires C++ or NDI
-	// But we can at least pass the metadata as integer parameters
+	// Pass metadata as Niagara parameters (accessible in HLSL as int/float/vector parameters)
 	NiagaraComponent->SetIntParameter(FName(*(BufferParameterName.ToString() + TEXT("_NumElements"))), PositionBufferResource->GetNumElements());
 	NiagaraComponent->SetIntParameter(TEXT("NumTrajectories"), Metadata.NumTrajectories);
 	NiagaraComponent->SetIntParameter(TEXT("MaxSamplesPerTrajectory"), Metadata.MaxSamplesPerTrajectory);
