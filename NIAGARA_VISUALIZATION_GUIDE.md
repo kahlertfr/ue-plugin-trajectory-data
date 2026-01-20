@@ -281,7 +281,26 @@ Get Metadata (TrajectoryTextureProvider)
 - Set Emitter Properties → Sim Target: **GPUComputeSim**
 - Particles per second: High (e.g., 100,000)
 
-**5. Add Ribbon Renderer** (optional):
+**5. Add Custom Particle Attributes** (for HLSL indexing):
+
+These are **required** for the HLSL examples to work:
+
+- In Emitter Properties → Attributes → Add Attribute:
+  - `TrajectoryID` (int) - Which trajectory this particle represents
+  - `SampleID` (int) - Which sample point along the trajectory
+
+**How to initialize them**:
+- **Option A - Spawn Script**: Assign based on `Particles.ID` modulo operations
+- **Option B - Index from Emitter**: Use emitter index properties
+- **Example in Particle Spawn**:
+  ```hlsl
+  // Assign TrajectoryID and SampleID based on particle spawn order
+  int TotalParticlesPerTrajectory = MaxSamplesPerTrajectory;
+  Particles.TrajectoryID = Particles.ID / TotalParticlesPerTrajectory;
+  Particles.SampleID = Particles.ID % TotalParticlesPerTrajectory;
+  ```
+
+**6. Add Ribbon Renderer** (optional):
 - Add Renderer → Ribbon Renderer
 - Configure ribbon width, material, etc.
 
@@ -294,6 +313,8 @@ Same as above, but:
 ---
 
 ## HLSL Examples
+
+**Important**: The following examples use custom particle attributes `Particles.TrajectoryID` and `Particles.SampleID`. You must create these attributes in your Niagara emitter (see "Add Custom Particle Attributes" in Niagara System Setup above).
 
 ### Example 1: Ribbon Rendering with Built-in Position Array NDI
 
