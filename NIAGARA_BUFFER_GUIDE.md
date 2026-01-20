@@ -413,7 +413,7 @@ The structured buffer approach is now Blueprint-friendly! Follow these steps to 
 3. Add the component to your actor
 4. Name it: `BufferProvider`
 
-#### Step 2: Load Data in Blueprint Event Graph
+#### Step 2: Load Data and Bind to Niagara in Blueprint Event Graph
 
 In your Blueprint's **Event Graph** (e.g., in **BeginPlay**):
 
@@ -425,12 +425,35 @@ In your Blueprint's **Event Graph** (e.g., in **BeginPlay**):
    - Set **Dataset Index** input to `0` (or your desired dataset index)
    - This loads trajectory data into the GPU buffer
 
-3. **Verify Success** (Optional):
+3. **Bind to Niagara System** (NEW!):
+   - Drag from BufferProvider → Search for `Bind To Niagara System`
+   - Input 1: **Niagara Component** - Reference to your Niagara Component
+   - Input 2: **Buffer Parameter Name** - Name of the parameter (e.g., `PositionBuffer`)
+   - This function:
+     - ✅ Validates the buffer is loaded
+     - ✅ Automatically passes metadata to Niagara (NumTrajectories, MaxSamplesPerTrajectory, etc.)
+     - ✅ Sets up parameters for HLSL access
+     - ❌ Note: Direct HLSL buffer binding still requires custom Niagara Data Interface
+     - ✅ Returns `true` if successful, `false` if buffer invalid or component null
+
+**Complete Blueprint Flow**:
+```
+Event BeginPlay
+  → Get BufferProvider Component
+  → Update From Dataset (Dataset Index: 0)
+  → Get Niagara Component
+  → Bind To Niagara System (Niagara Component, Buffer Parameter Name: "PositionBuffer")
+  → Branch (check return value)
+    → True: Print "Buffer bound successfully!"
+    → False: Print "Failed to bind buffer"
+```
+
+4. **Verify Success** (Optional):
    - Drag from BufferProvider → Search for `Is Buffer Valid`
    - Connect to a **Branch** node
    - Add **Print String** nodes to log success/failure
 
-4. **Get Metadata**:
+5. **Get Metadata** (Optional, for additional parameters):
    - Drag from BufferProvider → Search for `Get Metadata`
    - This returns `FTrajectoryBufferMetadata` struct with:
      - **NumTrajectories**: Total number of trajectories
@@ -439,7 +462,7 @@ In your Blueprint's **Event Graph** (e.g., in **BeginPlay**):
      - **BoundsMin**, **BoundsMax**: Dataset bounding box
      - **FirstTimeStep**, **LastTimeStep**: Time range
 
-5. **Get Trajectory Info** (Optional):
+6. **Get Trajectory Info** (Optional, for per-trajectory data):
    - Drag from BufferProvider → Search for `Get Trajectory Info`
    - Returns array of `FTrajectoryBufferInfo` with per-trajectory data:
      - **TrajectoryId**: Original ID
@@ -448,28 +471,7 @@ In your Blueprint's **Event Graph** (e.g., in **BeginPlay**):
      - **StartTimeStep**, **EndTimeStep**: Time range
      - **Extent**: Object size
 
-#### Step 3: Pass Parameters to Niagara
-
-Get your **Niagara Component** reference and set parameters:
-
-```
-Event BeginPlay
-  → Get BufferProvider Component
-  → Update From Dataset (0)
-  → Get Metadata
-  → Get Niagara Component
-  → Set Int Parameter (Name: "NumTrajectories", Value: Metadata.NumTrajectories)
-  → Set Int Parameter (Name: "MaxSamplesPerTrajectory", Value: Metadata.MaxSamplesPerTrajectory)
-  → Set Int Parameter (Name: "TotalSampleCount", Value: Metadata.TotalSampleCount)
-  → Activate (Optional, if auto-activate is disabled)
-```
-
-**Blueprint Nodes to Use**:
-- `Get Metadata` → `Break FTrajectoryBufferMetadata` → Extract individual values
-- `Set Int Parameter` (on Niagara Component) for each metadata value
-- `Set Vector Parameter` for BoundsMin, BoundsMax if needed
-
-#### Step 4: Verify Buffer in Blueprint
+#### Step 3: Verify Buffer in Blueprint
 
 Check if the buffer loaded successfully:
 

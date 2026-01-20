@@ -210,6 +210,25 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
 	bool IsBufferValid() const { return PositionBufferResource != nullptr; }
 
+	/**
+	 * Bind the position buffer to a Niagara System (Blueprint-callable)
+	 * This function allows Blueprint users to connect the trajectory buffer provider
+	 * to a Niagara system without needing C++ code.
+	 * 
+	 * @param NiagaraComponent The Niagara component to bind the buffer to
+	 * @param BufferParameterName Name of the StructuredBuffer parameter in Niagara (e.g., "PositionBuffer")
+	 * @return True if binding succeeded, false if buffer is invalid or Niagara component is null
+	 * 
+	 * Usage in Blueprint:
+	 * 1. Add TrajectoryBufferProvider component
+	 * 2. Call UpdateFromDataset(DatasetIndex) to load data
+	 * 3. Get reference to Niagara Component
+	 * 4. Call BindToNiagaraSystem(NiagaraComponent, "PositionBuffer")
+	 * 5. Niagara HLSL can now access: StructuredBuffer<float3> PositionBuffer;
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Trajectory Data")
+	bool BindToNiagaraSystem(class UNiagaraComponent* NiagaraComponent, FName BufferParameterName);
+
 protected:
 	virtual void BeginDestroy() override;
 

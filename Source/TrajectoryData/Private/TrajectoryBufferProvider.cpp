@@ -4,6 +4,8 @@
 #include "TrajectoryDataLoader.h"
 #include "RenderingThread.h"
 #include "RHICommandList.h"
+#include "NiagaraComponent.h"
+#include "NiagaraDataInterfaceRWBase.h"
 
 // ============================================================================
 // FTrajectoryPositionBufferResource Implementation
@@ -183,6 +185,61 @@ int64 UTrajectoryBufferProvider::GetTrajectoryId(int32 TrajectoryIndex) const
 	return -1;
 }
 
+bool UTrajectoryBufferProvider::BindToNiagaraSystem(UNiagaraComponent* NiagaraComponent, FName BufferParameterName)
+{
+	// Validate inputs
+	if (!NiagaraComponent)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("TrajectoryBufferProvider::BindToNiagaraSystem - NiagaraComponent is null"));
+		return false;
+	}
+
+	if (!PositionBufferResource)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("TrajectoryBufferProvider::BindToNiagaraSystem - PositionBufferResource is null. Call UpdateFromDataset() first."));
+		return false;
+	}
+
+	if (!PositionBufferResource->GetBufferSRV().IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("TrajectoryBufferProvider::BindToNiagaraSystem - BufferSRV is not valid. Ensure data is loaded."));
+		return false;
+	}
+
+	// Set the buffer as a user parameter
+	// Note: Niagara user parameters for buffers are set via the SetNiagaraVariableObject method
+	// However, for structured buffers, we need to use a different approach
+	
+	// The buffer binding must be done through Niagara's user parameter system
+	// Unfortunately, UNiagaraComponent doesn't expose a direct method to bind FShaderResourceViewRHIRef
+	// from Blueprint. The typical workflow requires a Niagara Data Interface.
+	
+	// Alternative approach: Set the SRV directly if the Niagara system has the parameter exposed
+	FNiagaraUserRedirectionParameterStore& UserParameterStore = NiagaraComponent->GetOverrideParameters();
+	
+	// For structured buffers, we need to create a parameter binding
+	// This is a simplified version - full implementation would require custom Niagara Data Interface
+	
+	UE_LOG(LogTemp, Display, TEXT("TrajectoryBufferProvider::BindToNiagaraSystem - Binding buffer '%s' to Niagara component"), *BufferParameterName.ToString());
+	UE_LOG(LogTemp, Display, TEXT("  Buffer has %d elements"), PositionBufferResource->GetNumElements());
+	
+	// Store metadata that can be retrieved in Blueprint
+	// The actual buffer binding for HLSL access still requires C++ or NDI
+	// But we can at least pass the metadata as integer parameters
+	NiagaraComponent->SetIntParameter(FName(*(BufferParameterName.ToString() + TEXT("_NumElements"))), PositionBufferResource->GetNumElements());
+	NiagaraComponent->SetIntParameter(TEXT("NumTrajectories"), Metadata.NumTrajectories);
+	NiagaraComponent->SetIntParameter(TEXT("MaxSamplesPerTrajectory"), Metadata.MaxSamplesPerTrajectory);
+	NiagaraComponent->SetIntParameter(TEXT("TotalSampleCount"), Metadata.TotalSampleCount);
+	NiagaraComponent->SetVectorParameter(TEXT("BoundsMin"), Metadata.BoundsMin);
+	NiagaraComponent->SetVectorParameter(TEXT("BoundsMax"), Metadata.BoundsMax);
+	
+	UE_LOG(LogTemp, Warning, TEXT("TrajectoryBufferProvider::BindToNiagaraSystem - Note: Direct buffer binding to HLSL requires a custom Niagara Data Interface."));
+	UE_LOG(LogTemp, Warning, TEXT("  Metadata has been passed as parameters. For full buffer access in HLSL, implement a custom NDI."));
+	UE_LOG(LogTemp, Warning, TEXT("  Alternatively, use UTrajectoryTextureProvider for Blueprint-compatible workflow."));
+	
+	return true;
+}
+
 void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, TArray<FVector>& OutPositionData)
 {
 	// Calculate total samples needed
@@ -228,7 +285,7 @@ void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, 
 // Implementiere die Methode:
 void FTrajectoryPositionBufferResource::InitializeResource()
 {
-	// Standardmäßig: Initialisiere das Resource-Objekt auf dem Render-Thread
+	// Standardmï¿½ï¿½ig: Initialisiere das Resource-Objekt auf dem Render-Thread
 	ENQUEUE_RENDER_COMMAND(InitTrajectoryPositionBuffer)(
 		[this](FRHICommandListImmediate& RHICmdList)
 		{

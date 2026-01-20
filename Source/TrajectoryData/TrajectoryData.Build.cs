@@ -31,7 +31,8 @@ public class TrajectoryData : ModuleRules
 				"Json",
 				"JsonUtilities",
 				"RenderCore",      // For texture types
-				"RHI"              // For texture formats
+				"RHI",             // For texture formats
+				"Niagara"          // For UNiagaraComponent binding
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);
