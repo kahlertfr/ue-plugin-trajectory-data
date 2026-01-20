@@ -6,7 +6,6 @@
 #include "GameFramework/Actor.h"
 #include "NiagaraComponent.h"
 #include "TrajectoryBufferProvider.h"
-#include "NiagaraDataInterfaceArrayFloat3.h"
 #include "DatasetVisualizationActor.generated.h"
 
 /**
