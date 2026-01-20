@@ -20,15 +20,15 @@ void FTrajectoryPositionBufferResource::Initialize(const TArray<FVector>& Positi
 		{
 			if (IsInitialized())
 			{
-				ReleaseRHI();
+				ReleaseResource();
 			}
-			InitRHI();
+			InitResource(RHICmdList);
 		});
 }
 
-void FTrajectoryPositionBufferResource::InitRHI()
+void FTrajectoryPositionBufferResource::InitResource(FRHICommandListBase& RHICmdList)
 {
-	FRenderResource::InitRHI();
+	FRenderResource::InitResource(RHICmdList);
 
 	if (NumElements == 0)
 	{
@@ -41,7 +41,7 @@ void FTrajectoryPositionBufferResource::InitRHI()
 	const uint32 ElementSize = sizeof(FVector);
 	const uint32 BufferSize = NumElements * ElementSize;
 
-	StructuredBuffer = RHICreateStructuredBuffer(
+	StructuredBuffer = RHICmdList.CreateStructuredBuffer(
 		ElementSize,
 		BufferSize,
 		BUF_ShaderResource | BUF_Static,
@@ -49,22 +49,22 @@ void FTrajectoryPositionBufferResource::InitRHI()
 	);
 
 	// Create shader resource view
-	BufferSRV = RHICreateShaderResourceView(StructuredBuffer);
+	BufferSRV = RHICmdList.CreateShaderResourceView(StructuredBuffer);
 
 	// Upload data to GPU
 	if (CPUPositionData.Num() > 0)
 	{
-		void* BufferData = RHILockBuffer(StructuredBuffer, 0, BufferSize, RLM_WriteOnly);
+		void* BufferData = RHICmdList.LockBuffer(StructuredBuffer, 0, BufferSize, RLM_WriteOnly);
 		FMemory::Memcpy(BufferData, CPUPositionData.GetData(), BufferSize);
-		RHIUnlockBuffer(StructuredBuffer);
+		RHICmdList.UnlockBuffer(StructuredBuffer);
 	}
 }
 
-void FTrajectoryPositionBufferResource::ReleaseRHI()
+void FTrajectoryPositionBufferResource::ReleaseResource()
 {
 	BufferSRV.SafeRelease();
 	StructuredBuffer.SafeRelease();
-	FRenderResource::ReleaseRHI();
+	FRenderResource::ReleaseResource();
 }
 
 // ============================================================================

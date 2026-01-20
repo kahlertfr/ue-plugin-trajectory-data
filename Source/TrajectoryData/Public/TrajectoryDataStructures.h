@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "TrajectoryDataTypes.h"
 #include "TrajectoryDataStructures.generated.h"
 
 /**

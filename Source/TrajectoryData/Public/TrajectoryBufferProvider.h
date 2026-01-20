@@ -100,8 +100,8 @@ public:
 	int32 GetNumElements() const { return NumElements; }
 
 	// FRenderResource interface
-	virtual void InitRHI() override;
-	virtual void ReleaseRHI() override;
+	virtual void InitResource(FRHICommandListBase& RHICmdList) override;
+	virtual void ReleaseResource() override;
 
 private:
 	/** CPU copy of position data */
