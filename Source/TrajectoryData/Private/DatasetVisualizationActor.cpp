@@ -193,7 +193,7 @@ bool ADatasetVisualizationActor::PopulatePositionArrayNDI()
 
 	// Set the position array using UE5's built-in array NDI function
 	// This automatically finds or creates the Float3 Array NDI and populates it
-	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(
+	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayPosition(
 		NiagaraComponent, 
 		PositionArrayParameterName, 
 		AllPositions
