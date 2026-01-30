@@ -292,8 +292,7 @@ Actor->LoadAndBindDataset(0);
 
 // Get buffer provider and release CPU data
 UTrajectoryBufferProvider* Provider = UTrajectoryBufferProvider::Get();
-FTrajectoryBuffer Buffer = Provider->GetBuffer(0);
-Buffer.ReleaseCPUPositionData();
+Provider->ReleaseCPUPositionData();
 
 // GPU still has the data, but CPU memory is freed
 ```

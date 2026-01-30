@@ -287,10 +287,10 @@ void UTrajectoryBufferProvider::ReleaseCPUPositionData()
 	}
 }
 
-// Implementiere die Methode:
+// Initialize the resource
 void FTrajectoryPositionBufferResource::InitializeResource()
 {
-	// Standardm��ig: Initialisiere das Resource-Objekt auf dem Render-Thread
+	// Initialize the resource object on the render thread
 	ENQUEUE_RENDER_COMMAND(InitTrajectoryPositionBuffer)(
 		[this](FRHICommandListImmediate& RHICmdList)
 		{

@@ -218,8 +218,7 @@ Actor->LoadAndBindDataset(0);
 
 // Release CPU memory (GPU keeps data)
 UTrajectoryBufferProvider* Provider = UTrajectoryBufferProvider::Get();
-FTrajectoryBuffer Buffer = Provider->GetBuffer(0);
-Buffer.ReleaseCPUPositionData();
+Provider->ReleaseCPUPositionData();
 ```
 
 **Memory savings:**
@@ -697,8 +696,7 @@ void AMyActor::OnDataLoaded(bool bSuccess, const FTrajectoryLoadResult& Result)
         
         // 5. Optional: Release CPU memory
         UTrajectoryBufferProvider* Provider = UTrajectoryBufferProvider::Get();
-        FTrajectoryBuffer Buffer = Provider->GetBuffer(0);
-        Buffer.ReleaseCPUPositionData();
+        Provider->ReleaseCPUPositionData();
         
         UE_LOG(LogTemp, Log, TEXT("CPU memory released"));
     }
