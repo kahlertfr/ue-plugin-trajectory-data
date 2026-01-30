@@ -221,12 +221,9 @@ void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, 
 		Info.Extent = Traj.Extent;
 		TrajectoryInfo.Add(Info);
 
-		// Copy positions using efficient bulk operations (memcpy internally)
-		// Now that Samples is TArray<FVector>, we can use AddUninitialized + Memcpy
-		// or simply use Append which is already optimized for bulk copying
-		int32 StartIndex = OutPositionData.Num();
-		OutPositionData.AddUninitialized(Traj.Samples.Num());
-		FMemory::Memcpy(&OutPositionData[StartIndex], Traj.Samples.GetData(), Traj.Samples.Num() * sizeof(FVector));
+		// Copy positions using efficient bulk operations
+		// TArray::Append is optimized for bulk copying and handles all memory operations internally
+		OutPositionData.Append(Traj.Samples);
 
 		CurrentIndex += Traj.Samples.Num();
 	}
