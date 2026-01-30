@@ -118,18 +118,6 @@ public:
 	void UnloadAll();
 
 	/**
-	 * Get currently loaded trajectories (from all datasets)
-	 * 
-	 * DEPRECATED: This method creates a new combined array on each call, which is memory inefficient.
-	 * Use GetLoadedDatasets() instead and iterate over individual datasets.
-	 * 
-	 * @deprecated Use GetLoadedDatasets() for better performance with multiple datasets
-	 */
-	UE_DEPRECATED(5.6, "GetLoadedTrajectories creates a new array each time. Use GetLoadedDatasets() instead.")
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Loading", meta = (DeprecatedFunction, DeprecationMessage = "Use GetLoadedDatasets() instead - this function creates unnecessary memory copies"))
-	TArray<FLoadedTrajectory> GetLoadedTrajectories() const;
-
-	/**
 	 * Get all loaded datasets
 	 * This is the preferred method for accessing loaded data when working with multiple datasets
 	 */

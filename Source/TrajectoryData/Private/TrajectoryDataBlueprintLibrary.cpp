@@ -261,7 +261,13 @@ int32 UTrajectoryDataBlueprintLibrary::GetNumLoadedTrajectories()
 	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
 	if (Loader)
 	{
-		return Loader->GetLoadedTrajectories().Num();
+		// Count trajectories across all loaded datasets
+		int32 TotalCount = 0;
+		for (const FLoadedDataset& Dataset : Loader->GetLoadedDatasets())
+		{
+			TotalCount += Dataset.Trajectories.Num();
+		}
+		return TotalCount;
 	}
 	return 0;
 }

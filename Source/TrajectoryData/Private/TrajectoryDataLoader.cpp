@@ -927,19 +927,6 @@ int64 UTrajectoryDataLoader::CalculateMemoryRequirement(const FTrajectoryLoadPar
 	return static_cast<int64>(BaseMemory * MemoryOverheadFactor);
 }
 
-TArray<FLoadedTrajectory> UTrajectoryDataLoader::GetLoadedTrajectories() const
-{
-	// For backward compatibility - return all trajectories from all loaded datasets
-	TArray<FLoadedTrajectory> AllTrajectories;
-	
-	for (const FLoadedDataset& Dataset : LoadedDatasets)
-	{
-		AllTrajectories.Append(Dataset.Trajectories);
-	}
-	
-	return AllTrajectories;
-}
-
 int64 UTrajectoryDataLoader::GetLoadedDataMemoryUsage() const
 {
 	return CurrentMemoryUsage;

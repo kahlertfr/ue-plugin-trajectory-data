@@ -193,49 +193,6 @@ TArray<FVector> UTrajectoryBufferProvider::GetAllPositions() const
 	return TArray<FVector>();
 }
 
-bool UTrajectoryBufferProvider::BindToNiagaraSystem(UNiagaraComponent* NiagaraComponent, FName BufferParameterName)
-{
-	// Validate inputs
-	if (!NiagaraComponent)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("TrajectoryBufferProvider::BindToNiagaraSystem - NiagaraComponent is null"));
-		return false;
-	}
-
-	if (!PositionBufferResource)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("TrajectoryBufferProvider::BindToNiagaraSystem - PositionBufferResource is null. Call UpdateFromDataset() first."));
-		return false;
-	}
-
-	if (!PositionBufferResource->GetBufferSRV().IsValid())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("TrajectoryBufferProvider::BindToNiagaraSystem - BufferSRV is not valid. Ensure data is loaded."));
-		return false;
-	}
-
-	// Set the buffer as a user parameter
-	// Note: Niagara structured buffers require custom Niagara Data Interface for HLSL access
-	// This function passes metadata to Niagara parameters that can be used in HLSL
-	
-	UE_LOG(LogTemp, Display, TEXT("TrajectoryBufferProvider::BindToNiagaraSystem - Binding buffer '%s' to Niagara component"), *BufferParameterName.ToString());
-	UE_LOG(LogTemp, Display, TEXT("  Buffer has %d elements"), PositionBufferResource->GetNumElements());
-	
-	// Pass metadata as Niagara parameters (accessible in HLSL as int/float/vector parameters)
-	NiagaraComponent->SetIntParameter(FName(*(BufferParameterName.ToString() + TEXT("_NumElements"))), PositionBufferResource->GetNumElements());
-	NiagaraComponent->SetIntParameter(TEXT("NumTrajectories"), Metadata.NumTrajectories);
-	NiagaraComponent->SetIntParameter(TEXT("MaxSamplesPerTrajectory"), Metadata.MaxSamplesPerTrajectory);
-	NiagaraComponent->SetIntParameter(TEXT("TotalSampleCount"), Metadata.TotalSampleCount);
-	NiagaraComponent->SetVectorParameter(TEXT("BoundsMin"), Metadata.BoundsMin);
-	NiagaraComponent->SetVectorParameter(TEXT("BoundsMax"), Metadata.BoundsMax);
-	
-	UE_LOG(LogTemp, Warning, TEXT("TrajectoryBufferProvider::BindToNiagaraSystem - Note: Direct buffer binding to HLSL requires a custom Niagara Data Interface."));
-	UE_LOG(LogTemp, Warning, TEXT("  Metadata has been passed as parameters. For full buffer access in HLSL, implement a custom NDI."));
-	UE_LOG(LogTemp, Warning, TEXT("  Alternatively, use UTrajectoryTextureProvider for Blueprint-compatible workflow."));
-	
-	return true;
-}
-
 void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, TArray<FVector>& OutPositionData)
 {
 	// Calculate total samples needed

@@ -229,17 +229,6 @@ public:
 	TArray<FVector> GetAllPositions() const;
 
 	/**
-	 * DEPRECATED: This method does not actually bind the buffer to Niagara.
-	 * For texture-based approach, use UTrajectoryTextureProvider instead.
-	 * For built-in Position Array approach, use GetAllPositions() with SetNiagaraArrayPosition().
-	 * 
-	 * @deprecated Use GetAllPositions() with UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayPosition()
-	 */
-	UE_DEPRECATED(5.6, "Use GetAllPositions() with SetNiagaraArrayPosition() instead")
-	UFUNCTION(BlueprintCallable, Category = "Trajectory Data", meta = (DeprecatedFunction, DeprecationMessage = "Use GetAllPositions() with SetNiagaraArrayPosition() instead"))
-	bool BindToNiagaraSystem(class UNiagaraComponent* NiagaraComponent, FName BufferParameterName);
-
-	/**
 	 * Release CPU copy of position data to save memory
 	 * Call this after data has been transferred to Niagara system
 	 * This can save significant memory (e.g., 240MB for 10K trajectories × 2K samples)
