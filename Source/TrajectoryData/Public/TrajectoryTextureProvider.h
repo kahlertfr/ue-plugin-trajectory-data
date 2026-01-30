@@ -64,6 +64,10 @@ struct TRAJECTORYDATA_API FTrajectoryTextureMetadata
  * Component that converts trajectory data into a GPU Texture2DArray for Niagara
  * Uses Texture2DArray for dynamic texture count - no need to know trajectory count at design time
  * 
+ * DEPRECATED: This approach is 10x slower than UTrajectoryBufferProvider.
+ * Use UTrajectoryBufferProvider with built-in Position Array NDI for better performance.
+ * This class is kept for backward compatibility and custom workflows requiring texture access.
+ * 
  * Texture Encoding Details:
  * - Format: PF_FloatRGBA (4 channels of 16-bit float, 8 bytes per texel)
  * - Width: Based on actual maximum samples in the dataset (not fixed)

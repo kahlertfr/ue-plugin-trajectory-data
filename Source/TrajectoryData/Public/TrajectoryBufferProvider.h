@@ -105,6 +105,12 @@ public:
 	/** Get CPU position data */
 	const TArray<FVector>& GetCPUPositionData() const { return CPUPositionData; }
 
+	/** 
+	 * Release CPU position data to save memory after GPU upload is complete
+	 * Call this after the GPU buffer is initialized to reduce memory footprint
+	 */
+	void ReleaseCPUData() { CPUPositionData.Empty(); }
+
 	// FRenderResource interface
 	virtual void InitResource(FRHICommandListBase& RHICmdList) override;
 	virtual void ReleaseResource() override;
@@ -223,23 +229,24 @@ public:
 	TArray<FVector> GetAllPositions() const;
 
 	/**
-	 * Bind the position buffer to a Niagara System (Blueprint-callable)
-	 * This function allows Blueprint users to connect the trajectory buffer provider
-	 * to a Niagara system without needing C++ code.
+	 * DEPRECATED: This method does not actually bind the buffer to Niagara.
+	 * For texture-based approach, use UTrajectoryTextureProvider instead.
+	 * For built-in Position Array approach, use GetAllPositions() with SetNiagaraArrayPosition().
 	 * 
-	 * @param NiagaraComponent The Niagara component to bind the buffer to
-	 * @param BufferParameterName Name of the StructuredBuffer parameter in Niagara (e.g., "PositionBuffer")
-	 * @return True if binding succeeded, false if buffer is invalid or Niagara component is null
-	 * 
-	 * Usage in Blueprint:
-	 * 1. Add TrajectoryBufferProvider component
-	 * 2. Call UpdateFromDataset(DatasetIndex) to load data
-	 * 3. Get reference to Niagara Component
-	 * 4. Call BindToNiagaraSystem(NiagaraComponent, "PositionBuffer")
-	 * 5. Niagara HLSL can now access: StructuredBuffer<float3> PositionBuffer;
+	 * @deprecated Use GetAllPositions() with UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayPosition()
+	 */
+	UE_DEPRECATED(5.6, "Use GetAllPositions() with SetNiagaraArrayPosition() instead")
+	UFUNCTION(BlueprintCallable, Category = "Trajectory Data", meta = (DeprecatedFunction, DeprecationMessage = "Use GetAllPositions() with SetNiagaraArrayPosition() instead"))
+	bool BindToNiagaraSystem(class UNiagaraComponent* NiagaraComponent, FName BufferParameterName);
+
+	/**
+	 * Release CPU copy of position data to save memory
+	 * Call this after data has been transferred to Niagara system
+	 * This can save significant memory (e.g., 240MB for 10K trajectories × 2K samples)
+	 * Note: After calling this, GetAllPositions() will return an empty array
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Trajectory Data")
-	bool BindToNiagaraSystem(class UNiagaraComponent* NiagaraComponent, FName BufferParameterName);
+	void ReleaseCPUPositionData();
 
 protected:
 	virtual void BeginDestroy() override;

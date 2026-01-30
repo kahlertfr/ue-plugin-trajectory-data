@@ -278,6 +278,15 @@ void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, 
 	check(TrajectoryInfo.Num() == Dataset.Trajectories.Num());
 }
 
+void UTrajectoryBufferProvider::ReleaseCPUPositionData()
+{
+	if (PositionBufferResource)
+	{
+		PositionBufferResource->ReleaseCPUData();
+		UE_LOG(LogTemp, Log, TEXT("TrajectoryBufferProvider: Released CPU position data to save memory"));
+	}
+}
+
 // Implementiere die Methode:
 void FTrajectoryPositionBufferResource::InitializeResource()
 {

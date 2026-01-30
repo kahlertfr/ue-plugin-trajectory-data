@@ -202,6 +202,13 @@ bool ADatasetVisualizationActor::PopulatePositionArrayNDI()
 	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully populated Position Array NDI with %d positions"), 
 	       AllPositions.Num());
 
+	// Release CPU position data from BufferProvider to save memory
+	// The data has been transferred to Niagara, so we don't need the CPU copy anymore
+	if (BufferProvider)
+	{
+		BufferProvider->ReleaseCPUPositionData();
+	}
+
 	return true;
 }
 
