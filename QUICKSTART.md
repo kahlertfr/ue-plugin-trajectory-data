@@ -1,205 +1,243 @@
 # Quick Start Guide
 
-This guide will help you get started with the Trajectory Data plugin in 5 minutes.
+Get started with the Trajectory Data plugin for Unreal Engine in 5 minutes.
 
 ## Step 1: Installation
 
 ### Option A: Git Submodule (Recommended)
 
-1. Add this plugin as a git submodule to your project's `Plugins` directory:
-   ```bash
-   cd YourProject/Plugins
-   git submodule add https://github.com/kahlertfr/ue-plugin-trajectory-data.git
-   ```
+```bash
+cd YourProject/Plugins
+git submodule add https://github.com/kahlertfr/ue-plugin-trajectory-data.git
+```
 
-2. Regenerate project files:
-   - Windows: Right-click on your `.uproject` file → "Generate Visual Studio project files"
-   - Mac: Right-click on your `.uproject` file → "Generate Xcode project"
-
-3. Open your project in Unreal Engine. The plugin will be automatically detected and compiled.
+Then regenerate project files and open your project in Unreal Engine.
 
 ### Option B: Manual Copy
 
-1. Copy the entire repository to your Unreal Engine project's `Plugins` directory:
-   ```
-   YourProject/
-   └── Plugins/
-       └── ue-plugin-trajectory-data/  <-- Copy here
-   ```
+1. Copy this repository to `YourProject/Plugins/ue-plugin-trajectory-data/`
+2. Regenerate project files (right-click `.uproject` → Generate project files)
+3. Open your project in Unreal Engine
 
-2. If your project doesn't have a `Plugins` folder, create one at the project root level.
+## Step 2: Configure the Plugin
 
-3. Follow steps 2-3 from Option A above.
+Create or edit `YourProject/Config/DefaultTrajectoryData.ini`:
 
-## Step 2: Prepare Test Data
-
-1. Create a scenario directory structure with the example dataset:
-   ```
-   examples/sample_dataset/  →  C:/TestData/sample_scenario/sample_dataset/
-   ```
-   (Or any directory you prefer)
-
-2. Your directory structure should follow the **scenario → dataset** hierarchy:
-   ```
-   C:/TestData/
-   └── sample_scenario/
-       └── sample_dataset/
-           ├── dataset-manifest.json
-           ├── dataset-meta.bin
-           ├── dataset-trajmeta.bin
-           ├── shard-0.bin
-           └── shard-1.bin
-   ```
-   
-   Note: A dataset can have one or more shard files (e.g., `shard-0.bin`, `shard-1.bin`) for different time intervals.
-
-## Step 3: Configure the Plugin
-
-1. Navigate to your project's `Config` directory
-2. Create or edit `DefaultTrajectoryData.ini` (rename ExampleTrajectoryData.ini)
-3. Add the following:
-   ```ini
-   [/Script/TrajectoryData.TrajectoryDataSettings]
-   ScenariosDirectory=C:/TestData
-   bAutoScanOnStartup=True
-   bDebugLogging=True
-   ```
-
-   **Important:** Set `ScenariosDirectory` to the **root** directory containing your scenario folders.
-
-## Step 4: Create a Test Blueprint
-
-1. In Unreal Editor, create a new Blueprint Actor:
-   - Content Browser → Right-click → Blueprint Class → Actor
-   - Name it `BP_TrajectoryDataTest`
-
-2. Open the Blueprint and add the following nodes in the Event Graph:
-
-### Event Begin Play
-```
-Event Begin Play
-  → Scan Trajectory Datasets (returns Boolean)
-     → Branch (Condition = Return Value)
-        True → Get Available Datasets
-               → ForEachLoop (Array = Return Value)
-                  → Print String (In String = "Dataset: " + Array Element.Dataset Name)
-                  → Print String (In String = "Trajectories: " + ToString(Array Element.Total Trajectories))
-                  → Print String (In String = "Samples: " + ToString(Array Element.Total Samples))
-                  → Print String (In String = "Shards: " + ToString(Array.Length(Array Element.Shards)))
-        False → Print String (In String = "Failed to scan datasets!")
+```ini
+[/Script/TrajectoryData.TrajectoryDataSettings]
+ScenariosDirectory=C:/Data/TrajectoryScenarios
+bAutoScanOnStartup=True
+bDebugLogging=False
 ```
 
-### Simplified Version (Minimal Test)
+**Important:** `ScenariosDirectory` points to the root directory containing scenario folders.
+
+## Step 3: Prepare Test Data
+
+Organize your trajectory data following the **Scenario → Dataset** hierarchy:
+
+```
+C:/Data/TrajectoryScenarios/        ← ScenariosDirectory
+└── my_scenario/                     ← Scenario folder
+    └── my_dataset/                  ← Dataset folder
+        ├── dataset-manifest.json
+        ├── dataset-meta.bin
+        ├── dataset-trajmeta.bin
+        └── shard-0.bin              ← One or more shard files
+```
+
+Each dataset directory must contain:
+- `dataset-manifest.json` - Dataset metadata (required)
+- `dataset-meta.bin` - Binary metadata summary
+- `dataset-trajmeta.bin` - Per-trajectory metadata
+- `shard-*.bin` - Position data files (one or more)
+
+See [specification-trajectory-data-shard.md](specification-trajectory-data-shard.md) for data format details.
+
+## Step 4: Scan for Datasets
+
+### In Blueprint
+
+Create a Blueprint Actor (`BP_TrajectoryTest`):
+
 ```
 Event Begin Play
   → Scan Trajectory Datasets
-     → Get Number of Datasets
-        → Print String (In String = "Found " + ToString(Return Value) + " datasets")
+     → Branch (if success)
+        True  → Get Number of Datasets
+               → Print String ("Found {count} datasets")
+        False → Print String ("Failed to scan datasets")
 ```
 
-## Step 5: Test in Editor
+### In C++
 
-1. Drag `BP_TrajectoryDataTest` into your level
-2. Click Play (Alt+P)
-3. Check the Output Log (Window → Developer Tools → Output Log)
+```cpp
+#include "TrajectoryDataManager.h"
 
-### Expected Output:
-```
-LogTemp: TrajectoryDataManager: Scanning scenarios directory: C:/TestData
-LogTemp: TrajectoryDataManager: Dataset 'sample_dataset' in scenario 'sample_scenario': 1000 trajectories
-LogTemp: TrajectoryDataManager: Found 1 dataset(s) in scenario 'sample_scenario'
-LogTemp: TrajectoryDataManager: Scan complete. Found 1 datasets across all scenarios
-LogBlueprintUserMessages: Dataset: sample_dataset
-LogBlueprintUserMessages: Trajectories: 1000
-```
-
-## Step 6: Access Dataset Details
-
-To access detailed information about each dataset:
-
-```
-Get Available Datasets
-  → ForEachLoop (Array = Return Value)
-     → Print String (In String = "Dataset: " + Array Element.Dataset Name)
-     → Print String (In String = "Scenario: " + Array Element.Scenario Name)
-     → Print String (In String = "Trajectories: " + ToString(Array Element.Total Trajectories))
-     → Print String (In String = "Bounding Box: " + ToString(Array Element.Metadata.Bounding Box Min) + " to " + ToString(Array Element.Metadata.Bounding Box Max))
+void AMyActor::BeginPlay()
+{
+    Super::BeginPlay();
+    
+    UTrajectoryDataManager* Manager = UTrajectoryDataManager::Get();
+    if (Manager && Manager->ScanDatasets())
+    {
+        TArray<FTrajectoryDatasetInfo> Datasets = Manager->GetAvailableDatasets();
+        UE_LOG(LogTemp, Log, TEXT("Found %d datasets"), Datasets.Num());
+    }
+}
 ```
 
-## Common Blueprint Functions
+## Step 5: Load and Visualize Data
 
-### Scanning and Querying
-- **Scan Trajectory Datasets**: Refresh dataset list from disk
-- **Get Available Datasets**: Get all discovered datasets
-- **Get Dataset Info**: Get specific dataset by name
-- **Get Number of Datasets**: Count of available datasets
+### Quick Visualization (Recommended)
 
-### Configuration
-- **Get Scenarios Directory**: Current configured path
-- **Set Scenarios Directory**: Change path at runtime
+Use `ADatasetVisualizationActor` for one-function visualization:
 
-### Utilities
-- **Calculate Max Display Points**: Total sample points (trajectories × samples)
-- **Calculate Shard Display Points**: Sample points for one shard
+1. **Add to Level:** Drag `DatasetVisualizationActor` into your level
+2. **Configure:**
+   - Set `Niagara System Template` to your particle system
+   - Set `Auto Load On Begin Play` to true
+   - Set `Auto Load Dataset Index` to 0
+3. **Play:** The actor will automatically load and visualize the first dataset
 
-## Troubleshooting
+### Manual Loading in Blueprint
+
+```
+Event Begin Play
+  → Get Trajectory Loader
+     → Create Load Params
+        - Dataset Path: "C:/Data/TrajectoryScenarios/my_scenario/my_dataset"
+        - Selection Strategy: First N
+        - Num Trajectories: 100
+        - Start Time Step: -1 (dataset start)
+        - End Time Step: -1 (dataset end)
+        - Sample Rate: 1 (every sample)
+     → Load Trajectories Async
+        - Params: (from above)
+        - On Load Complete → Bind to Niagara
+```
+
+See [LOADING_AND_MEMORY.md](LOADING_AND_MEMORY.md) for detailed loading API.
+
+### Bind to Niagara System
+
+After loading data:
+
+```
+On Load Complete
+  → Get Dataset Visualization Actor
+     → Load And Bind Dataset (index: 0)
+        → On Success: Visualization Active
+```
+
+See [VISUALIZATION.md](VISUALIZATION.md) for detailed visualization guide.
+
+## Step 6: Memory Management
+
+**Important:** Always check memory before loading large datasets.
+
+### In Blueprint
+
+```
+Before Loading
+  → Calculate Dataset Memory Requirement
+     - Dataset Info: (selected dataset)
+  → Can Load Dataset
+     → Branch
+        True  → Load Trajectories Async
+        False → Print String ("Insufficient memory")
+```
+
+### Memory Optimization
+
+After binding data to Niagara, release CPU memory:
+
+```
+After Binding to Niagara
+  → Get Buffer Provider
+     → Release CPU Position Data  ← Saves significant memory
+```
+
+This can save 100-240MB per dataset depending on size.
+
+See [LOADING_AND_MEMORY.md](LOADING_AND_MEMORY.md) for detailed memory management.
+
+## Common Issues
 
 ### "Found 0 datasets"
 
 **Check:**
-1. Is `ScenariosDirectory` pointing to the correct root directory?
-2. Does the directory contain scenario subdirectories?
-3. Do those scenario subdirectories contain dataset subdirectories?
-4. Do the dataset subdirectories contain `dataset-manifest.json` files?
-5. Are the `dataset-manifest.json` files valid JSON?
+- Is `ScenariosDirectory` correct in `DefaultTrajectoryData.ini`?
+- Does the directory exist and have read permissions?
+- Is the directory structure correct (Scenario → Dataset)?
+- Does each dataset folder contain `dataset-manifest.json`?
 
 **Enable debug logging:**
 ```ini
 bDebugLogging=True
 ```
 
-### "Failed to scan datasets"
-
-**Check:**
-1. Does the directory exist?
-2. Do you have read permissions?
-3. Check the Output Log for error messages
-
 ### Path Issues (Windows)
 
-Use forward slashes OR double backslashes:
+Use forward slashes or double backslashes:
 - ✅ `C:/TestData`
 - ✅ `C:\\TestData`
-- ❌ `C:\TestData` (single backslash may cause issues)
+- ❌ `C:\TestData` (single backslash may fail)
+
+### "Failed to load dataset"
+
+**Check Output Log for specific error:**
+- Invalid dataset path
+- Corrupt or missing binary files
+- Insufficient memory
+- Invalid manifest JSON
 
 ## Next Steps
 
-Once you have successfully loaded dataset metadata, you can:
+### Learn More
 
-1. **Build a UI**: Create a Widget Blueprint to display available datasets
-2. **Filter Data**: Use time step ranges to determine what to load
-3. **Calculate Capacity**: Use `Calculate Max Display Points` to check if data fits in memory
-4. **Prepare for Loading**: Plan your visualization based on the metadata
+- **[LOADING_AND_MEMORY.md](LOADING_AND_MEMORY.md)** - Loading API and memory management
+- **[VISUALIZATION.md](VISUALIZATION.md)** - Visualization approaches and Niagara integration
+- **[NAMING_CONVENTION.md](NAMING_CONVENTION.md)** - Directory structure and naming rules
+- **[specification-trajectory-data-shard.md](specification-trajectory-data-shard.md)** - Data format specification
 
-## Example Use Cases
+### Example Workflows
 
-### Dataset Selection UI
-Create a list of available datasets with their properties, allowing users to select which dataset to visualize.
+**Dataset Selection UI:**
+```
+1. Scan datasets
+2. Display list with metadata (name, trajectory count, bounding box)
+3. Let user select dataset to visualize
+4. Check memory capacity
+5. Load and visualize if sufficient memory
+```
 
-### Time Range Filtering
-Use `Time Step Start` and `Time Step End` to create a slider showing the available time range for visualization.
+**Multi-Dataset Visualization:**
+```
+1. Load multiple datasets with LoadTrajectoriesAsync
+2. Create one DatasetVisualizationActor per dataset
+3. Bind each to a different Niagara system
+4. Position actors using dataset bounding boxes
+```
 
-### Performance Planning
-Calculate total display points to determine if you need streaming or can load everything at once.
+**Time-Range Filtering:**
+```
+1. Get dataset metadata (time step range)
+2. Create UI slider for time range selection
+3. Load only selected time range with StartTimeStep/EndTimeStep
+4. Update visualization dynamically
+```
 
-### Multi-Dataset Correlation
-Check if datasets share the same origin to identify spatially correlated data (e.g., bubbles + particles).
+## Performance Tips
+
+1. **Use Async Loading** - Always use `LoadTrajectoriesAsync` for large datasets
+2. **Sample Rate** - Use `SampleRate > 1` to reduce memory for high-frequency data
+3. **Time Ranges** - Load only needed time ranges with `StartTimeStep`/`EndTimeStep`
+4. **Release CPU Data** - Call `ReleaseCPUPositionData()` after binding to Niagara
+5. **Selection Strategy** - Use `Distributed` for representative sample across dataset
 
 ## Support
 
-For detailed documentation:
-- Plugin API: See main `README.md`
-- Data Format: `specification-trajectory-data-shard.md`
-- Implementation: `IMPLEMENTATION.md`
-
-For issues, check the Output Log with `bDebugLogging=True` enabled.
+- **Documentation:** See files in repository root
+- **Specification:** `specification-trajectory-data-shard.md`
+- **Issues:** Check Output Log with `bDebugLogging=True`

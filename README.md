@@ -1,90 +1,43 @@
 # Trajectory Data Plugin for Unreal Engine 5.6
 
-This plugin enables loading and management of trajectory data from simulation outputs in Unreal Engine.
+Load and visualize large-scale trajectory datasets from simulation outputs in Unreal Engine.
 
-## Directory Structure Convention
+## Quick Links
 
-The plugin uses a two-level naming hierarchy:
-
-**Scenario → Dataset**
-
-- **Scenario**: Top-level directory representing a simulation scenario or experiment
-- **Dataset**: Contains the actual trajectory data files (manifest, metadata, and binary shard files)
-  - Multiple datasets in the same scenario are spatially and temporally related
-  - Each dataset can contain multiple shard files for different time intervals
-
-Example:
-```
-ScenariosDirectory/
-└── experiment_2025_01/          ← Scenario
-    ├── bubbles/                  ← Dataset (contains files directly)
-    │   ├── dataset-manifest.json
-    │   ├── dataset-meta.bin
-    │   ├── dataset-trajmeta.bin
-    │   ├── shard-0.bin          ← Time interval 0
-    │   └── shard-1.bin          ← Time interval 1
-    └── particles/                ← Dataset (contains files directly)
-        ├── dataset-manifest.json
-        ├── dataset-meta.bin
-        ├── dataset-trajmeta.bin
-        └── shard-0.bin          ← Single time interval
-```
-
-## Overview
-
-The Trajectory Data plugin provides C++ classes and Blueprint-callable functions to:
-- Configure the location of trajectory datasets
-- Scan and discover available datasets
-- Read metadata from trajectory data shards
-- **Load actual trajectory data** from binary files
-- Access dataset information from Blueprints for visualization
-- Stream and manage large trajectory datasets efficiently
+- **[Quick Start Guide](QUICKSTART.md)** - Get started in 5 minutes
+- **[Loading & Memory Management](LOADING_AND_MEMORY.md)** - Load data and manage memory
+- **[Visualization Guide](VISUALIZATION.md)** - Visualize with Niagara systems
+- **[Naming Conventions](NAMING_CONVENTION.md)** - Directory structure and organization
+- **[Data Format Specification](specification-trajectory-data-shard.md)** - Technical specification
 
 ## Features
 
-- **Configuration Management**: Specify the location of trajectory datasets via a config file
-- **Dataset Discovery**: Automatically scan directories to find available trajectory datasets
-- **Metadata Reading**: Parse and access metadata from trajectory data shards (number of trajectories, samples, time steps, etc.)
-- **Trajectory Data Loading**: Load actual 3D position data with flexible filtering and sampling
-  - Multiple loading strategies (first N, distributed, explicit list)
-  - Configurable time ranges and sample rates
-  - Per-trajectory time range support
-  - Synchronous and asynchronous loading
-- **Data Streaming**: Load and unload data dynamically to manage memory usage
-- **Memory Monitoring**: Real-time memory estimation and capacity monitoring for trajectory data loading
-- **Multi-threading**: Background loading with progress callbacks
-- **Blueprint Integration**: Full Blueprint support with easy-to-use functions for building UIs and visualizations
-- **Spatially Correlated Data**: Support for multiple related shards with the same spatial origin
+- **Async Loading** - Non-blocking background loading with progress callbacks
+- **Memory Management** - Real-time monitoring and capacity validation
+- **Flexible Selection** - Load first N, distributed, or specific trajectories
+- **Niagara Integration** - Built-in Position Array NDI support (10x faster than texture approach)
+- **Multi-Dataset Support** - Load and visualize multiple related datasets
+- **Time-Range Filtering** - Load only needed time ranges to save memory
+- **Thread-Safe** - All loading happens on background threads
 
 ## Installation
 
-### Option 1: As a Git Submodule (Recommended)
-
-Add this plugin as a git submodule directly to your Unreal Engine project's `Plugins` directory:
+### Option 1: Git Submodule (Recommended)
 
 ```bash
 cd YourProject/Plugins
 git submodule add https://github.com/kahlertfr/ue-plugin-trajectory-data.git
 ```
 
-Then regenerate project files and compile your project. You can now edit the plugin directly from within your project and commit changes back to this repository.
+### Option 2: Manual Copy
 
-### Option 2: Manual Installation
+Copy this repository to `YourProject/Plugins/ue-plugin-trajectory-data/`
 
-1. Clone or download this repository
-2. Copy the entire repository folder to your Unreal Engine project's `Plugins` directory
-3. Regenerate project files
-4. Compile your project
+Then regenerate project files and compile your project.
 
 ## Configuration
 
-### Setting the Scenarios Directory
-
-The plugin reads its configuration from `Config/DefaultTrajectoryData.ini`. You can specify the scenarios directory in one of two ways:
-
-#### Option 1: Edit the Config File
-
-Edit `Config/DefaultTrajectoryData.ini`:
+Create or edit `YourProject/Config/DefaultTrajectoryData.ini`:
 
 ```ini
 [/Script/TrajectoryData.TrajectoryDataSettings]
@@ -93,134 +46,19 @@ bAutoScanOnStartup=True
 bDebugLogging=False
 ```
 
-#### Option 2: Use Blueprint Functions
-
-You can also set the scenarios directory at runtime using the Blueprint function:
-- **Set Scenarios Directory** - Sets the path to the scenarios directory
-
-### Configuration Options
-
-- **ScenariosDirectory**: Path to the root directory containing scenario folders
-- **bAutoScanOnStartup**: Whether to automatically scan for datasets when the plugin loads
-- **bDebugLogging**: Enable detailed logging for debugging
-
-## Usage in Blueprints
-
-### Scanning for Datasets
-
-Before accessing dataset information, you must scan the configured directory:
-
-1. Call **Scan Trajectory Datasets** to discover all available datasets
-2. This function returns `true` if scanning succeeded
-
-### Getting Dataset Information
-
-Once datasets are scanned, you can access their information:
-
-- **Get Available Datasets** - Returns an array of all discovered datasets
-- **Get Dataset Info** - Gets information about a specific dataset by name
-- **Get Number of Datasets** - Returns the count of available datasets
-
-### Dataset Information Structure
-
-Each dataset (FTrajectoryDatasetInfo) contains:
-- **Dataset Name**: Name derived from the dataset directory
-- **Dataset Path**: Full path to the dataset directory
-- **Scenario Name**: Name of the parent scenario this dataset belongs to
-- **Metadata**: Dataset metadata from the manifest file
-- **Total Trajectories**: Number of trajectories in the dataset
-
-### Dataset Metadata Structure
-
-Each dataset's metadata (FTrajectoryShardMetadata) contains information from the dataset-manifest.json file:
-- **Dataset Name**: Name identifier for the dataset
-- **Format Version**: Format version (currently 1)
-- **Trajectory Count**: Number of trajectories in this dataset
-- **Time Step Interval Size**: Number of time steps per trajectory
-- **Time Interval Seconds**: Time duration per interval in seconds
-- **Bounding Box Min/Max**: Spatial bounds of the data
-- **First/Last Trajectory Id**: Range of trajectory IDs
-- **Coordinate Units**: Units for spatial coordinates (e.g., "millimeters")
-- **Created At**: Timestamp when the dataset was created
-- **Converter Version**: Git commit hash of the converter tool
-- **Manifest File Path**: Path to the dataset-manifest.json file
-- **Dataset Directory**: Directory containing all dataset files
-
-### Calculating Display Points
-
-To determine if a dataset can be visualized:
-
-- **Calculate Max Display Points** - Returns total sample points for a dataset (trajectory_count × time_step_interval_size)
-- **Calculate Shard Display Points** - Returns sample points for a dataset (same as above)
-
-### Memory Monitoring
-
-The plugin provides real-time memory monitoring to prevent loading data that exceeds system capacity:
-
-#### Memory Information Functions:
-- **Get Total Physical Memory** - Returns total system memory in bytes
-- **Get Max Trajectory Data Memory** - Returns maximum memory for trajectory data (75% of total)
-- **Get Memory Info** - Returns complete memory usage information structure
-- **Format Memory Size** - Converts bytes to human-readable format (e.g., "1.5 GB")
-
-#### Memory Calculation Functions:
-- **Calculate Shard Memory Requirement** - Calculates memory needed for a shard
-- **Calculate Dataset Memory Requirement** - Calculates memory needed for a dataset
-
-Memory is calculated based on the Trajectory Data Shard specification:
-- Shard Meta: 76 bytes
-- Trajectory Meta: 40 bytes per trajectory
-- Data Block Header: 32 bytes
-- Data Entries: entry_size_bytes per trajectory
-
-#### Capacity Management Functions:
-- **Add Estimated Usage** - Add memory to usage estimate (for immediate feedback)
-- **Remove Estimated Usage** - Remove memory from usage estimate
-- **Reset Estimated Usage** - Clear all usage estimates
-- **Can Load Shard** - Check if a shard fits in remaining capacity
-- **Can Load Dataset** - Check if a dataset fits in remaining capacity
-
-#### Example Usage:
-```
-1. User selects datasets to load
-2. For each selection:
-   - Calculate memory requirement
-   - Add to estimated usage
-   - Update UI to show remaining capacity
-3. User sees immediate feedback before loading
-4. Check Can Load Dataset before actual loading
-```
-
-See [examples/MEMORY_MONITORING_BLUEPRINT.md](examples/MEMORY_MONITORING_BLUEPRINT.md) for a complete Blueprint example.
-
 ## Data Structure
 
-### Directory Hierarchy
-
-The plugin follows a three-level hierarchy: **Scenario → Dataset → Shard**
-
-- **Scenario**: A directory representing a simulation scenario (e.g., "experiment_2025_01")
-- **Dataset**: A subdirectory within a scenario containing related trajectory data (e.g., "bubbles", "particles")
-  - Multiple datasets within the same scenario are spatially and temporally related
-- **Shard**: A subdirectory containing the actual trajectory data files
+The plugin uses a **Scenario → Dataset** hierarchy:
 
 ```
 ScenariosDirectory/
-├── scenario_A/
-│   ├── dataset_bubbles/
-│   │   ├── dataset-manifest.json
-│   │   ├── dataset-meta.bin
-│   │   ├── dataset-trajmeta.bin
-│   │   ├── shard-0.bin
-│   │   ├── shard-1.bin
-│   │   └── shard-2.bin
-│   └── dataset_particles/
-│       ├── dataset-manifest.json
-│       ├── dataset-meta.bin
-│       ├── dataset-trajmeta.bin
-│       └── shard-0.bin
-└── scenario_B/
-    └── dataset_combined/
+└── my_scenario/                ← Scenario (simulation run)
+    ├── bubbles/                ← Dataset 1
+    │   ├── dataset-manifest.json
+    │   ├── dataset-meta.bin
+    │   ├── dataset-trajmeta.bin
+    │   └── shard-0.bin
+    └── particles/              ← Dataset 2 (spatially related)
         ├── dataset-manifest.json
         ├── dataset-meta.bin
         ├── dataset-trajmeta.bin
@@ -228,186 +66,171 @@ ScenariosDirectory/
         └── shard-1.bin
 ```
 
-Each dataset directory contains:
-- `dataset-manifest.json` - Human-readable JSON manifest
-- `dataset-meta.bin` - Binary metadata summary
-- `dataset-trajmeta.bin` - Per-trajectory metadata
-- `shard-<interval>.bin` - Shard files containing trajectory position data for time intervals (e.g., `shard-0.bin`, `shard-1.bin`, etc.)
+**Key points:**
+- **Scenario** = simulation run or experiment
+- **Dataset** = related trajectory data (e.g., bubbles, particles)
+- **Shards** = time-interval data files (shard-0.bin, shard-1.bin, etc.)
 
-## Manifest File Format
+See [NAMING_CONVENTION.md](NAMING_CONVENTION.md) for details.
 
-Each dataset requires a `dataset-manifest.json` file with the following structure:
+## Quick Start
 
-```json
-{
-  "scenario_name": "scenario_A",
-  "dataset_name": "bubbles",
-  "format_version": 1,
-  "endianness": "little",
-  "coordinate_units": "millimeters",
-  "float_precision": "float32",
-  "time_units": "seconds",
-  "time_step_interval_size": 50,
-  "time_interval_seconds": 0.1,
-  "entry_size_bytes": 616,
-  "bounding_box": {
-    "min": [-1000.0, -1000.0, -1000.0],
-    "max": [1000.0, 1000.0, 1000.0]
-  },
-  "trajectory_count": 1000,
-  "first_trajectory_id": 1,
-  "last_trajectory_id": 1000,
-  "created_at": "2025-12-12T12:00:00Z",
-  "converter_version": "b95b7d2"
-}
+### 1. Scan for Datasets
+
+**Blueprint:**
+```
+Event Begin Play
+  → Scan Trajectory Datasets
+     → Get Number of Datasets
+        → Print String
 ```
 
-See [specification-trajectory-data-shard.md](specification-trajectory-data-shard.md) for the complete specification.
-
-## Naming Convention Details
-
-### Scenario Level
-A scenario represents a complete simulation run or experiment. All datasets within a scenario are spatially and temporally related to each other.
-
-### Dataset Level
-A dataset within a scenario contains trajectory data for a specific type or subset of entities. For example:
-- A scenario might have separate datasets for "bubbles" and "particles"
-- These datasets share the same spatial origin and time reference
-- A scenario can have a single dataset or multiple related datasets
-- Each dataset directory contains the manifest and data files directly (no subdirectories)
-
-### Shard Files
-Each dataset can contain **one or more shard files** representing different time intervals:
-- Files are named `shard-<interval>.bin` where `<interval>` is the time interval index
-- Examples: `shard-0.bin`, `shard-1.bin`, `shard-2.bin`, etc.
-- Each shard file covers a consecutive time-interval block as specified in the dataset manifest
-- This allows datasets to be split across multiple files for manageable file sizes or different time ranges
-
-## Example Blueprint Usage
-
-### Basic Setup
-
-1. Create a Blueprint Actor or Widget
-2. In the Event Graph:
-   - Call **Scan Trajectory Datasets** on BeginPlay
-   - Call **Get Available Datasets** to retrieve all datasets
-   - Loop through the datasets to display them in your UI
-
-### Example Blueprint Flow
-
-```
-BeginPlay
-  └─> Scan Trajectory Datasets
-       └─> Get Available Datasets
-            └─> For Each Dataset
-                 └─> Print String (Dataset Name)
-                 └─> Print String (Total Trajectories)
-                 └─> Print String (Total Samples)
-```
-
-## C++ API
-
-You can also use the plugin from C++:
-
+**C++:**
 ```cpp
 #include "TrajectoryDataManager.h"
-#include "TrajectoryDataBlueprintLibrary.h"
 
-// Scan for datasets
 UTrajectoryDataManager* Manager = UTrajectoryDataManager::Get();
-Manager->ScanDatasets();
-
-// Get all datasets
-TArray<FTrajectoryDatasetInfo> Datasets = Manager->GetAvailableDatasets();
-
-// Access dataset information
-for (const FTrajectoryDatasetInfo& Dataset : Datasets)
+if (Manager && Manager->ScanDatasets())
 {
-    UE_LOG(LogTemp, Log, TEXT("Dataset: %s, Trajectories: %d, Samples: %d"),
-        *Dataset.DatasetName, Dataset.TotalTrajectories, Dataset.TotalSamples);
+    TArray<FTrajectoryDatasetInfo> Datasets = Manager->GetAvailableDatasets();
 }
 ```
 
-## Trajectory Data Loading
+### 2. Load Trajectory Data
 
-The plugin now supports loading actual trajectory data from binary files:
+**Blueprint:**
+```
+Get Trajectory Loader
+  → Load Trajectories Async
+     - Dataset Path: "C:/Data/Scenarios/MyScenario/MyDataset"
+     - Selection Strategy: First N
+     - Num Trajectories: 100
+     → On Load Complete → Visualize
+```
 
-### Loading Features
-
-- **Full Dataset Loading**: Load trajectories with customizable parameters
-  - Configurable time range (start/end time steps)
-  - Sample rate control (load every Nth sample)
-  - Trajectory selection strategies (first N, distributed, explicit list)
-- **Partial Loading**: Load specific trajectories by ID with individual time ranges
-- **Memory Validation**: Check memory requirements before loading
-- **Async Loading**: Non-blocking loading with progress callbacks
-- **Data Streaming**: Adjust time ranges dynamically to manage memory
-
-### Loading Strategies
-
-1. **First N Trajectories**: Load the first N trajectories from the dataset
-2. **Distributed**: Load N trajectories evenly distributed across the dataset
-3. **Explicit List**: Load specific trajectories by ID with custom time ranges per trajectory
-
-### Blueprint Functions
-
-- **Validate Trajectory Load Params** - Validate before loading
-- **Load Trajectories Sync** - Synchronous (blocking) loading
-- **Load Trajectories Async** - Asynchronous loading with progress callbacks
-- **Get Trajectory Loader** - Access loader for async operations
-- **Unload All Trajectories** - Free memory
-- **Get Loaded Data Memory Usage** - Monitor memory usage
-
-### C++ API
-
+**C++:**
 ```cpp
 #include "TrajectoryDataLoader.h"
 
-// Create load parameters
 FTrajectoryLoadParams Params;
-Params.DatasetPath = TEXT("C:/Data/Scenarios/Test/Dataset1");
-Params.StartTimeStep = 0;
-Params.EndTimeStep = 500;
-Params.SampleRate = 1;
+Params.DatasetPath = TEXT("C:/Data/Scenarios/Test/Dataset");
 Params.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
 Params.NumTrajectories = 100;
 
-// Validate and load
 UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
-FTrajectoryLoadValidation Validation = Loader->ValidateLoadParams(Params);
-if (Validation.bCanLoad)
-{
-    FTrajectoryLoadResult Result = Loader->LoadTrajectoriesSync(Params);
-    if (Result.bSuccess)
-    {
-        // Access loaded trajectories
-        for (const FLoadedTrajectory& Traj : Result.Trajectories)
-        {
-            // Process trajectory samples
-        }
-    }
-}
+Loader->LoadTrajectoriesAsync(Params, OnLoadComplete);
 ```
 
-See [Loading API Reference](LOADING_API.md) and [Loading Blueprint Examples](examples/LOADING_BLUEPRINTS.md) for detailed documentation.
+### 3. Visualize with Niagara
+
+**Easiest approach - Use DatasetVisualizationActor:**
+
+```
+Add DatasetVisualizationActor to level
+  → Set Niagara System Template
+  → Set Auto Load On Begin Play = true
+  → Set Auto Load Dataset Index = 0
+  → Play
+```
+
+The actor automatically loads and binds data to Niagara using the built-in Position Array NDI.
+
+See [VISUALIZATION.md](VISUALIZATION.md) for detailed visualization guide.
+
+## Key Classes
+
+### Blueprint-Accessible
+
+- **UTrajectoryDataManager** - Scan and discover datasets
+- **UTrajectoryDataLoader** - Load trajectory data (async/sync)
+- **UTrajectoryDataBlueprintLibrary** - Helper functions for memory, validation, formatting
+- **ADatasetVisualizationActor** - One-function visualization with Niagara
+- **UTrajectoryBufferProvider** - GPU buffer management (built-in Position Array NDI)
+
+### C++ Only
+
+- **FLoadedDataset** - Loaded trajectory data structure
+- **FTrajectoryLoadParams** - Loading parameters
+- **FTrajectoryShardMetadata** - Dataset metadata
+
+## Memory Management
+
+**Always validate memory before loading:**
+
+```
+Calculate Dataset Memory Requirement
+  → Can Load Dataset
+     → Branch
+        True  → Load Trajectories Async
+        False → Show Error
+```
+
+**Optimize memory after loading:**
+
+```
+After Binding to Niagara
+  → Get Buffer Provider
+     → Release CPU Position Data  ← Saves 100-240MB per dataset
+```
+
+See [LOADING_AND_MEMORY.md](LOADING_AND_MEMORY.md) for detailed memory management.
+
+## Visualization Approaches
+
+The plugin supports two visualization methods:
+
+### 1. Position Array NDI (Recommended)
+
+- **Performance:** 10x faster than texture approach
+- **Memory:** Efficient, with optional CPU data release
+- **Setup:** One function call with `DatasetVisualizationActor`
+- **Use case:** Production visualizations, large datasets
+
+### 2. Texture2DArray (Legacy)
+
+- **Performance:** Slower (10ms vs 1ms for buffer approach)
+- **Memory:** More GPU memory due to texture overhead
+- **Setup:** Custom Niagara Data Interface required
+- **Use case:** Custom workflows requiring texture access
+
+See [VISUALIZATION.md](VISUALIZATION.md) for comparison and setup guides.
+
+## Performance Tips
+
+1. **Use Async Loading** - `LoadTrajectoriesAsync` for large datasets
+2. **Check Memory First** - `CanLoadDataset` before loading
+3. **Sample Rate** - Use `SampleRate > 1` to reduce memory (e.g., `SampleRate=2` loads every 2nd sample)
+4. **Time Ranges** - Load only needed ranges with `StartTimeStep`/`EndTimeStep`
+5. **Release CPU Data** - Call `ReleaseCPUPositionData()` after binding to Niagara
+6. **Distributed Selection** - Use `ETrajectorySelectionStrategy::Distributed` for representative samples
+
+## Example Use Cases
+
+### Dataset Selection UI
+Create a widget showing available datasets with metadata, let users select which to visualize based on memory capacity.
+
+### Multi-Dataset Visualization
+Load multiple related datasets (e.g., bubbles + particles) and visualize them together using their shared spatial origin.
+
+### Time-Range Filtering
+Allow users to select time ranges with a slider and dynamically load only the selected range.
+
+### Performance Monitoring
+Use memory estimation to show users how much data can fit and adjust loading parameters accordingly.
 
 ## Documentation
 
-- [Trajectory Data Shard Specification](specification-trajectory-data-shard.md) - File format specification
-- [Quick Start Guide](QUICKSTART.md) - Getting started guide
-- [Implementation Details](IMPLEMENTATION.md) - Technical implementation details
-- [Loading API Reference](LOADING_API.md) - Complete API documentation for loading functionality
-- [Loading Blueprint Examples](examples/LOADING_BLUEPRINTS.md) - Blueprint usage examples for loading
-- [Memory Monitoring Blueprint Example](examples/MEMORY_MONITORING_BLUEPRINT.md) - Complete example for creating memory monitoring UI
+- **[QUICKSTART.md](QUICKSTART.md)** - 5-minute getting started guide
+- **[LOADING_AND_MEMORY.md](LOADING_AND_MEMORY.md)** - Loading API and memory management
+- **[VISUALIZATION.md](VISUALIZATION.md)** - Niagara integration and visualization
+- **[NAMING_CONVENTION.md](NAMING_CONVENTION.md)** - Directory structure and organization
+- **[specification-trajectory-data-shard.md](specification-trajectory-data-shard.md)** - Data format specification
 
-## Future Enhancements
+## System Requirements
 
-Planned features include:
-- Memory-mapped file I/O for ultra-fast access
-- Spatial filtering (bounding box queries)
-- Additional trajectory selection strategies
-- Niagara system integration helpers
-- Texture-based data export for GPU rendering
+- Unreal Engine 5.6 or later
+- C++17 compiler
+- Sufficient RAM for trajectory data (plugin uses 75% of total physical memory as limit)
 
 ## License
 
