@@ -81,18 +81,14 @@ void ExampleLoadFirstN()
 			UE_LOG(LogTemp, Log, TEXT("Trajectory %lld: %d samples (time steps %d to %d)"),
 				Traj.TrajectoryId, Traj.Samples.Num(), Traj.StartTimeStep, Traj.EndTimeStep);
 			
-			// Access individual samples
-			for (const FTrajectoryPositionSample& Sample : Traj.Samples)
+			// Access individual samples (now stored directly as FVector)
+			for (const FVector& Position : Traj.Samples)
 			{
-				if (Sample.bIsValid)
-				{
-					// Use sample position
-					FVector Position = Sample.Position;
-					int32 TimeStep = Sample.TimeStep;
-					
-					// Example: Create debug point
-					// DrawDebugPoint(GetWorld(), Position, 5.0f, FColor::Red, false, 1.0f);
-				}
+				// Use sample position
+				// Time step is implicit: Traj.StartTimeStep + index
+				
+				// Example: Create debug point
+				// DrawDebugPoint(GetWorld(), Position, 5.0f, FColor::Red, false, 1.0f);
 			}
 		}
 	}
@@ -251,17 +247,14 @@ public:
 		// Process loaded trajectories
 		for (const FLoadedTrajectory& Traj : Trajectories)
 		{
-			// Example: Create visualization
+			// Example: Create visualization (samples are now FVector directly)
 			for (int32 i = 0; i < Traj.Samples.Num() - 1; ++i)
 			{
-				if (Traj.Samples[i].bIsValid && Traj.Samples[i + 1].bIsValid)
-				{
-					// Example: Draw line between consecutive samples
-					// DrawDebugLine(GetWorld(), 
-					//     Traj.Samples[i].Position, 
-					//     Traj.Samples[i + 1].Position,
-					//     FColor::Green, false, 10.0f, 0, 2.0f);
-				}
+				// Example: Draw line between consecutive samples
+				// DrawDebugLine(GetWorld(), 
+				//     Traj.Samples[i], 
+				//     Traj.Samples[i + 1],
+				//     FColor::Green, false, 10.0f, 0, 2.0f);
 			}
 		}
 	}

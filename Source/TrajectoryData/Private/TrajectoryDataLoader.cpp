@@ -118,8 +118,8 @@ FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTraje
 	Validation.NumSamplesPerTrajectory = NumSamples;
 	
 	// Memory calculation: trajectory metadata + sample data
-	// Bytes per sample: FTrajectoryPositionSample now only contains FVector Position (12 bytes: 3 floats)
-	static constexpr int32 BytesPerSample = sizeof(FTrajectoryPositionSample);
+	// Bytes per sample: FVector Position (12 bytes: 3 floats)
+	static constexpr int32 BytesPerSample = sizeof(FVector);
 	int64 SampleMemory = (int64)TrajectoryIds.Num() * NumSamples * BytesPerSample;
 	
 	// Trajectory metadata overhead
@@ -418,7 +418,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			Offset += sizeof(int32);
 			
 			// Extract samples for the requested time range
-			TArray<FTrajectoryPositionSample> ShardSamples;
+			TArray<FVector> ShardSamples;
 			
 			// Determine the valid sample range within this shard's interval
 			// StartTimeStepInInterval is relative to the start of this shard interval (0..TimeStepIntervalSize-1)
@@ -476,8 +476,9 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 				ShardSamples.SetNum(NumSamples);
 				
 				// Bulk copy all position data at once (most efficient method)
-				// Source: binary struct array from mapped memory
-				// Dest: FVector array in ShardSamples (FTrajectoryPositionSample wraps FVector)
+				// Source: binary struct array from mapped memory (FPositionSampleBinary = 3 floats = FVector layout)
+				// Dest: FVector array in ShardSamples
+				// FPositionSampleBinary and FVector have identical memory layout (3 consecutive floats)
 				FMemory::Memcpy(ShardSamples.GetData(), BinarySamples, NumSamples * sizeof(FPositionSampleBinary));
 			}
 			else
@@ -491,14 +492,10 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 					int32 SampleIdx = TimeStepIdx - LoadStart;
 					const FPositionSampleBinary& BinarySample = BinarySamples[SampleIdx];
 					
-					// Create sample with position data
-					FTrajectoryPositionSample Sample;
-					Sample.Position = FVector(BinarySample.X, BinarySample.Y, BinarySample.Z);
-					
-					// Filter out NaN samples
+					// Filter out NaN samples and add position directly
 					if (!FMath::IsNaN(BinarySample.X) && !FMath::IsNaN(BinarySample.Y) && !FMath::IsNaN(BinarySample.Z))
 					{
-						ShardSamples.Add(Sample);
+						ShardSamples.Add(FVector(BinarySample.X, BinarySample.Y, BinarySample.Z));
 					}
 				}
 			}
@@ -528,7 +525,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		// No sorting needed!
 		
 		// Calculate memory usage
-		int64 TrajMemory = sizeof(FLoadedTrajectory) + Traj.Samples.Num() * sizeof(FTrajectoryPositionSample);
+		int64 TrajMemory = sizeof(FLoadedTrajectory) + Traj.Samples.Num() * sizeof(FVector);
 		MemoryUsed += TrajMemory;
 		
 		NewTrajectories.Add(MoveTemp(Traj));
@@ -916,8 +913,8 @@ int64 UTrajectoryDataLoader::CalculateMemoryRequirement(const FTrajectoryLoadPar
 		NumTrajectories = Params.TrajectorySelections.Num();
 	}
 
-	// Bytes per sample: FTrajectoryPositionSample now only contains FVector Position (12 bytes: 3 floats)
-	static constexpr int32 BytesPerSample = sizeof(FTrajectoryPositionSample);
+	// Bytes per sample: FVector Position (12 bytes: 3 floats)
+	static constexpr int32 BytesPerSample = sizeof(FVector);
 	
 	// Memory overhead adjustment factor: accounts for container overhead, alignment, and internal structures
 	// Set to 5.0 to match empirically observed memory usage

@@ -221,12 +221,9 @@ void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, 
 		Info.Extent = Traj.Extent;
 		TrajectoryInfo.Add(Info);
 
-		// Copy positions directly - NO iteration needed!
-		// This is the key performance improvement: direct memory operations
-		for (const FTrajectoryPositionSample& Sample : Traj.Samples)
-		{
-			OutPositionData.Add(Sample.Position);
-		}
+		// Copy positions using efficient bulk operations
+		// TArray::Append is optimized for bulk copying and handles all memory operations internally
+		OutPositionData.Append(Traj.Samples);
 
 		CurrentIndex += Traj.Samples.Num();
 	}
