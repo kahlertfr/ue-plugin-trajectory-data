@@ -137,8 +137,7 @@ void UTrajectoryTextureProvider::PackTrajectories(const FLoadedDataset& Dataset,
 				
 				if (SampleIdx < Traj.Samples.Num())
 				{
-					const FTrajectoryPositionSample& Sample = Traj.Samples[SampleIdx];
-					FVector Pos = Sample.Position;
+					const FVector& Pos = Traj.Samples[SampleIdx];
 					float TimeStep = static_cast<float>(Traj.StartTimeStep + SampleIdx);
 					
 					// Pack into Float16 RGBA: XYZ + TimeStep

@@ -132,9 +132,9 @@ struct TRAJECTORYDATA_API FLoadedTrajectory
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FVector Extent;
 
-	/** Array of position samples */
+	/** Array of position samples - stored as native FVector array for efficient memcpy */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	TArray<FTrajectoryPositionSample> Samples;
+	TArray<FVector> Samples;
 
 	/** Default extent in meters (10 cm half-extent = 20 cm full size) */
 	static constexpr float DefaultExtentMeters = 0.1f;
