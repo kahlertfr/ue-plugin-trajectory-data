@@ -336,12 +336,11 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		}
 	}
 	
-	// OPTIMIZATION 4: Pre-compute requested trajectory ID set (used by all shards)
+	// OPTIMIZATION 4: Pre-compute trajectory arrays/sets once (used by all shards)
 	// Create once outside the parallel loop to avoid redundant construction
-	TSet<int64> RequestedTrajIdSet(TrajectoryIds);
-	
-	// Pre-compute array copy once (used by inner ParallelFor in each shard)
+	// Array copy first, then create set from it to avoid reading TrajectoryIds twice
 	TArray<int64> TrajIdsArray = TrajectoryIds;
+	TSet<int64> RequestedTrajIdSet(TrajIdsArray);
 	
 	// Process each relevant shard to accumulate trajectory data across time intervals
 	// Use ParallelFor to process multiple shards concurrently
@@ -560,10 +559,11 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			
 			// OPTIMIZATION 2: Store in per-shard result map with per-shard locking
 			// Locking scope is much smaller (per-shard instead of global)
+			// Use FindOrAdd for safety in case a trajectory appears multiple times in a shard
 			if (ShardSamples.Num() > 0)
 			{
 				FScopeLock Lock(&ShardResult.Mutex);
-				ShardResult.TrajectorySamples.Add(TrajId, MoveTemp(ShardSamples));
+				ShardResult.TrajectorySamples.FindOrAdd(TrajId).Append(MoveTemp(ShardSamples));
 			}
 		});
 	});
