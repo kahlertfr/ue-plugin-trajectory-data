@@ -77,7 +77,7 @@ struct TRAJECTORYDATA_API FTrajectoryBufferInfo
 
 	/** Object extent */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	FVector Extent = FVector::ZeroVector;
+	FVector3f Extent = FVector3f::ZeroVector;
 };
 
 /**
@@ -91,7 +91,7 @@ public:
 	virtual ~FTrajectoryPositionBufferResource() = default;
 
 	/** Initialize with position data */
-	void Initialize(const TArray<FVector>& PositionData);
+	void Initialize(const TArray<FVector3f>& PositionData);
 
 	/** Initialize resource */
 	void InitializeResource();
@@ -103,7 +103,7 @@ public:
 	int32 GetNumElements() const { return NumElements; }
 
 	/** Get CPU position data */
-	const TArray<FVector>& GetCPUPositionData() const { return CPUPositionData; }
+	const TArray<FVector3f>& GetCPUPositionData() const { return CPUPositionData; }
 
 	/** 
 	 * Release CPU position data to save memory after GPU upload is complete
@@ -117,7 +117,7 @@ public:
 
 private:
 	/** CPU copy of position data */
-	TArray<FVector> CPUPositionData;
+	TArray<FVector3f> CPUPositionData;
 
 	/** GPU structured buffer */
 	FBufferRHIRef StructuredBuffer;
@@ -134,13 +134,13 @@ private:
  * More performant than texture-based approach - no per-sample iteration or encoding
  * 
  * Buffer Encoding Details:
- * - Format: Structured Buffer of FVector (12 bytes per position)
- * - Element Size: sizeof(FVector) = 12 bytes (3 × float32)
+ * - Format: Structured Buffer of FVector3f (12 bytes per position)
+ * - Element Size: sizeof(FVector3f) = 12 bytes (3 × float32)
  * - Total Size: TotalSamples × 12 bytes
  * - Precision: Full Float32 precision (no Float16 conversion)
  * 
  * Performance Benefits:
- * - **Direct Memory Copy**: Single FMemory::Memcpy from TArray<FVector> to GPU buffer
+ * - **Direct Memory Copy**: Single FMemory::Memcpy from TArray<FVector3f> to GPU buffer
  * - **No Iteration**: Eliminates per-sample loop during texture packing
  * - **No Conversion Overhead**: Keeps Float32 precision, no Float16 encoding
  * - **Faster HLSL Access**: Direct array indexing instead of texture sampling
@@ -226,7 +226,7 @@ public:
 	 * @return Array of all position vectors in the dataset
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
-	TArray<FVector> GetAllPositions() const;
+	TArray<FVector3f> GetAllPositions() const;
 
 	/**
 	 * Release CPU copy of position data to save memory
@@ -253,5 +253,5 @@ private:
 	FTrajectoryPositionBufferResource* PositionBufferResource;
 
 	/** Pack trajectory data into flat position array */
-	void PackTrajectories(const FLoadedDataset& Dataset, TArray<FVector>& OutPositionData);
+	void PackTrajectories(const FLoadedDataset& Dataset, TArray<FVector3f>& OutPositionData);
 };

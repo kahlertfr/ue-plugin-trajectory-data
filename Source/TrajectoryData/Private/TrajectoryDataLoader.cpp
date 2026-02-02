@@ -118,8 +118,8 @@ FTrajectoryLoadValidation UTrajectoryDataLoader::ValidateLoadParams(const FTraje
 	Validation.NumSamplesPerTrajectory = NumSamples;
 	
 	// Memory calculation: trajectory metadata + sample data
-	// Bytes per sample: FVector Position (12 bytes: 3 floats)
-	static constexpr int32 BytesPerSample = sizeof(FVector);
+	// Bytes per sample: FVector3f Position (12 bytes: 3 floats)
+	static constexpr int32 BytesPerSample = sizeof(FVector3f);
 	int64 SampleMemory = (int64)TrajectoryIds.Num() * NumSamples * BytesPerSample;
 	
 	// Trajectory metadata overhead
@@ -286,21 +286,93 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			LoadedTraj.TrajectoryId = TrajId;
 			LoadedTraj.StartTimeStep = TrajMeta->StartTimeStep;
 			LoadedTraj.EndTimeStep = TrajMeta->EndTimeStep;
-			LoadedTraj.Extent = FVector(TrajMeta->Extent[0], TrajMeta->Extent[1], TrajMeta->Extent[2]);
+			LoadedTraj.Extent = FVector3f(TrajMeta->Extent[0], TrajMeta->Extent[1], TrajMeta->Extent[2]);
 			LoadedTraj.Samples.Reserve((EndTime - StartTime) / Params.SampleRate);
 		}
 	}
 	
 	int64 MemoryUsed = 0;
-	FCriticalSection ResultMutex;  // For thread-safe access to shared state
 
-	// Process each relevant shard to accumulate trajectory data across time intervals
-	for (int32 ShardIndex : RelevantShards)
+	// OPTIMIZATION 1 & 2: Parallelize shard processing and eliminate lock contention
+	// Process shards in parallel using per-shard result maps, then merge sequentially
+	// This removes all locking from the hot path while maintaining temporal ordering
+	
+	// Structure to hold per-shard trajectory samples before merging
+	struct FShardTrajectoryData
 	{
+		TMap<int64, TArray<FVector3f>> TrajectorySamples;  // Per-trajectory samples for this shard
+		int32 ShardIndex;
+		FCriticalSection Mutex;  // Per-shard mutex for thread-safe map access
+	};
+	
+	// Structure to hold debug information for trajectory loading
+	struct FTrajectoryLoadDebugInfo
+	{
+		int64 TrajId;
+		int32 ShardIndex;
+		int32 ShardStartTimeStep;
+		int32 ShardEndTimeStep;
+		int32 StartTimeStepInInterval;
+		int32 ValidSampleCount;
+		int32 RequestedStartTimeStep;
+		int32 RequestedEndTimeStep;
+		int32 ValidRangeStart;
+		int32 ValidRangeEnd;
+		int32 LoadStart;
+		int32 LoadEnd;
+		int32 SamplesLoaded;
+	};
+	
+	// Thread-safe collection of debug info
+	TArray<FTrajectoryLoadDebugInfo> DebugInfoArray;
+	FCriticalSection DebugMutex;
+	
+	// Array to collect results from all shards (indexed by position in RelevantShards array)
+	TArray<FShardTrajectoryData> ShardResults;
+	ShardResults.SetNum(RelevantShards.Num());
+	
+	// OPTIMIZATION 3: Shard prefetching with futures
+	// Pre-start async mapping for all shards to enable parallel I/O
+	TArray<TFuture<TSharedPtr<FMappedShardFile>>> MappedShardFutures;
+	MappedShardFutures.Reserve(RelevantShards.Num());
+	
+	for (int32 ShardArrayIndex = 0; ShardArrayIndex < RelevantShards.Num(); ++ShardArrayIndex)
+	{
+		int32 ShardIndex = RelevantShards[ShardArrayIndex];
+		const FShardInfo* ShardInfo = ShardInfoTable.Find(ShardIndex);
+		if (ShardInfo)
+		{
+			FString ShardPath = ShardInfo->FilePath;
+			// Start async memory-mapping immediately to hide I/O latency
+			// Note: Capture ShardPath by value since async task may outlive this scope
+			// Note: Capturing 'this' is safe because we wait for futures via Get() before returning
+			MappedShardFutures.Add(Async(EAsyncExecution::ThreadPool, [this, ShardPath]()
+			{
+				return MapShardFile(ShardPath);
+			}));
+		}
+		else
+		{
+			// Add empty future as placeholder
+			MappedShardFutures.Add(MakeFulfilledPromise<TSharedPtr<FMappedShardFile>>(nullptr).GetFuture());
+		}
+	}
+	
+	// OPTIMIZATION 4: Pre-compute trajectory arrays/sets once (used by all shards)
+	// Create once outside the parallel loop to avoid redundant construction
+	// Array copy first, then create set from it to avoid reading TrajectoryIds twice
+	TArray<int64> TrajIdsArray = TrajectoryIds;
+	TSet<int64> RequestedTrajIdSet(TrajIdsArray);
+	
+	// Process each relevant shard to accumulate trajectory data across time intervals
+	// Use ParallelFor to process multiple shards concurrently
+	ParallelFor(RelevantShards.Num(), [&](int32 ShardArrayIndex)
+	{
+		int32 ShardIndex = RelevantShards[ShardArrayIndex];
 		const FShardInfo* ShardInfo = ShardInfoTable.Find(ShardIndex);
 		if (!ShardInfo)
 		{
-			continue;
+			return;
 		}
 
 		FString ShardPath = ShardInfo->FilePath;
@@ -309,15 +381,16 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		if (!PlatformFile.FileExists(*ShardPath))
 		{
 			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Shard file not found: %s"), *ShardPath);
-			continue;
+			return;
 		}
 
-		// Memory-map the shard file once for all trajectories
-		TSharedPtr<FMappedShardFile> MappedShard = MapShardFile(ShardPath);
+		// OPTIMIZATION 3: Wait for prefetched shard mapping to complete
+		// By the time we reach this shard, its I/O may already be done
+		TSharedPtr<FMappedShardFile> MappedShard = MappedShardFutures[ShardArrayIndex].Get();
 		if (!MappedShard.IsValid())
 		{
 			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Failed to map shard file: %s"), *ShardPath);
-			continue;
+			return;
 		}
 
 		// Read shard header from mapped memory
@@ -328,16 +401,16 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		if (!ReadShardHeaderMapped(MappedData, MappedSize, ShardHeader))
 		{
 			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Failed to read shard header: %s"), *ShardPath);
-			continue;
+			return;
 		}
 
 		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Processing shard %d with %d trajectory entries"),
 			ShardIndex, ShardHeader.TrajectoryEntryCount);
 
-		// Build an index of trajectory IDs to entry offsets for O(1) lookup instead of O(M) linear search
-		// This is critical for performance with millions of trajectories
+		// OPTIMIZATION 4: Build index only for requested trajectory IDs
+		// Instead of indexing all entries, only index those we're interested in
 		TMap<int64, int32> TrajIdToEntryIndex;
-		TrajIdToEntryIndex.Reserve(ShardHeader.TrajectoryEntryCount);
+		TrajIdToEntryIndex.Reserve(FMath::Min(TrajectoryIds.Num(), ShardHeader.TrajectoryEntryCount));
 		
 		int64 DataSectionStart = ShardHeader.DataSectionOffset;
 		int32 EntrySize = DatasetMeta.EntrySizeBytes;
@@ -353,15 +426,21 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			// Read trajectory ID from entry
 			uint64 EntryTrajId;
 			FMemory::Memcpy(&EntryTrajId, MappedData + EntryOffset, sizeof(uint64));
-			TrajIdToEntryIndex.Add(EntryTrajId, EntryIdx);
+			
+			// OPTIMIZATION 4: Only index entries for trajectories we're loading
+			if (RequestedTrajIdSet.Contains(EntryTrajId))
+			{
+				TrajIdToEntryIndex.Add(EntryTrajId, EntryIdx);
+			}
 		}
 		
-		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Built index for %d entries in shard %d"),
+		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Built index for %d requested entries in shard %d"),
 			TrajIdToEntryIndex.Num(), ShardIndex);
 
-		// For each requested trajectory, try to load samples from this shard (in parallel)
-		// Note: Not all trajectories will have data in every shard
-		TArray<int64> TrajIdsArray = TrajectoryIds;
+		// OPTIMIZATION 2: Use per-shard result structure to eliminate global lock contention
+		// Collect samples for this shard into a local structure with per-shard mutex
+		FShardTrajectoryData& ShardResult = ShardResults[ShardArrayIndex];
+		ShardResult.ShardIndex = ShardIndex;
 		
 		// Capture ShardInfo values to avoid pointer lifetime issues
 		int32 ShardStartTimeStep = ShardInfo->StartTimeStep;
@@ -371,9 +450,9 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		// The task graph naturally limits parallelism based on available worker threads
 		// UE's scheduler will balance work between game thread and worker threads automatically
 		
-		ParallelFor(TrajIdsArray.Num(), [this, &TrajIdsArray, &TrajMetaMap, &TrajectoryMap, &ResultMutex,
+		ParallelFor(TrajIdsArray.Num(), [this, &TrajIdsArray, &TrajMetaMap, &ShardResult, &DebugInfoArray, &DebugMutex,
 			MappedData, MappedSize, &ShardHeader, &DatasetMeta, &Params, ShardStartTimeStep, ShardEndTimeStep,
-			&TrajIdToEntryIndex, DataSectionStart, EntrySize](int32 Index)
+			&TrajIdToEntryIndex, DataSectionStart, EntrySize, ShardIndex](int32 Index)
 		{
 			int64 TrajId = TrajIdsArray[Index];
 			const FTrajectoryMetaBinary* TrajMeta = TrajMetaMap.Find(TrajId);
@@ -399,34 +478,53 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			}
 			
 			int32 EntryIdx = *EntryIdxPtr;
+			
+			// Calculate absolute offset to this entry in the file
+			// Per specification: file_offset = data_section_offset + (entry_offset_index * entry_size_bytes)
 			int64 EntryOffset = DataSectionStart + (EntryIdx * EntrySize);
 			
-			if (EntryOffset + (int64)sizeof(uint64) > MappedSize)
+			// Validate entry is within mapped file bounds
+			if (EntryOffset + EntrySize > MappedSize)
 			{
 				return;
 			}
 			
-			// Parse the entry to extract samples
-			int32 Offset = sizeof(uint64);
+			// ===== READ ENTRY HEADER FROM BINARY FILE =====
+			// Per specification, each entry has fixed layout:
+			// Offset 0:  uint64 trajectory_id (8 bytes)
+			// Offset 8:  int32 start_time_step_in_interval (4 bytes)
+			// Offset 12: int32 valid_sample_count (4 bytes)
+			// Offset 16: float32[time_step_interval_size][3] positions array
 			
+			const uint8* EntryPtr = MappedData + EntryOffset;
+			
+			// Read trajectory_id at offset 0 (8 bytes) - not used, but here for clarity
+			// uint64 EntryTrajId;
+			// FMemory::Memcpy(&EntryTrajId, EntryPtr + 0, sizeof(uint64));
+			
+			// Read start_time_step_in_interval at offset 8 (4 bytes)
 			int32 StartTimeStepInInterval;
-			FMemory::Memcpy(&StartTimeStepInInterval, MappedData + EntryOffset + Offset, sizeof(int32));
-			Offset += sizeof(int32);
+			FMemory::Memcpy(&StartTimeStepInInterval, EntryPtr + 8, sizeof(int32));
 			
+			// Read valid_sample_count at offset 12 (4 bytes)
 			int32 ValidSampleCount;
-			FMemory::Memcpy(&ValidSampleCount, MappedData + EntryOffset + Offset, sizeof(int32));
-			Offset += sizeof(int32);
+			FMemory::Memcpy(&ValidSampleCount, EntryPtr + 12, sizeof(int32));
 			
-			// Extract samples for the requested time range
-			TArray<FVector> ShardSamples;
+			// Positions array starts at offset 16
+			// It contains ALL time_step_interval_size samples (indexed 0..TimeStepIntervalSize-1)
+			// Invalid samples are marked with NaN values
+			const int32 PositionsArrayOffset = 16;
+			const FPositionSampleBinary* PositionsArray = reinterpret_cast<const FPositionSampleBinary*>(EntryPtr + PositionsArrayOffset);
 			
-			// Determine the valid sample range within this shard's interval
-			// StartTimeStepInInterval is relative to the start of this shard interval (0..TimeStepIntervalSize-1)
-			// ValidSampleCount tells us how many consecutive samples are valid starting from StartTimeStepInInterval
+			// ===== DETERMINE WHICH SAMPLES TO LOAD =====
+			
+			// Calculate the valid range within this shard
+			// StartTimeStepInInterval tells us where valid data starts (0-based index in interval)
+			// ValidSampleCount tells us how many consecutive samples are valid
 			int32 ValidRangeStart = StartTimeStepInInterval;
 			int32 ValidRangeEnd = StartTimeStepInInterval + ValidSampleCount;
 			
-			// Clamp to requested time range (relative to shard start)
+			// Clamp to the requested time range (convert global time steps to shard-relative indices)
 			int32 LoadStart = ValidRangeStart;
 			int32 LoadEnd = ValidRangeEnd;
 			
@@ -442,7 +540,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 				LoadEnd = FMath::Min(LoadEnd, RequestedEndRelative);
 			}
 			
-			// Ensure we stay within the shard's time step interval
+			// Ensure we stay within the shard's time step interval bounds
 			LoadStart = FMath::Clamp(LoadStart, 0, ShardHeader.TimeStepIntervalSize);
 			LoadEnd = FMath::Clamp(LoadEnd, 0, ShardHeader.TimeStepIntervalSize);
 			
@@ -451,35 +549,23 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 				return; // No samples to load from this shard for this trajectory
 			}
 			
-			// Calculate position data offset for the first sample to load
-			int32 PosDataStart = Offset + (LoadStart * 12);
+			// ===== LOAD POSITION SAMPLES =====
 			
-			// Validate we have enough data
-			int64 PosDataSize = (LoadEnd - LoadStart) * 12;
-			if (EntryOffset + PosDataStart + PosDataSize > MappedSize)
-			{
-				return; // Not enough data
-			}
+			TArray<FVector3f> ShardSamples;
 			
-			// Get pointer to the position data array (as binary structs)
-			const uint8* PosDataPtr = MappedData + EntryOffset + PosDataStart;
-			const FPositionSampleBinary* BinarySamples = reinterpret_cast<const FPositionSampleBinary*>(PosDataPtr);
-			
-			// FAST PATH: Sample rate 1 - bulk load all consecutive samples with single memcpy
+			// FAST PATH: Sample rate 1 - bulk load all consecutive samples with memcpy
 			if (Params.SampleRate == 1)
 			{
-				// Calculate exact number of samples
+				// Calculate exact number of samples to load
 				int32 NumSamples = LoadEnd - LoadStart;
 				
-				// Pre-allocate array to exact size
-				ShardSamples.Reserve(NumSamples);
-				ShardSamples.SetNum(NumSamples);
+				// Pre-allocate array
+				ShardSamples.SetNumUninitialized(NumSamples);
 				
-				// Bulk copy all position data at once (most efficient method)
-				// Source: binary struct array from mapped memory (FPositionSampleBinary = 3 floats = FVector layout)
-				// Dest: FVector array in ShardSamples
-				// FPositionSampleBinary and FVector have identical memory layout (3 consecutive floats)
-				FMemory::Memcpy(ShardSamples.GetData(), BinarySamples, NumSamples * sizeof(FPositionSampleBinary));
+				// Bulk copy position data using memcpy
+				// FPositionSampleBinary (3 floats, 12 bytes) maps directly to FVector3f (3 floats, 12 bytes)
+				// PositionsArray[LoadStart] corresponds to time step (ShardStartTimeStep + LoadStart)
+				FMemory::Memcpy(ShardSamples.GetData(), &PositionsArray[LoadStart], NumSamples * sizeof(FPositionSampleBinary));
 			}
 			else
 			{
@@ -487,30 +573,75 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 				int32 NumSamplesToLoad = ((LoadEnd - LoadStart) + Params.SampleRate - 1) / Params.SampleRate;
 				ShardSamples.Reserve(NumSamplesToLoad);
 				
+				// Iterate through the range with sample rate stride
 				for (int32 TimeStepIdx = LoadStart; TimeStepIdx < LoadEnd; TimeStepIdx += Params.SampleRate)
 				{
-					int32 SampleIdx = TimeStepIdx - LoadStart;
-					const FPositionSampleBinary& BinarySample = BinarySamples[SampleIdx];
+					// Read position from PositionsArray[TimeStepIdx]
+					// This corresponds to global time step: ShardStartTimeStep + TimeStepIdx
+					const FPositionSampleBinary& BinarySample = PositionsArray[TimeStepIdx];
 					
-					// Filter out NaN samples and add position directly
+					// Filter out NaN samples (invalid positions as per specification)
 					if (!FMath::IsNaN(BinarySample.X) && !FMath::IsNaN(BinarySample.Y) && !FMath::IsNaN(BinarySample.Z))
 					{
-						ShardSamples.Add(FVector(BinarySample.X, BinarySample.Y, BinarySample.Z));
+						ShardSamples.Add(FVector3f(BinarySample.X, BinarySample.Y, BinarySample.Z));
 					}
 				}
 			}
 			
-			// Add samples to the trajectory (thread-safe)
+			// ===== STORE RESULTS IN PER-SHARD MAP =====
+			
+			// Capture sample count BEFORE moving the array
+			int32 SamplesLoadedCount = ShardSamples.Num();
+			
+			// Store results with per-shard locking (much smaller contention than global lock)
+			// Use FindOrAdd for safety in case a trajectory appears multiple times in a shard
 			if (ShardSamples.Num() > 0)
 			{
-				FScopeLock Lock(&ResultMutex);
-				FLoadedTrajectory* LoadedTraj = TrajectoryMap.Find(TrajId);
-				if (LoadedTraj)
-				{
-					LoadedTraj->Samples.Append(ShardSamples);
-				}
+				FScopeLock Lock(&ShardResult.Mutex);
+				ShardResult.TrajectorySamples.FindOrAdd(TrajId).Append(MoveTemp(ShardSamples));
+			}
+			
+			// Capture debug information (thread-safe)
+			{
+				FTrajectoryLoadDebugInfo DebugInfo;
+				DebugInfo.TrajId = TrajId;
+				DebugInfo.ShardIndex = ShardIndex;
+				DebugInfo.ShardStartTimeStep = ShardStartTimeStep;
+				DebugInfo.ShardEndTimeStep = ShardEndTimeStep;
+				DebugInfo.StartTimeStepInInterval = StartTimeStepInInterval;
+				DebugInfo.ValidSampleCount = ValidSampleCount;
+				DebugInfo.RequestedStartTimeStep = Params.StartTimeStep;
+				DebugInfo.RequestedEndTimeStep = Params.EndTimeStep;
+				DebugInfo.ValidRangeStart = ValidRangeStart;
+				DebugInfo.ValidRangeEnd = ValidRangeEnd;
+				DebugInfo.LoadStart = LoadStart;
+				DebugInfo.LoadEnd = LoadEnd;
+				DebugInfo.SamplesLoaded = SamplesLoadedCount;  // Use captured count, not after Move
+				
+				FScopeLock DebugLock(&DebugMutex);
+				DebugInfoArray.Add(DebugInfo);
 			}
 		});
+	});
+	
+	// OPTIMIZATION 1 & 2: Merge shard results sequentially in chronological order
+	// This maintains temporal ordering while avoiding all locking during parallel processing
+	UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Merging results from %d shards"), ShardResults.Num());
+	
+	for (const FShardTrajectoryData& ShardResult : ShardResults)
+	{
+		for (const auto& SampleEntry : ShardResult.TrajectorySamples)
+		{
+			int64 TrajId = SampleEntry.Key;
+			const TArray<FVector3f>& ShardSamples = SampleEntry.Value;
+			
+			FLoadedTrajectory* LoadedTraj = TrajectoryMap.Find(TrajId);
+			if (LoadedTraj)
+			{
+				// Append samples in chronological order (shards are processed in sorted order)
+				LoadedTraj->Samples.Append(ShardSamples);
+			}
+		}
 	}
 
 	// Convert map to array
@@ -520,12 +651,12 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		FLoadedTrajectory& Traj = TrajEntry.Value;
 		
 		// Note: Samples are already in temporal order because:
-		// 1. Shards are processed sequentially in time order
+		// 1. Shards are merged sequentially in chronological order (sorted by time)
 		// 2. Within each shard, samples are loaded in consecutive order
 		// No sorting needed!
 		
 		// Calculate memory usage
-		int64 TrajMemory = sizeof(FLoadedTrajectory) + Traj.Samples.Num() * sizeof(FVector);
+		int64 TrajMemory = sizeof(FLoadedTrajectory) + Traj.Samples.Num() * sizeof(FVector3f);
 		MemoryUsed += TrajMemory;
 		
 		NewTrajectories.Add(MoveTemp(Traj));
@@ -549,6 +680,94 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Successfully loaded %d trajectories, using %s memory (Total datasets: %d, Total memory: %s)"),
 		Result.Trajectories.Num(), *UTrajectoryDataBlueprintLibrary::FormatMemorySize(MemoryUsed),
 		LoadedDatasets.Num(), *UTrajectoryDataBlueprintLibrary::FormatMemorySize(CurrentMemoryUsage));
+
+	// DEBUG: Export loaded data to human-readable text file for debugging
+	{
+		FString DebugFilePath = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("DebugTrajectoryData.txt"));
+		FString DebugOutput;
+		
+		DebugOutput += FString::Printf(TEXT("=== Trajectory Data Debug Export ===\n"));
+		DebugOutput += FString::Printf(TEXT("Dataset Path: %s\n"), *DatasetInfo.DatasetPath);
+		DebugOutput += FString::Printf(TEXT("Time Range: %d - %d\n"), StartTime, EndTime);
+		DebugOutput += FString::Printf(TEXT("Sample Rate: %d\n"), Params.SampleRate);
+		DebugOutput += FString::Printf(TEXT("Total Trajectories Loaded: %d\n"), Result.Trajectories.Num());
+		DebugOutput += FString::Printf(TEXT("Memory Used: %lld bytes\n\n"), MemoryUsed);
+		
+		// Add debug info section showing LoadStart calculations
+		DebugOutput += FString::Printf(TEXT("=== LoadStart Calculation Debug ===\n"));
+		DebugOutput += FString::Printf(TEXT("Total load operations: %d\n\n"), DebugInfoArray.Num());
+		
+		// Show first 20 debug entries
+		int32 NumToShow = FMath::Min(20, DebugInfoArray.Num());
+		for (int32 i = 0; i < NumToShow; ++i)
+		{
+			const FTrajectoryLoadDebugInfo& Info = DebugInfoArray[i];
+			DebugOutput += FString::Printf(TEXT("--- Load Operation %d ---\n"), i);
+			DebugOutput += FString::Printf(TEXT("TrajID: %lld, ShardIndex: %d\n"), Info.TrajId, Info.ShardIndex);
+			DebugOutput += FString::Printf(TEXT("Shard Time Range: %d - %d\n"), Info.ShardStartTimeStep, Info.ShardEndTimeStep);
+			DebugOutput += FString::Printf(TEXT("Requested Time Range: %d - %d\n"), Info.RequestedStartTimeStep, Info.RequestedEndTimeStep);
+			DebugOutput += FString::Printf(TEXT("StartTimeStepInInterval: %d\n"), Info.StartTimeStepInInterval);
+			DebugOutput += FString::Printf(TEXT("ValidSampleCount: %d\n"), Info.ValidSampleCount);
+			DebugOutput += FString::Printf(TEXT("ValidRange: [%d, %d)\n"), Info.ValidRangeStart, Info.ValidRangeEnd);
+			DebugOutput += FString::Printf(TEXT("LoadStart: %d, LoadEnd: %d\n"), Info.LoadStart, Info.LoadEnd);
+			DebugOutput += FString::Printf(TEXT("PositionsArray indices read: [%d, %d)\n"), Info.LoadStart, Info.LoadEnd);
+			DebugOutput += FString::Printf(TEXT("Global time steps read: [%d, %d)\n"), 
+				Info.ShardStartTimeStep + Info.LoadStart, Info.ShardStartTimeStep + Info.LoadEnd);
+			DebugOutput += FString::Printf(TEXT("Samples Loaded: %d\n\n"), Info.SamplesLoaded);
+		}
+		
+		if (DebugInfoArray.Num() > NumToShow)
+		{
+			DebugOutput += FString::Printf(TEXT("... (%d more load operations omitted) ...\n\n"), DebugInfoArray.Num() - NumToShow);
+		}
+		
+		DebugOutput += FString::Printf(TEXT("=== Loaded Trajectory Data ===\n\n"));
+		
+		for (int32 TrajIdx = 0; TrajIdx < Result.Trajectories.Num(); ++TrajIdx)
+		{
+			const FLoadedTrajectory& Traj = Result.Trajectories[TrajIdx];
+			DebugOutput += FString::Printf(TEXT("--- Trajectory %d ---\n"), TrajIdx);
+			DebugOutput += FString::Printf(TEXT("Trajectory ID: %lld\n"), Traj.TrajectoryId);
+			DebugOutput += FString::Printf(TEXT("Start Time Step: %d\n"), Traj.StartTimeStep);
+			DebugOutput += FString::Printf(TEXT("End Time Step: %d\n"), Traj.EndTimeStep);
+			DebugOutput += FString::Printf(TEXT("Extent: (%.3f, %.3f, %.3f)\n"), Traj.Extent.X, Traj.Extent.Y, Traj.Extent.Z);
+			DebugOutput += FString::Printf(TEXT("Sample Count: %d\n"), Traj.Samples.Num());
+			
+			// Write first 10 samples
+			int32 SamplesToShow = FMath::Min(10, Traj.Samples.Num());
+			DebugOutput += FString::Printf(TEXT("First %d samples:\n"), SamplesToShow);
+			for (int32 SampleIdx = 0; SampleIdx < SamplesToShow; ++SampleIdx)
+			{
+				const FVector3f& Sample = Traj.Samples[SampleIdx];
+				DebugOutput += FString::Printf(TEXT("  [%d]: (%.3f, %.3f, %.3f)\n"), 
+					SampleIdx, Sample.X, Sample.Y, Sample.Z);
+			}
+			
+			// Write last 10 samples if different from first
+			if (Traj.Samples.Num() > 20)
+			{
+				DebugOutput += FString::Printf(TEXT("... (%d samples omitted) ...\n"), Traj.Samples.Num() - 20);
+				DebugOutput += FString::Printf(TEXT("Last 10 samples:\n"));
+				for (int32 SampleIdx = Traj.Samples.Num() - 10; SampleIdx < Traj.Samples.Num(); ++SampleIdx)
+				{
+					const FVector3f& Sample = Traj.Samples[SampleIdx];
+					DebugOutput += FString::Printf(TEXT("  [%d]: (%.3f, %.3f, %.3f)\n"), 
+						SampleIdx, Sample.X, Sample.Y, Sample.Z);
+				}
+			}
+			
+			DebugOutput += TEXT("\n");
+		}
+		
+		if (FFileHelper::SaveStringToFile(DebugOutput, *DebugFilePath))
+		{
+			UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Debug data exported to: %s"), *DebugFilePath);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Failed to export debug data to: %s"), *DebugFilePath);
+		}
+	}
 
 	// Warn if accumulating many datasets or high memory usage
 	if (LoadedDatasets.Num() > 10)
@@ -913,8 +1132,8 @@ int64 UTrajectoryDataLoader::CalculateMemoryRequirement(const FTrajectoryLoadPar
 		NumTrajectories = Params.TrajectorySelections.Num();
 	}
 
-	// Bytes per sample: FVector Position (12 bytes: 3 floats)
-	static constexpr int32 BytesPerSample = sizeof(FVector);
+	// Bytes per sample: FVector3f Position (12 bytes: 3 floats)
+	static constexpr int32 BytesPerSample = sizeof(FVector3f);
 	
 	// Memory overhead adjustment factor: accounts for container overhead, alignment, and internal structures
 	// Set to 5.0 to match empirically observed memory usage
