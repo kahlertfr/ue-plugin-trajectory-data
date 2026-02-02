@@ -183,12 +183,22 @@ bool ADatasetVisualizationActor::PopulatePositionArrayNDI()
 
 	// Get all positions from buffer provider as a flat array
 	FTrajectoryBufferMetadata Metadata = BufferProvider->GetMetadata();
-	TArray<FVector3f> AllPositions = BufferProvider->GetAllPositions();
+	TArray<FVector3f> AllPositions3f = BufferProvider->GetAllPositions();
 	
-	if (AllPositions.Num() == 0)
+	if (AllPositions3f.Num() == 0)
 	{
 		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: No positions available"));
 		return false;
+	}
+
+	// Convert FVector3f to FVector for Niagara API
+	// Note: Niagara's SetNiagaraArrayPosition expects TArray<FVector> (double precision)
+	// even though internally it may use float precision
+	TArray<FVector> AllPositions;
+	AllPositions.Reserve(AllPositions3f.Num());
+	for (const FVector3f& Pos3f : AllPositions3f)
+	{
+		AllPositions.Add(FVector(Pos3f));
 	}
 
 	// Set the position array using UE5's built-in array NDI function
