@@ -561,22 +561,14 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 				
 				// Pre-allocate arrays
 				ShardSamples.Reserve(NumSamples);
+				ShardSamples.SetNumUninitialized(NumSamples);
 				
-				// Create temporary buffer with matching type for memcpy
-				TArray<FPositionSampleBinary> TempBinaryBuffer;
-				TempBinaryBuffer.SetNumUninitialized(NumSamples);
-				
-				// Bulk copy position data using memcpy (FPositionSampleBinary to FPositionSampleBinary)
+				// Bulk copy position data using memcpy (FPositionSampleBinary to FVector via reinterpret)
 				// PositionsArray[LoadStart] corresponds to time step (ShardStartTimeStep + LoadStart)
-				FMemory::Memcpy(TempBinaryBuffer.GetData(), &PositionsArray[LoadStart], NumSamples * sizeof(FPositionSampleBinary));
-				
-				// Convert from FPositionSampleBinary (3 floats, 12 bytes) to FVector (3 doubles, 24 bytes)
-				for (int32 i = 0; i < NumSamples; ++i)
-				{
-					const FPositionSampleBinary& BinarySample = TempBinaryBuffer[i];
-					// FVector constructor handles float to double conversion
-					ShardSamples.Add(FVector(BinarySample.X, BinarySample.Y, BinarySample.Z));
-				}
+				// FPositionSampleBinary (3 floats, 12 bytes) maps to FVector3f (3 floats, 12 bytes)
+				// Then FVector3f is implicitly converted to FVector (double precision) when needed
+				FVector3f* DestAsFloat = reinterpret_cast<FVector3f*>(ShardSamples.GetData());
+				FMemory::Memcpy(DestAsFloat, &PositionsArray[LoadStart], NumSamples * sizeof(FPositionSampleBinary));
 			}
 			else
 			{
