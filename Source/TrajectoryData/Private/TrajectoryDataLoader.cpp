@@ -625,6 +625,64 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		Result.Trajectories.Num(), *UTrajectoryDataBlueprintLibrary::FormatMemorySize(MemoryUsed),
 		LoadedDatasets.Num(), *UTrajectoryDataBlueprintLibrary::FormatMemorySize(CurrentMemoryUsage));
 
+	// DEBUG: Export loaded data to human-readable text file for debugging
+	{
+		FString DebugFilePath = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("DebugTrajectoryData.txt"));
+		FString DebugOutput;
+		
+		DebugOutput += FString::Printf(TEXT("=== Trajectory Data Debug Export ===\n"));
+		DebugOutput += FString::Printf(TEXT("Dataset Path: %s\n"), *DatasetInfo.DatasetPath);
+		DebugOutput += FString::Printf(TEXT("Time Range: %d - %d\n"), StartTime, EndTime);
+		DebugOutput += FString::Printf(TEXT("Sample Rate: %d\n"), Params.SampleRate);
+		DebugOutput += FString::Printf(TEXT("Total Trajectories Loaded: %d\n"), Result.Trajectories.Num());
+		DebugOutput += FString::Printf(TEXT("Memory Used: %lld bytes\n\n"), MemoryUsed);
+		
+		for (int32 TrajIdx = 0; TrajIdx < Result.Trajectories.Num(); ++TrajIdx)
+		{
+			const FLoadedTrajectory& Traj = Result.Trajectories[TrajIdx];
+			DebugOutput += FString::Printf(TEXT("--- Trajectory %d ---\n"), TrajIdx);
+			DebugOutput += FString::Printf(TEXT("Trajectory ID: %lld\n"), Traj.TrajectoryId);
+			DebugOutput += FString::Printf(TEXT("Start Time Step: %d\n"), Traj.StartTimeStep);
+			DebugOutput += FString::Printf(TEXT("End Time Step: %d\n"), Traj.EndTimeStep);
+			DebugOutput += FString::Printf(TEXT("Extent: (%.3f, %.3f, %.3f)\n"), Traj.Extent.X, Traj.Extent.Y, Traj.Extent.Z);
+			DebugOutput += FString::Printf(TEXT("Sample Count: %d\n"), Traj.Samples.Num());
+			
+			// Write first 10 samples
+			int32 SamplesToShow = FMath::Min(10, Traj.Samples.Num());
+			DebugOutput += FString::Printf(TEXT("First %d samples:\n"), SamplesToShow);
+			for (int32 SampleIdx = 0; SampleIdx < SamplesToShow; ++SampleIdx)
+			{
+				const FVector& Sample = Traj.Samples[SampleIdx];
+				DebugOutput += FString::Printf(TEXT("  [%d]: (%.3f, %.3f, %.3f)\n"), 
+					SampleIdx, Sample.X, Sample.Y, Sample.Z);
+			}
+			
+			// Write last 10 samples if different from first
+			if (Traj.Samples.Num() > 20)
+			{
+				DebugOutput += FString::Printf(TEXT("... (%d samples omitted) ...\n"), Traj.Samples.Num() - 20);
+				DebugOutput += FString::Printf(TEXT("Last 10 samples:\n"));
+				for (int32 SampleIdx = Traj.Samples.Num() - 10; SampleIdx < Traj.Samples.Num(); ++SampleIdx)
+				{
+					const FVector& Sample = Traj.Samples[SampleIdx];
+					DebugOutput += FString::Printf(TEXT("  [%d]: (%.3f, %.3f, %.3f)\n"), 
+						SampleIdx, Sample.X, Sample.Y, Sample.Z);
+				}
+			}
+			
+			DebugOutput += TEXT("\n");
+		}
+		
+		if (FFileHelper::SaveStringToFile(DebugOutput, *DebugFilePath))
+		{
+			UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Debug data exported to: %s"), *DebugFilePath);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Failed to export debug data to: %s"), *DebugFilePath);
+		}
+	}
+
 	// Warn if accumulating many datasets or high memory usage
 	if (LoadedDatasets.Num() > 10)
 	{
