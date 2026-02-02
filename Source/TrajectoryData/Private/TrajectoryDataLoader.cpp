@@ -305,6 +305,28 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		FCriticalSection Mutex;  // Per-shard mutex for thread-safe map access
 	};
 	
+	// Structure to hold debug information for trajectory loading
+	struct FTrajectoryLoadDebugInfo
+	{
+		int64 TrajId;
+		int32 ShardIndex;
+		int32 ShardStartTimeStep;
+		int32 ShardEndTimeStep;
+		int32 StartTimeStepInInterval;
+		int32 ValidSampleCount;
+		int32 RequestedStartTimeStep;
+		int32 RequestedEndTimeStep;
+		int32 ValidRangeStart;
+		int32 ValidRangeEnd;
+		int32 LoadStart;
+		int32 LoadEnd;
+		int32 SamplesLoaded;
+	};
+	
+	// Thread-safe collection of debug info
+	TArray<FTrajectoryLoadDebugInfo> DebugInfoArray;
+	FCriticalSection DebugMutex;
+	
 	// Array to collect results from all shards (indexed by position in RelevantShards array)
 	TArray<FShardTrajectoryData> ShardResults;
 	ShardResults.SetNum(RelevantShards.Num());
@@ -428,9 +450,9 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		// The task graph naturally limits parallelism based on available worker threads
 		// UE's scheduler will balance work between game thread and worker threads automatically
 		
-		ParallelFor(TrajIdsArray.Num(), [this, &TrajIdsArray, &TrajMetaMap, &ShardResult,
+		ParallelFor(TrajIdsArray.Num(), [this, &TrajIdsArray, &TrajMetaMap, &ShardResult, &DebugInfoArray, &DebugMutex,
 			MappedData, MappedSize, &ShardHeader, &DatasetMeta, &Params, ShardStartTimeStep, ShardEndTimeStep,
-			&TrajIdToEntryIndex, DataSectionStart, EntrySize](int32 Index)
+			&TrajIdToEntryIndex, DataSectionStart, EntrySize, ShardIndex](int32 Index)
 		{
 			int64 TrajId = TrajIdsArray[Index];
 			const FTrajectoryMetaBinary* TrajMeta = TrajMetaMap.Find(TrajId);
@@ -496,10 +518,6 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			
 			// ===== DETERMINE WHICH SAMPLES TO LOAD =====
 			
-			// DEBUG: Log the values we're working with
-			UE_LOG(LogTemp, VeryVerbose, TEXT("  TrajID %lld: StartTimeStepInInterval=%d, ValidSampleCount=%d, ShardStartTimeStep=%d, ShardEndTimeStep=%d"),
-				TrajId, StartTimeStepInInterval, ValidSampleCount, ShardStartTimeStep, ShardEndTimeStep);
-			
 			// Calculate the valid range within this shard
 			// StartTimeStepInInterval tells us where valid data starts (0-based index in interval)
 			// ValidSampleCount tells us how many consecutive samples are valid
@@ -514,24 +532,17 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			{
 				int32 RequestedStartRelative = Params.StartTimeStep - ShardStartTimeStep;
 				LoadStart = FMath::Max(LoadStart, RequestedStartRelative);
-				UE_LOG(LogTemp, VeryVerbose, TEXT("    Params.StartTimeStep=%d, RequestedStartRelative=%d, LoadStart after clamp=%d"),
-					Params.StartTimeStep, RequestedStartRelative, LoadStart);
 			}
 			
 			if (Params.EndTimeStep >= 0)
 			{
 				int32 RequestedEndRelative = Params.EndTimeStep - ShardStartTimeStep + 1;
 				LoadEnd = FMath::Min(LoadEnd, RequestedEndRelative);
-				UE_LOG(LogTemp, VeryVerbose, TEXT("    Params.EndTimeStep=%d, RequestedEndRelative=%d, LoadEnd after clamp=%d"),
-					Params.EndTimeStep, RequestedEndRelative, LoadEnd);
 			}
 			
 			// Ensure we stay within the shard's time step interval bounds
 			LoadStart = FMath::Clamp(LoadStart, 0, ShardHeader.TimeStepIntervalSize);
 			LoadEnd = FMath::Clamp(LoadEnd, 0, ShardHeader.TimeStepIntervalSize);
-			
-			UE_LOG(LogTemp, VeryVerbose, TEXT("    Final: LoadStart=%d, LoadEnd=%d (will read from PositionsArray[%d] to [%d])"),
-				LoadStart, LoadEnd, LoadStart, LoadEnd-1);
 			
 			if (LoadStart >= LoadEnd)
 			{
@@ -586,6 +597,27 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			{
 				FScopeLock Lock(&ShardResult.Mutex);
 				ShardResult.TrajectorySamples.FindOrAdd(TrajId).Append(MoveTemp(ShardSamples));
+			}
+			
+			// Capture debug information (thread-safe)
+			{
+				FTrajectoryLoadDebugInfo DebugInfo;
+				DebugInfo.TrajId = TrajId;
+				DebugInfo.ShardIndex = ShardIndex;
+				DebugInfo.ShardStartTimeStep = ShardStartTimeStep;
+				DebugInfo.ShardEndTimeStep = ShardEndTimeStep;
+				DebugInfo.StartTimeStepInInterval = StartTimeStepInInterval;
+				DebugInfo.ValidSampleCount = ValidSampleCount;
+				DebugInfo.RequestedStartTimeStep = Params.StartTimeStep;
+				DebugInfo.RequestedEndTimeStep = Params.EndTimeStep;
+				DebugInfo.ValidRangeStart = ValidRangeStart;
+				DebugInfo.ValidRangeEnd = ValidRangeEnd;
+				DebugInfo.LoadStart = LoadStart;
+				DebugInfo.LoadEnd = LoadEnd;
+				DebugInfo.SamplesLoaded = ShardSamples.Num();
+				
+				FScopeLock DebugLock(&DebugMutex);
+				DebugInfoArray.Add(DebugInfo);
 			}
 		});
 	});
@@ -658,6 +690,36 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		DebugOutput += FString::Printf(TEXT("Sample Rate: %d\n"), Params.SampleRate);
 		DebugOutput += FString::Printf(TEXT("Total Trajectories Loaded: %d\n"), Result.Trajectories.Num());
 		DebugOutput += FString::Printf(TEXT("Memory Used: %lld bytes\n\n"), MemoryUsed);
+		
+		// Add debug info section showing LoadStart calculations
+		DebugOutput += FString::Printf(TEXT("=== LoadStart Calculation Debug ===\n"));
+		DebugOutput += FString::Printf(TEXT("Total load operations: %d\n\n"), DebugInfoArray.Num());
+		
+		// Show first 20 debug entries
+		int32 NumToShow = FMath::Min(20, DebugInfoArray.Num());
+		for (int32 i = 0; i < NumToShow; ++i)
+		{
+			const FTrajectoryLoadDebugInfo& Info = DebugInfoArray[i];
+			DebugOutput += FString::Printf(TEXT("--- Load Operation %d ---\n"), i);
+			DebugOutput += FString::Printf(TEXT("TrajID: %lld, ShardIndex: %d\n"), Info.TrajId, Info.ShardIndex);
+			DebugOutput += FString::Printf(TEXT("Shard Time Range: %d - %d\n"), Info.ShardStartTimeStep, Info.ShardEndTimeStep);
+			DebugOutput += FString::Printf(TEXT("Requested Time Range: %d - %d\n"), Info.RequestedStartTimeStep, Info.RequestedEndTimeStep);
+			DebugOutput += FString::Printf(TEXT("StartTimeStepInInterval: %d\n"), Info.StartTimeStepInInterval);
+			DebugOutput += FString::Printf(TEXT("ValidSampleCount: %d\n"), Info.ValidSampleCount);
+			DebugOutput += FString::Printf(TEXT("ValidRange: [%d, %d)\n"), Info.ValidRangeStart, Info.ValidRangeEnd);
+			DebugOutput += FString::Printf(TEXT("LoadStart: %d, LoadEnd: %d\n"), Info.LoadStart, Info.LoadEnd);
+			DebugOutput += FString::Printf(TEXT("PositionsArray indices read: [%d, %d)\n"), Info.LoadStart, Info.LoadEnd);
+			DebugOutput += FString::Printf(TEXT("Global time steps read: [%d, %d)\n"), 
+				Info.ShardStartTimeStep + Info.LoadStart, Info.ShardStartTimeStep + Info.LoadEnd);
+			DebugOutput += FString::Printf(TEXT("Samples Loaded: %d\n\n"), Info.SamplesLoaded);
+		}
+		
+		if (DebugInfoArray.Num() > NumToShow)
+		{
+			DebugOutput += FString::Printf(TEXT("... (%d more load operations omitted) ...\n\n"), DebugInfoArray.Num() - NumToShow);
+		}
+		
+		DebugOutput += FString::Printf(TEXT("=== Loaded Trajectory Data ===\n\n"));
 		
 		for (int32 TrajIdx = 0; TrajIdx < Result.Trajectories.Num(); ++TrajIdx)
 		{
