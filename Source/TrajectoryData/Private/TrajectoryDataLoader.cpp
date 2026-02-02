@@ -322,7 +322,8 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		{
 			FString ShardPath = ShardInfo->FilePath;
 			// Start async memory-mapping immediately to hide I/O latency
-			// Note: Must capture ShardPath by value since the async task may outlive this scope
+			// Note: Capture ShardPath by value since async task may outlive this scope
+			// Note: Capturing 'this' is safe because we wait for futures via Get() before returning
 			MappedShardFutures.Add(Async(EAsyncExecution::ThreadPool, [this, ShardPath]()
 			{
 				return MapShardFile(ShardPath);
@@ -334,6 +335,13 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			MappedShardFutures.Add(MakeFulfilledPromise<TSharedPtr<FMappedShardFile>>(nullptr).GetFuture());
 		}
 	}
+	
+	// OPTIMIZATION 4: Pre-compute requested trajectory ID set (used by all shards)
+	// Create once outside the parallel loop to avoid redundant construction
+	TSet<int64> RequestedTrajIdSet(TrajectoryIds);
+	
+	// Pre-compute array copy once (used by inner ParallelFor in each shard)
+	TArray<int64> TrajIdsArray = TrajectoryIds;
 	
 	// Process each relevant shard to accumulate trajectory data across time intervals
 	// Use ParallelFor to process multiple shards concurrently
@@ -386,9 +394,6 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		int64 DataSectionStart = ShardHeader.DataSectionOffset;
 		int32 EntrySize = DatasetMeta.EntrySizeBytes;
 		
-		// Create a set for O(1) lookup of requested trajectory IDs
-		TSet<int64> RequestedTrajIdSet(TrajectoryIds);
-		
 		for (int32 EntryIdx = 0; EntryIdx < ShardHeader.TrajectoryEntryCount; ++EntryIdx)
 		{
 			int64 EntryOffset = DataSectionStart + (EntryIdx * EntrySize);
@@ -415,10 +420,6 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		// Collect samples for this shard into a local structure with per-shard mutex
 		FShardTrajectoryData& ShardResult = ShardResults[ShardArrayIndex];
 		ShardResult.ShardIndex = ShardIndex;
-		
-		// For each requested trajectory, try to load samples from this shard (in parallel)
-		// Note: Not all trajectories will have data in every shard
-		TArray<int64> TrajIdsArray = TrajectoryIds;
 		
 		// Capture ShardInfo values to avoid pointer lifetime issues
 		int32 ShardStartTimeStep = ShardInfo->StartTimeStep;
