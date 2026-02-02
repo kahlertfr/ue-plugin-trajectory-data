@@ -496,6 +496,10 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			
 			// ===== DETERMINE WHICH SAMPLES TO LOAD =====
 			
+			// DEBUG: Log the values we're working with
+			UE_LOG(LogTemp, VeryVerbose, TEXT("  TrajID %lld: StartTimeStepInInterval=%d, ValidSampleCount=%d, ShardStartTimeStep=%d, ShardEndTimeStep=%d"),
+				TrajId, StartTimeStepInInterval, ValidSampleCount, ShardStartTimeStep, ShardEndTimeStep);
+			
 			// Calculate the valid range within this shard
 			// StartTimeStepInInterval tells us where valid data starts (0-based index in interval)
 			// ValidSampleCount tells us how many consecutive samples are valid
@@ -510,17 +514,24 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			{
 				int32 RequestedStartRelative = Params.StartTimeStep - ShardStartTimeStep;
 				LoadStart = FMath::Max(LoadStart, RequestedStartRelative);
+				UE_LOG(LogTemp, VeryVerbose, TEXT("    Params.StartTimeStep=%d, RequestedStartRelative=%d, LoadStart after clamp=%d"),
+					Params.StartTimeStep, RequestedStartRelative, LoadStart);
 			}
 			
 			if (Params.EndTimeStep >= 0)
 			{
 				int32 RequestedEndRelative = Params.EndTimeStep - ShardStartTimeStep + 1;
 				LoadEnd = FMath::Min(LoadEnd, RequestedEndRelative);
+				UE_LOG(LogTemp, VeryVerbose, TEXT("    Params.EndTimeStep=%d, RequestedEndRelative=%d, LoadEnd after clamp=%d"),
+					Params.EndTimeStep, RequestedEndRelative, LoadEnd);
 			}
 			
 			// Ensure we stay within the shard's time step interval bounds
 			LoadStart = FMath::Clamp(LoadStart, 0, ShardHeader.TimeStepIntervalSize);
 			LoadEnd = FMath::Clamp(LoadEnd, 0, ShardHeader.TimeStepIntervalSize);
+			
+			UE_LOG(LogTemp, VeryVerbose, TEXT("    Final: LoadStart=%d, LoadEnd=%d (will read from PositionsArray[%d] to [%d])"),
+				LoadStart, LoadEnd, LoadStart, LoadEnd-1);
 			
 			if (LoadStart >= LoadEnd)
 			{
