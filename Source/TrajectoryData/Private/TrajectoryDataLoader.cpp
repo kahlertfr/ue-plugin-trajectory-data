@@ -302,6 +302,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 	{
 		TMap<int64, TArray<FVector>> TrajectorySamples;  // Per-trajectory samples for this shard
 		int32 ShardIndex;
+		FCriticalSection Mutex;  // Per-shard mutex for thread-safe map access
 	};
 	
 	// Array to collect results from all shards (indexed by position in RelevantShards array)
@@ -321,6 +322,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		{
 			FString ShardPath = ShardInfo->FilePath;
 			// Start async memory-mapping immediately to hide I/O latency
+			// Note: Must capture ShardPath by value since the async task may outlive this scope
 			MappedShardFutures.Add(Async(EAsyncExecution::ThreadPool, [this, ShardPath]()
 			{
 				return MapShardFile(ShardPath);
@@ -409,11 +411,10 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Built index for %d requested entries in shard %d"),
 			TrajIdToEntryIndex.Num(), ShardIndex);
 
-		// OPTIMIZATION 2: Use per-shard result map with mutex to eliminate global lock contention
-		// Collect samples for this shard into a local map with minimal locking scope
+		// OPTIMIZATION 2: Use per-shard result structure to eliminate global lock contention
+		// Collect samples for this shard into a local structure with per-shard mutex
 		FShardTrajectoryData& ShardResult = ShardResults[ShardArrayIndex];
 		ShardResult.ShardIndex = ShardIndex;
-		FCriticalSection ShardMutex;  // Per-shard mutex (not global)
 		
 		// For each requested trajectory, try to load samples from this shard (in parallel)
 		// Note: Not all trajectories will have data in every shard
@@ -427,7 +428,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		// The task graph naturally limits parallelism based on available worker threads
 		// UE's scheduler will balance work between game thread and worker threads automatically
 		
-		ParallelFor(TrajIdsArray.Num(), [this, &TrajIdsArray, &TrajMetaMap, &ShardResult, &ShardMutex,
+		ParallelFor(TrajIdsArray.Num(), [this, &TrajIdsArray, &TrajMetaMap, &ShardResult,
 			MappedData, MappedSize, &ShardHeader, &DatasetMeta, &Params, ShardStartTimeStep, ShardEndTimeStep,
 			&TrajIdToEntryIndex, DataSectionStart, EntrySize](int32 Index)
 		{
@@ -560,7 +561,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			// Locking scope is much smaller (per-shard instead of global)
 			if (ShardSamples.Num() > 0)
 			{
-				FScopeLock Lock(&ShardMutex);
+				FScopeLock Lock(&ShardResult.Mutex);
 				ShardResult.TrajectorySamples.Add(TrajId, MoveTemp(ShardSamples));
 			}
 		});
