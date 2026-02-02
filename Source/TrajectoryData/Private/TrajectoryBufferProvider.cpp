@@ -10,7 +10,7 @@
 // FTrajectoryPositionBufferResource Implementation
 // ============================================================================
 
-void FTrajectoryPositionBufferResource::Initialize(const TArray<FVector>& PositionData)
+void FTrajectoryPositionBufferResource::Initialize(const TArray<FVector3f>& PositionData)
 {
 	CPUPositionData = PositionData;
 	NumElements = PositionData.Num();
@@ -39,7 +39,7 @@ void FTrajectoryPositionBufferResource::InitResource(FRHICommandListBase& RHICmd
 	// Create structured buffer
 	FRHIResourceCreateInfo CreateInfo(TEXT("TrajectoryPositionBuffer"));
 	
-	const uint32 ElementSize = sizeof(FVector);
+	const uint32 ElementSize = sizeof(FVector3f);
 	const uint32 BufferSize = NumElements * ElementSize;
 
 	StructuredBuffer = RHICmdList.CreateStructuredBuffer(
@@ -156,7 +156,7 @@ bool UTrajectoryBufferProvider::UpdateFromDataset(int32 DatasetIndex)
 	}
 
 	// Pack trajectory data into flat position array
-	TArray<FVector> PositionData;
+	TArray<FVector3f> PositionData;
 	PackTrajectories(Dataset, PositionData);
 
 	Metadata.TotalSampleCount = PositionData.Num();
@@ -170,7 +170,7 @@ bool UTrajectoryBufferProvider::UpdateFromDataset(int32 DatasetIndex)
 
 	UE_LOG(LogTemp, Log, TEXT("TrajectoryBufferProvider: Updated with %d trajectories, %d total samples, %.2f MB"),
 		Metadata.NumTrajectories, Metadata.TotalSampleCount, 
-		(Metadata.TotalSampleCount * sizeof(FVector)) / (1024.0f * 1024.0f));
+		(Metadata.TotalSampleCount * sizeof(FVector3f)) / (1024.0f * 1024.0f));
 
 	return true;
 }
@@ -184,16 +184,16 @@ int64 UTrajectoryBufferProvider::GetTrajectoryId(int32 TrajectoryIndex) const
 	return -1;
 }
 
-TArray<FVector> UTrajectoryBufferProvider::GetAllPositions() const
+TArray<FVector3f> UTrajectoryBufferProvider::GetAllPositions() const
 {
 	if (PositionBufferResource)
 	{
 		return PositionBufferResource->GetCPUPositionData();
 	}
-	return TArray<FVector>();
+	return TArray<FVector3f>();
 }
 
-void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, TArray<FVector>& OutPositionData)
+void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, TArray<FVector3f>& OutPositionData)
 {
 	// Calculate total samples needed
 	int32 TotalSamples = 0;

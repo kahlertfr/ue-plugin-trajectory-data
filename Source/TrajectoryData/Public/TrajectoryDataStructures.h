@@ -130,11 +130,11 @@ struct TRAJECTORYDATA_API FLoadedTrajectory
 
 	/** Object half-extent in meters */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	FVector Extent;
+	FVector3f Extent;
 
-	/** Array of position samples - stored as native FVector array for efficient memcpy */
+	/** Array of position samples - stored as FVector3f (12 bytes) for Niagara compatibility */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	TArray<FVector> Samples;
+	TArray<FVector3f> Samples;
 
 	/** Default extent in meters (10 cm half-extent = 20 cm full size) */
 	static constexpr float DefaultExtentMeters = 0.1f;
@@ -143,7 +143,7 @@ struct TRAJECTORYDATA_API FLoadedTrajectory
 		: TrajectoryId(0)
 		, StartTimeStep(0)
 		, EndTimeStep(0)
-		, Extent(FVector(DefaultExtentMeters, DefaultExtentMeters, DefaultExtentMeters))
+		, Extent(FVector3f(DefaultExtentMeters, DefaultExtentMeters, DefaultExtentMeters))
 	{
 	}
 };

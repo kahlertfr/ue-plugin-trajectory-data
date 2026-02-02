@@ -183,7 +183,7 @@ bool ADatasetVisualizationActor::PopulatePositionArrayNDI()
 
 	// Get all positions from buffer provider as a flat array
 	FTrajectoryBufferMetadata Metadata = BufferProvider->GetMetadata();
-	TArray<FVector> AllPositions = BufferProvider->GetAllPositions();
+	TArray<FVector3f> AllPositions = BufferProvider->GetAllPositions();
 	
 	if (AllPositions.Num() == 0)
 	{
