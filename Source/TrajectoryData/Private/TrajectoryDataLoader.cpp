@@ -508,7 +508,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 				return; // No samples to load from this shard for this trajectory
 			}
 			
-			// Get pointer to the full positions array (starts at offset 16)
+			// Get pointer to the full positions array (starts at Offset, which is 16 after reading id+start+count)
 			// The positions array contains ALL time_step_interval_size samples (0..TimeStepIntervalSize-1)
 			// Invalid samples are marked with NaN
 			const uint8* PosDataPtr = MappedData + EntryOffset + Offset;
