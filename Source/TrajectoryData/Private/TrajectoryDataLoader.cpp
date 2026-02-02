@@ -292,15 +292,56 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 	}
 	
 	int64 MemoryUsed = 0;
-	FCriticalSection ResultMutex;  // For thread-safe access to shared state
 
-	// Process each relevant shard to accumulate trajectory data across time intervals
-	for (int32 ShardIndex : RelevantShards)
+	// OPTIMIZATION 1 & 2: Parallelize shard processing and eliminate lock contention
+	// Process shards in parallel using per-shard result maps, then merge sequentially
+	// This removes all locking from the hot path while maintaining temporal ordering
+	
+	// Structure to hold per-shard trajectory samples before merging
+	struct FShardTrajectoryData
 	{
+		TMap<int64, TArray<FVector>> TrajectorySamples;  // Per-trajectory samples for this shard
+		int32 ShardIndex;
+	};
+	
+	// Array to collect results from all shards (indexed by position in RelevantShards array)
+	TArray<FShardTrajectoryData> ShardResults;
+	ShardResults.SetNum(RelevantShards.Num());
+	
+	// OPTIMIZATION 3: Shard prefetching with futures
+	// Pre-start async mapping for all shards to enable parallel I/O
+	TArray<TFuture<TSharedPtr<FMappedShardFile>>> MappedShardFutures;
+	MappedShardFutures.Reserve(RelevantShards.Num());
+	
+	for (int32 ShardArrayIndex = 0; ShardArrayIndex < RelevantShards.Num(); ++ShardArrayIndex)
+	{
+		int32 ShardIndex = RelevantShards[ShardArrayIndex];
+		const FShardInfo* ShardInfo = ShardInfoTable.Find(ShardIndex);
+		if (ShardInfo)
+		{
+			FString ShardPath = ShardInfo->FilePath;
+			// Start async memory-mapping immediately to hide I/O latency
+			MappedShardFutures.Add(Async(EAsyncExecution::ThreadPool, [this, ShardPath]()
+			{
+				return MapShardFile(ShardPath);
+			}));
+		}
+		else
+		{
+			// Add empty future as placeholder
+			MappedShardFutures.Add(MakeFulfilledPromise<TSharedPtr<FMappedShardFile>>(nullptr).GetFuture());
+		}
+	}
+	
+	// Process each relevant shard to accumulate trajectory data across time intervals
+	// Use ParallelFor to process multiple shards concurrently
+	ParallelFor(RelevantShards.Num(), [&](int32 ShardArrayIndex)
+	{
+		int32 ShardIndex = RelevantShards[ShardArrayIndex];
 		const FShardInfo* ShardInfo = ShardInfoTable.Find(ShardIndex);
 		if (!ShardInfo)
 		{
-			continue;
+			return;
 		}
 
 		FString ShardPath = ShardInfo->FilePath;
@@ -309,15 +350,16 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		if (!PlatformFile.FileExists(*ShardPath))
 		{
 			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Shard file not found: %s"), *ShardPath);
-			continue;
+			return;
 		}
 
-		// Memory-map the shard file once for all trajectories
-		TSharedPtr<FMappedShardFile> MappedShard = MapShardFile(ShardPath);
+		// OPTIMIZATION 3: Wait for prefetched shard mapping to complete
+		// By the time we reach this shard, its I/O may already be done
+		TSharedPtr<FMappedShardFile> MappedShard = MappedShardFutures[ShardArrayIndex].Get();
 		if (!MappedShard.IsValid())
 		{
 			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Failed to map shard file: %s"), *ShardPath);
-			continue;
+			return;
 		}
 
 		// Read shard header from mapped memory
@@ -328,19 +370,22 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		if (!ReadShardHeaderMapped(MappedData, MappedSize, ShardHeader))
 		{
 			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Failed to read shard header: %s"), *ShardPath);
-			continue;
+			return;
 		}
 
 		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Processing shard %d with %d trajectory entries"),
 			ShardIndex, ShardHeader.TrajectoryEntryCount);
 
-		// Build an index of trajectory IDs to entry offsets for O(1) lookup instead of O(M) linear search
-		// This is critical for performance with millions of trajectories
+		// OPTIMIZATION 4: Build index only for requested trajectory IDs
+		// Instead of indexing all entries, only index those we're interested in
 		TMap<int64, int32> TrajIdToEntryIndex;
-		TrajIdToEntryIndex.Reserve(ShardHeader.TrajectoryEntryCount);
+		TrajIdToEntryIndex.Reserve(FMath::Min(TrajectoryIds.Num(), ShardHeader.TrajectoryEntryCount));
 		
 		int64 DataSectionStart = ShardHeader.DataSectionOffset;
 		int32 EntrySize = DatasetMeta.EntrySizeBytes;
+		
+		// Create a set for O(1) lookup of requested trajectory IDs
+		TSet<int64> RequestedTrajIdSet(TrajectoryIds);
 		
 		for (int32 EntryIdx = 0; EntryIdx < ShardHeader.TrajectoryEntryCount; ++EntryIdx)
 		{
@@ -353,12 +398,23 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			// Read trajectory ID from entry
 			uint64 EntryTrajId;
 			FMemory::Memcpy(&EntryTrajId, MappedData + EntryOffset, sizeof(uint64));
-			TrajIdToEntryIndex.Add(EntryTrajId, EntryIdx);
+			
+			// OPTIMIZATION 4: Only index entries for trajectories we're loading
+			if (RequestedTrajIdSet.Contains(EntryTrajId))
+			{
+				TrajIdToEntryIndex.Add(EntryTrajId, EntryIdx);
+			}
 		}
 		
-		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Built index for %d entries in shard %d"),
+		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Built index for %d requested entries in shard %d"),
 			TrajIdToEntryIndex.Num(), ShardIndex);
 
+		// OPTIMIZATION 2: Use per-shard result map with mutex to eliminate global lock contention
+		// Collect samples for this shard into a local map with minimal locking scope
+		FShardTrajectoryData& ShardResult = ShardResults[ShardArrayIndex];
+		ShardResult.ShardIndex = ShardIndex;
+		FCriticalSection ShardMutex;  // Per-shard mutex (not global)
+		
 		// For each requested trajectory, try to load samples from this shard (in parallel)
 		// Note: Not all trajectories will have data in every shard
 		TArray<int64> TrajIdsArray = TrajectoryIds;
@@ -371,7 +427,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		// The task graph naturally limits parallelism based on available worker threads
 		// UE's scheduler will balance work between game thread and worker threads automatically
 		
-		ParallelFor(TrajIdsArray.Num(), [this, &TrajIdsArray, &TrajMetaMap, &TrajectoryMap, &ResultMutex,
+		ParallelFor(TrajIdsArray.Num(), [this, &TrajIdsArray, &TrajMetaMap, &ShardResult, &ShardMutex,
 			MappedData, MappedSize, &ShardHeader, &DatasetMeta, &Params, ShardStartTimeStep, ShardEndTimeStep,
 			&TrajIdToEntryIndex, DataSectionStart, EntrySize](int32 Index)
 		{
@@ -500,17 +556,34 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 				}
 			}
 			
-			// Add samples to the trajectory (thread-safe)
+			// OPTIMIZATION 2: Store in per-shard result map with per-shard locking
+			// Locking scope is much smaller (per-shard instead of global)
 			if (ShardSamples.Num() > 0)
 			{
-				FScopeLock Lock(&ResultMutex);
-				FLoadedTrajectory* LoadedTraj = TrajectoryMap.Find(TrajId);
-				if (LoadedTraj)
-				{
-					LoadedTraj->Samples.Append(ShardSamples);
-				}
+				FScopeLock Lock(&ShardMutex);
+				ShardResult.TrajectorySamples.Add(TrajId, MoveTemp(ShardSamples));
 			}
 		});
+	});
+	
+	// OPTIMIZATION 1 & 2: Merge shard results sequentially in chronological order
+	// This maintains temporal ordering while avoiding all locking during parallel processing
+	UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Merging results from %d shards"), ShardResults.Num());
+	
+	for (const FShardTrajectoryData& ShardResult : ShardResults)
+	{
+		for (const auto& SampleEntry : ShardResult.TrajectorySamples)
+		{
+			int64 TrajId = SampleEntry.Key;
+			const TArray<FVector>& ShardSamples = SampleEntry.Value;
+			
+			FLoadedTrajectory* LoadedTraj = TrajectoryMap.Find(TrajId);
+			if (LoadedTraj)
+			{
+				// Append samples in chronological order (shards are processed in sorted order)
+				LoadedTraj->Samples.Append(ShardSamples);
+			}
+		}
 	}
 
 	// Convert map to array
@@ -520,7 +593,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		FLoadedTrajectory& Traj = TrajEntry.Value;
 		
 		// Note: Samples are already in temporal order because:
-		// 1. Shards are processed sequentially in time order
+		// 1. Shards are merged sequentially in chronological order (sorted by time)
 		// 2. Within each shard, samples are loaded in consecutive order
 		// No sorting needed!
 		
