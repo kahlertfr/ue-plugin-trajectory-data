@@ -508,18 +508,19 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 				return; // No samples to load from this shard for this trajectory
 			}
 			
-			// Calculate position data offset for the first sample to load
-			int32 PosDataStart = Offset + (LoadStart * 12);
+			// Get pointer to the full positions array (starts at offset 16)
+			// The positions array contains ALL time_step_interval_size samples (0..TimeStepIntervalSize-1)
+			// Invalid samples are marked with NaN
+			const uint8* PosDataPtr = MappedData + EntryOffset + Offset;
 			
-			// Validate we have enough data
-			int64 PosDataSize = (LoadEnd - LoadStart) * 12;
-			if (EntryOffset + PosDataStart + PosDataSize > MappedSize)
+			// Validate we have enough data for the full interval
+			int64 FullPosDataSize = ShardHeader.TimeStepIntervalSize * 12;
+			if (EntryOffset + Offset + FullPosDataSize > MappedSize)
 			{
 				return; // Not enough data
 			}
 			
-			// Get pointer to the position data array (as binary structs)
-			const uint8* PosDataPtr = MappedData + EntryOffset + PosDataStart;
+			// Cast to position sample array
 			const FPositionSampleBinary* BinarySamples = reinterpret_cast<const FPositionSampleBinary*>(PosDataPtr);
 			
 			// FAST PATH: Sample rate 1 - bulk load all consecutive samples with single memcpy
@@ -533,10 +534,9 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 				ShardSamples.SetNum(NumSamples);
 				
 				// Bulk copy all position data at once (most efficient method)
-				// Source: binary struct array from mapped memory (FPositionSampleBinary = 3 floats = FVector layout)
-				// Dest: FVector array in ShardSamples
+				// Source: binary struct array from mapped memory, starting at LoadStart index
 				// FPositionSampleBinary and FVector have identical memory layout (3 consecutive floats)
-				FMemory::Memcpy(ShardSamples.GetData(), BinarySamples, NumSamples * sizeof(FPositionSampleBinary));
+				FMemory::Memcpy(ShardSamples.GetData(), &BinarySamples[LoadStart], NumSamples * sizeof(FPositionSampleBinary));
 			}
 			else
 			{
@@ -546,8 +546,8 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 				
 				for (int32 TimeStepIdx = LoadStart; TimeStepIdx < LoadEnd; TimeStepIdx += Params.SampleRate)
 				{
-					int32 SampleIdx = TimeStepIdx - LoadStart;
-					const FPositionSampleBinary& BinarySample = BinarySamples[SampleIdx];
+					// Read directly from the full positions array at the correct index
+					const FPositionSampleBinary& BinarySample = BinarySamples[TimeStepIdx];
 					
 					// Filter out NaN samples and add position directly
 					if (!FMath::IsNaN(BinarySample.X) && !FMath::IsNaN(BinarySample.Y) && !FMath::IsNaN(BinarySample.Z))
