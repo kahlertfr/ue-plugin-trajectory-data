@@ -286,7 +286,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			LoadedTraj.TrajectoryId = TrajId;
 			LoadedTraj.StartTimeStep = TrajMeta->StartTimeStep;
 			LoadedTraj.EndTimeStep = TrajMeta->EndTimeStep;
-			LoadedTraj.Extent = FVector(TrajMeta->Extent[0], TrajMeta->Extent[1], TrajMeta->Extent[2]);
+			LoadedTraj.Extent = FVector3f(TrajMeta->Extent[0], TrajMeta->Extent[1], TrajMeta->Extent[2]);
 			LoadedTraj.Samples.Reserve((EndTime - StartTime) / Params.SampleRate);
 		}
 	}
@@ -633,7 +633,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		for (const auto& SampleEntry : ShardResult.TrajectorySamples)
 		{
 			int64 TrajId = SampleEntry.Key;
-			const TArray<FVector>& ShardSamples = SampleEntry.Value;
+			const TArray<FVector3f>& ShardSamples = SampleEntry.Value;
 			
 			FLoadedTrajectory* LoadedTraj = TrajectoryMap.Find(TrajId);
 			if (LoadedTraj)
@@ -738,7 +738,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			DebugOutput += FString::Printf(TEXT("First %d samples:\n"), SamplesToShow);
 			for (int32 SampleIdx = 0; SampleIdx < SamplesToShow; ++SampleIdx)
 			{
-				const FVector& Sample = Traj.Samples[SampleIdx];
+				const FVector3f& Sample = Traj.Samples[SampleIdx];
 				DebugOutput += FString::Printf(TEXT("  [%d]: (%.3f, %.3f, %.3f)\n"), 
 					SampleIdx, Sample.X, Sample.Y, Sample.Z);
 			}
@@ -750,7 +750,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 				DebugOutput += FString::Printf(TEXT("Last 10 samples:\n"));
 				for (int32 SampleIdx = Traj.Samples.Num() - 10; SampleIdx < Traj.Samples.Num(); ++SampleIdx)
 				{
-					const FVector& Sample = Traj.Samples[SampleIdx];
+					const FVector3f& Sample = Traj.Samples[SampleIdx];
 					DebugOutput += FString::Printf(TEXT("  [%d]: (%.3f, %.3f, %.3f)\n"), 
 						SampleIdx, Sample.X, Sample.Y, Sample.Z);
 				}
