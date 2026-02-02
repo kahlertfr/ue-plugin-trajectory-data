@@ -546,7 +546,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 				
 				for (int32 TimeStepIdx = LoadStart; TimeStepIdx < LoadEnd; TimeStepIdx += Params.SampleRate)
 				{
-					// Read directly from the full positions array at the correct index
+					// TimeStepIdx directly indexes the full positions array (0..TimeStepIntervalSize-1)
 					const FPositionSampleBinary& BinarySample = BinarySamples[TimeStepIdx];
 					
 					// Filter out NaN samples and add position directly
