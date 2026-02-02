@@ -591,6 +591,9 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			
 			// ===== STORE RESULTS IN PER-SHARD MAP =====
 			
+			// Capture sample count BEFORE moving the array
+			int32 SamplesLoadedCount = ShardSamples.Num();
+			
 			// Store results with per-shard locking (much smaller contention than global lock)
 			// Use FindOrAdd for safety in case a trajectory appears multiple times in a shard
 			if (ShardSamples.Num() > 0)
@@ -614,7 +617,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 				DebugInfo.ValidRangeEnd = ValidRangeEnd;
 				DebugInfo.LoadStart = LoadStart;
 				DebugInfo.LoadEnd = LoadEnd;
-				DebugInfo.SamplesLoaded = ShardSamples.Num();
+				DebugInfo.SamplesLoaded = SamplesLoadedCount;  // Use captured count, not after Move
 				
 				FScopeLock DebugLock(&DebugMutex);
 				DebugInfoArray.Add(DebugInfo);
