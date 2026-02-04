@@ -512,9 +512,18 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			FMemory::Memcpy(&ValidSampleCount, EntryPtr + 12, sizeof(int32));
 			
 			// Check for sentinel value indicating no valid samples in this interval
-			if (StartTimeStepInInterval == -1 || ValidSampleCount <= 0)
+			// Per specification: start_time_step_in_interval == -1 means "none valid"
+			if (StartTimeStepInInterval == -1)
 			{
 				return; // No valid samples in this interval for this trajectory
+			}
+			
+			// Validate sample count - should be positive if StartTimeStepInInterval is valid
+			if (ValidSampleCount <= 0)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Trajectory %llu in shard has valid StartTimeStepInInterval (%d) but invalid ValidSampleCount (%d). Skipping."),
+					TrajId, StartTimeStepInInterval, ValidSampleCount);
+				return; // Invalid data - skip this trajectory entry
 			}
 			
 			// Positions array starts at offset 16
@@ -575,7 +584,10 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 					const FPositionSampleBinary& BinarySample = PositionsArray[TimeStepIdx];
 					
 					// Filter out NaN samples (invalid positions as per specification)
-					if (!FMath::IsNaN(BinarySample.X) && !FMath::IsNaN(BinarySample.Y) && !FMath::IsNaN(BinarySample.Z))
+					// Short-circuit evaluation: check X first, then Y and Z only if needed
+					if (!FMath::IsNaN(BinarySample.X) && 
+						!FMath::IsNaN(BinarySample.Y) && 
+						!FMath::IsNaN(BinarySample.Z))
 					{
 						ShardSamples.Add(FVector3f(BinarySample.X, BinarySample.Y, BinarySample.Z));
 					}
@@ -595,7 +607,10 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 					const FPositionSampleBinary& BinarySample = PositionsArray[TimeStepIdx];
 					
 					// Filter out NaN samples (invalid positions as per specification)
-					if (!FMath::IsNaN(BinarySample.X) && !FMath::IsNaN(BinarySample.Y) && !FMath::IsNaN(BinarySample.Z))
+					// Short-circuit evaluation: check X first, then Y and Z only if needed
+					if (!FMath::IsNaN(BinarySample.X) && 
+						!FMath::IsNaN(BinarySample.Y) && 
+						!FMath::IsNaN(BinarySample.Z))
 					{
 						ShardSamples.Add(FVector3f(BinarySample.X, BinarySample.Y, BinarySample.Z));
 					}
