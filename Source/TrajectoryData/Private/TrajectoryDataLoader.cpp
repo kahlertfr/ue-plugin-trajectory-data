@@ -569,33 +569,27 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			
 			TArray<FVector3f> ShardSamples;
 			
-			// FAST PATH: Sample rate 1 - load all consecutive samples with NaN filtering
-			// Note: We cannot use bulk memcpy because we must filter out NaN values per specification
+			// FAST PATH: Sample rate 1 - bulk load all consecutive samples with memcpy
+			// NOTE: NaN values are preserved and passed through to Niagara for HLSL-based filtering
+			// This maintains correct position array indexing for trajectory ID mapping in Niagara
 			if (Params.SampleRate == 1)
 			{
-				// Calculate expected number of samples
+				// Calculate exact number of samples to load
 				int32 NumSamples = LoadEnd - LoadStart;
-				ShardSamples.Reserve(NumSamples);
 				
-				// Load samples and filter out NaN values
-				// Per specification: invalid samples are represented by NaN for x, y, and z
-				for (int32 TimeStepIdx = LoadStart; TimeStepIdx < LoadEnd; ++TimeStepIdx)
-				{
-					const FPositionSampleBinary& BinarySample = PositionsArray[TimeStepIdx];
-					
-					// Filter out NaN samples (invalid positions as per specification)
-					// Short-circuit evaluation: check X first, then Y and Z only if needed
-					if (!FMath::IsNaN(BinarySample.X) && 
-						!FMath::IsNaN(BinarySample.Y) && 
-						!FMath::IsNaN(BinarySample.Z))
-					{
-						ShardSamples.Add(FVector3f(BinarySample.X, BinarySample.Y, BinarySample.Z));
-					}
-				}
+				// Pre-allocate array
+				ShardSamples.SetNumUninitialized(NumSamples);
+				
+				// Bulk copy position data using memcpy (including NaN values)
+				// FPositionSampleBinary (3 floats, 12 bytes) maps directly to FVector3f (3 floats, 12 bytes)
+				// PositionsArray[LoadStart] corresponds to time step (ShardStartTimeStep + LoadStart)
+				// NaN values represent invalid/missing samples per specification and are handled in Niagara HLSL
+				FMemory::Memcpy(ShardSamples.GetData(), &PositionsArray[LoadStart], NumSamples * sizeof(FPositionSampleBinary));
 			}
 			else
 			{
 				// SLOW PATH: Sample rate > 1 - load individual samples with skipping
+				// NOTE: NaN values are preserved and passed through to Niagara for HLSL-based filtering
 				int32 NumSamplesToLoad = ((LoadEnd - LoadStart) + Params.SampleRate - 1) / Params.SampleRate;
 				ShardSamples.Reserve(NumSamplesToLoad);
 				
@@ -606,14 +600,8 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 					// This corresponds to global time step: ShardStartTimeStep + TimeStepIdx
 					const FPositionSampleBinary& BinarySample = PositionsArray[TimeStepIdx];
 					
-					// Filter out NaN samples (invalid positions as per specification)
-					// Short-circuit evaluation: check X first, then Y and Z only if needed
-					if (!FMath::IsNaN(BinarySample.X) && 
-						!FMath::IsNaN(BinarySample.Y) && 
-						!FMath::IsNaN(BinarySample.Z))
-					{
-						ShardSamples.Add(FVector3f(BinarySample.X, BinarySample.Y, BinarySample.Z));
-					}
+					// Add sample including NaN values (handled in Niagara HLSL)
+					ShardSamples.Add(FVector3f(BinarySample.X, BinarySample.Y, BinarySample.Z));
 				}
 			}
 			
