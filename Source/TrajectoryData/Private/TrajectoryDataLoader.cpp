@@ -503,12 +503,19 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			// FMemory::Memcpy(&EntryTrajId, EntryPtr + 0, sizeof(uint64));
 			
 			// Read start_time_step_in_interval at offset 8 (4 bytes)
+			// Per specification: -1 if no valid samples exist in this interval
 			int32 StartTimeStepInInterval;
 			FMemory::Memcpy(&StartTimeStepInInterval, EntryPtr + 8, sizeof(int32));
 			
 			// Read valid_sample_count at offset 12 (4 bytes)
 			int32 ValidSampleCount;
 			FMemory::Memcpy(&ValidSampleCount, EntryPtr + 12, sizeof(int32));
+			
+			// Check for sentinel value indicating no valid samples in this interval
+			if (StartTimeStepInInterval == -1 || ValidSampleCount <= 0)
+			{
+				return; // No valid samples in this interval for this trajectory
+			}
 			
 			// Positions array starts at offset 16
 			// It contains ALL time_step_interval_size samples (indexed 0..TimeStepIntervalSize-1)
@@ -553,19 +560,26 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			
 			TArray<FVector3f> ShardSamples;
 			
-			// FAST PATH: Sample rate 1 - bulk load all consecutive samples with memcpy
+			// FAST PATH: Sample rate 1 - load all consecutive samples with NaN filtering
+			// Note: We cannot use bulk memcpy because we must filter out NaN values per specification
 			if (Params.SampleRate == 1)
 			{
-				// Calculate exact number of samples to load
+				// Calculate expected number of samples
 				int32 NumSamples = LoadEnd - LoadStart;
+				ShardSamples.Reserve(NumSamples);
 				
-				// Pre-allocate array
-				ShardSamples.SetNumUninitialized(NumSamples);
-				
-				// Bulk copy position data using memcpy
-				// FPositionSampleBinary (3 floats, 12 bytes) maps directly to FVector3f (3 floats, 12 bytes)
-				// PositionsArray[LoadStart] corresponds to time step (ShardStartTimeStep + LoadStart)
-				FMemory::Memcpy(ShardSamples.GetData(), &PositionsArray[LoadStart], NumSamples * sizeof(FPositionSampleBinary));
+				// Load samples and filter out NaN values
+				// Per specification: invalid samples are represented by NaN for x, y, and z
+				for (int32 TimeStepIdx = LoadStart; TimeStepIdx < LoadEnd; ++TimeStepIdx)
+				{
+					const FPositionSampleBinary& BinarySample = PositionsArray[TimeStepIdx];
+					
+					// Filter out NaN samples (invalid positions as per specification)
+					if (!FMath::IsNaN(BinarySample.X) && !FMath::IsNaN(BinarySample.Y) && !FMath::IsNaN(BinarySample.Z))
+					{
+						ShardSamples.Add(FVector3f(BinarySample.X, BinarySample.Y, BinarySample.Z));
+					}
+				}
 			}
 			else
 			{
