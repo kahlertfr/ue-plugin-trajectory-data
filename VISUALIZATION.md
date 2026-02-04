@@ -96,6 +96,55 @@ Event BeginPlay
 
 ---
 
+## Quick Reference: TrajectoryInfo Arrays
+
+The DatasetVisualizationActor automatically transfers TrajectoryInfo arrays to Niagara when `bTransferTrajectoryInfo = true` (default).
+
+### Quick Setup Checklist
+
+**In Niagara System (User Parameters):**
+```
+Add these 7 parameters with prefix "TrajInfo" (or your custom prefix):
+☐ TrajInfoStartIndex (Niagara Int32 Array)
+☐ TrajInfoSampleCount (Niagara Int32 Array)
+☐ TrajInfoStartTimeStep (Niagara Int32 Array)
+☐ TrajInfoEndTimeStep (Niagara Int32 Array)
+☐ TrajInfoTrajectoryIdLow (Niagara Int32 Array)
+☐ TrajInfoTrajectoryIdHigh (Niagara Int32 Array)
+☐ TrajInfoExtent (Niagara Float3 Array)
+```
+
+**In HLSL (Example Usage):**
+```hlsl
+int trajIdx = Particles.TrajectoryIndex;
+int startIdx = TrajInfoStartIndex.Get(trajIdx);
+int sampleCount = TrajInfoSampleCount.Get(trajIdx);
+int globalIdx = startIdx + Particles.SampleOffset;
+float3 pos = PositionArray.Get(globalIdx);
+```
+
+### What Each Array Contains
+
+| Array Name | Type | Description | HLSL Access |
+|------------|------|-------------|-------------|
+| `TrajInfoStartIndex` | int32 | Start position in PositionArray | `TrajInfoStartIndex.Get(trajIdx)` |
+| `TrajInfoSampleCount` | int32 | Number of samples in this trajectory | `TrajInfoSampleCount.Get(trajIdx)` |
+| `TrajInfoStartTimeStep` | int32 | First time step when particle exists | `TrajInfoStartTimeStep.Get(trajIdx)` |
+| `TrajInfoEndTimeStep` | int32 | Last time step when particle exists | `TrajInfoEndTimeStep.Get(trajIdx)` |
+| `TrajInfoTrajectoryIdLow` | int32 | Lower 32 bits of trajectory ID | `TrajInfoTrajectoryIdLow.Get(trajIdx)` |
+| `TrajInfoTrajectoryIdHigh` | int32 | Upper 32 bits of trajectory ID | `TrajInfoTrajectoryIdHigh.Get(trajIdx)` |
+| `TrajInfoExtent` | float3 | Object half-extent in meters | `TrajInfoExtent.Get(trajIdx)` |
+
+### Customizing Parameter Prefix
+
+In DatasetVisualizationActor details panel:
+- Change `TrajectoryInfoParameterPrefix` from "TrajInfo" to your preferred prefix
+- Update your Niagara User Parameters to match (e.g., "MyPrefix" → "MyPrefixStartIndex")
+
+**Done!** Your trajectories are now visualized in Niagara with full metadata access.
+
+---
+
 ## Approach Comparison
 
 ### Performance Comparison
