@@ -33,7 +33,7 @@ This plugin provides two complementary approaches for visualizing trajectory dat
 - ✅ Can release CPU memory after binding to save RAM
 - ✅ **NEW: TrajectoryInfo Arrays** - Automatically transfers trajectory metadata to Niagara
   - StartIndex, SampleCount, StartTimeStep, EndTimeStep
-  - TrajectoryId (split into Low/High for int64 support)
+  - TrajectoryId (int32)
   - Extent (object half-size)
   - Enables variable-length trajectories and per-trajectory metadata access in HLSL
 
@@ -104,13 +104,12 @@ The DatasetVisualizationActor automatically transfers TrajectoryInfo arrays to N
 
 **In Niagara System (User Parameters):**
 ```
-Add these 7 parameters with prefix "TrajInfo" (or your custom prefix):
+Add these 6 parameters with prefix "TrajInfo" (or your custom prefix):
 ☐ TrajInfoStartIndex (Niagara Int32 Array)
 ☐ TrajInfoSampleCount (Niagara Int32 Array)
 ☐ TrajInfoStartTimeStep (Niagara Int32 Array)
 ☐ TrajInfoEndTimeStep (Niagara Int32 Array)
-☐ TrajInfoTrajectoryIdLow (Niagara Int32 Array)
-☐ TrajInfoTrajectoryIdHigh (Niagara Int32 Array)
+☐ TrajInfoTrajectoryId (Niagara Int32 Array)
 ☐ TrajInfoExtent (Niagara Float3 Array)
 ```
 
@@ -131,8 +130,7 @@ float3 pos = PositionArray.Get(globalIdx);
 | `TrajInfoSampleCount` | int32 | Number of samples in this trajectory | `TrajInfoSampleCount.Get(trajIdx)` |
 | `TrajInfoStartTimeStep` | int32 | First time step when particle exists | `TrajInfoStartTimeStep.Get(trajIdx)` |
 | `TrajInfoEndTimeStep` | int32 | Last time step when particle exists | `TrajInfoEndTimeStep.Get(trajIdx)` |
-| `TrajInfoTrajectoryIdLow` | int32 | Lower 32 bits of trajectory ID | `TrajInfoTrajectoryIdLow.Get(trajIdx)` |
-| `TrajInfoTrajectoryIdHigh` | int32 | Upper 32 bits of trajectory ID | `TrajInfoTrajectoryIdHigh.Get(trajIdx)` |
+| `TrajInfoTrajectoryId` | int32 | Trajectory ID | `TrajInfoTrajectoryId.Get(trajIdx)` |
 | `TrajInfoExtent` | float3 | Object half-extent in meters | `TrajInfoExtent.Get(trajIdx)` |
 
 ### Customizing Parameter Prefix
@@ -365,8 +363,7 @@ Add these User Parameters (all arrays, with default prefix "TrajInfo"):
 | `TrajInfoSampleCount` | **Niagara Int32 Array** | Number of samples per trajectory |
 | `TrajInfoStartTimeStep` | **Niagara Int32 Array** | Start time step for each trajectory |
 | `TrajInfoEndTimeStep` | **Niagara Int32 Array** | End time step for each trajectory |
-| `TrajInfoTrajectoryIdLow` | **Niagara Int32 Array** | Lower 32 bits of trajectory ID |
-| `TrajInfoTrajectoryIdHigh` | **Niagara Int32 Array** | Upper 32 bits of trajectory ID |
+| `TrajInfoTrajectoryId` | **Niagara Int32 Array** | Trajectory ID |
 | `TrajInfoExtent` | **Niagara Float3 Array** | Object extent (half-size) for each trajectory |
 
 **Note:** If you change the prefix in `TrajectoryInfoParameterPrefix` property (default: "TrajInfo"), 
@@ -536,11 +533,9 @@ int TrajectoryIdx = Particles.TrajectoryIndex;
 int StartIdx = TrajInfoStartIndex.Get(TrajectoryIdx);
 int SampleCount = TrajInfoSampleCount.Get(TrajectoryIdx);
 
-// Color based on trajectory ID (reconstructed from Low/High parts)
-int TrajIdLow = TrajInfoTrajectoryIdLow.Get(TrajectoryIdx);
-int TrajIdHigh = TrajInfoTrajectoryIdHigh.Get(TrajectoryIdx);
-// For coloring, we can just use the low part as a simple hash
-float Hue = (float(TrajIdLow % 360));
+// Color based on trajectory ID
+int TrajId = TrajInfoTrajectoryId.Get(TrajectoryIdx);
+float Hue = (float(TrajId % 360));
 Particles.Color = float4(HSVtoRGB(float3(Hue, 0.8, 0.9)), 1.0);
 
 // Get and set position

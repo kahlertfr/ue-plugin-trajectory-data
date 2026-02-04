@@ -57,7 +57,7 @@ struct TRAJECTORYDATA_API FTrajectoryBufferInfo
 
 	/** Original trajectory ID */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	int64 TrajectoryId = 0;
+	int32 TrajectoryId = 0;
 
 	/** Start index in the position buffer */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
@@ -200,7 +200,7 @@ public:
 	 * Get trajectory ID for a given trajectory index
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
-	int64 GetTrajectoryId(int32 TrajectoryIndex) const;
+	int32 GetTrajectoryId(int32 TrajectoryIndex) const;
 
 	/**
 	 * Get the position buffer resource (for binding to Niagara in C++)

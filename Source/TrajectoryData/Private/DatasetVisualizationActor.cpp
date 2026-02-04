@@ -248,9 +248,7 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 	}
 
 	// Prepare arrays for each field
-	// Note: TrajectoryId is int64, so we split it into Low (32-bit) and High (32-bit) parts
-	TArray<int32> TrajectoryIdLow;
-	TArray<int32> TrajectoryIdHigh;
+	TArray<int32> TrajectoryId;
 	TArray<int32> StartIndex;
 	TArray<int32> SampleCount;
 	TArray<int32> StartTimeStep;
@@ -259,8 +257,7 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 
 	// Reserve space
 	const int32 NumTrajectories = TrajectoryInfo.Num();
-	TrajectoryIdLow.Reserve(NumTrajectories);
-	TrajectoryIdHigh.Reserve(NumTrajectories);
+	TrajectoryId.Reserve(NumTrajectories);
 	StartIndex.Reserve(NumTrajectories);
 	SampleCount.Reserve(NumTrajectories);
 	StartTimeStep.Reserve(NumTrajectories);
@@ -270,10 +267,7 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 	// Pack data into arrays
 	for (const FTrajectoryBufferInfo& Info : TrajectoryInfo)
 	{
-		// Split int64 TrajectoryId into two int32 values
-		TrajectoryIdLow.Add(static_cast<int32>(Info.TrajectoryId & 0xFFFFFFFF));
-		TrajectoryIdHigh.Add(static_cast<int32>((Info.TrajectoryId >> 32) & 0xFFFFFFFF));
-		
+		TrajectoryId.Add(Info.TrajectoryId);
 		StartIndex.Add(Info.StartIndex);
 		SampleCount.Add(Info.SampleCount);
 		StartTimeStep.Add(Info.StartTimeStep);
@@ -310,14 +304,8 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 	
 	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
 		NiagaraComponent, 
-		FName(*(Prefix + "TrajectoryIdLow")), 
-		TrajectoryIdLow
-	);
-	
-	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
-		NiagaraComponent, 
-		FName(*(Prefix + "TrajectoryIdHigh")), 
-		TrajectoryIdHigh
+		FName(*(Prefix + "TrajectoryId")), 
+		TrajectoryId
 	);
 	
 	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayPosition(
