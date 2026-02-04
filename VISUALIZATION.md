@@ -32,7 +32,7 @@ This plugin provides two complementary approaches for visualizing trajectory dat
 - ✅ Perfect for ribbon rendering
 - ✅ Can release CPU memory after binding to save RAM
 - ✅ **NEW: TrajectoryInfo Arrays** - Automatically transfers trajectory metadata to Niagara
-  - StartIndex, SampleCount, StartTimeStep, EndTimeStep
+  - StartIndex, SampleCount, StartTimeStep
   - TrajectoryId (int32)
   - Extent (object half-size)
   - Enables variable-length trajectories and per-trajectory metadata access in HLSL
@@ -104,11 +104,10 @@ The DatasetVisualizationActor automatically transfers TrajectoryInfo arrays to N
 
 **In Niagara System (User Parameters):**
 ```
-Add these 6 parameters with prefix "TrajInfo" (or your custom prefix):
+Add these 5 parameters with prefix "TrajInfo" (or your custom prefix):
 ☐ TrajInfoStartIndex (Niagara Int32 Array)
 ☐ TrajInfoSampleCount (Niagara Int32 Array)
 ☐ TrajInfoStartTimeStep (Niagara Int32 Array)
-☐ TrajInfoEndTimeStep (Niagara Int32 Array)
 ☐ TrajInfoTrajectoryId (Niagara Int32 Array)
 ☐ TrajInfoExtent (Niagara Float3 Array)
 ```
@@ -129,9 +128,10 @@ float3 pos = PositionArray.Get(globalIdx);
 | `TrajInfoStartIndex` | int32 | Start position in PositionArray | `TrajInfoStartIndex.Get(trajIdx)` |
 | `TrajInfoSampleCount` | int32 | Number of samples in this trajectory | `TrajInfoSampleCount.Get(trajIdx)` |
 | `TrajInfoStartTimeStep` | int32 | First time step when particle exists | `TrajInfoStartTimeStep.Get(trajIdx)` |
-| `TrajInfoEndTimeStep` | int32 | Last time step when particle exists | `TrajInfoEndTimeStep.Get(trajIdx)` |
 | `TrajInfoTrajectoryId` | int32 | Trajectory ID | `TrajInfoTrajectoryId.Get(trajIdx)` |
 | `TrajInfoExtent` | float3 | Object half-extent in meters | `TrajInfoExtent.Get(trajIdx)` |
+
+**Note:** EndTimeStep can be calculated in HLSL as: `int endTime = TrajInfoStartTimeStep.Get(trajIdx) + TrajInfoSampleCount.Get(trajIdx) - 1;`
 
 ### Customizing Parameter Prefix
 
@@ -362,12 +362,16 @@ Add these User Parameters (all arrays, with default prefix "TrajInfo"):
 | `TrajInfoStartIndex` | **Niagara Int32 Array** | Start index in PositionArray for each trajectory |
 | `TrajInfoSampleCount` | **Niagara Int32 Array** | Number of samples per trajectory |
 | `TrajInfoStartTimeStep` | **Niagara Int32 Array** | Start time step for each trajectory |
-| `TrajInfoEndTimeStep` | **Niagara Int32 Array** | End time step for each trajectory |
 | `TrajInfoTrajectoryId` | **Niagara Int32 Array** | Trajectory ID |
 | `TrajInfoExtent` | **Niagara Float3 Array** | Object extent (half-size) for each trajectory |
 
 **Note:** If you change the prefix in `TrajectoryInfoParameterPrefix` property (default: "TrajInfo"), 
 adjust these parameter names accordingly (e.g., "MyPrefix" → "MyPrefixStartIndex").
+
+**EndTimeStep Calculation:** EndTimeStep is not transferred as it can be calculated in HLSL:
+```hlsl
+int endTime = TrajInfoStartTimeStep.Get(trajIdx) + TrajInfoSampleCount.Get(trajIdx) - 1;
+```
 
 **4. Add Metadata Parameters (Optional)**
 - `NumTrajectories` (int)
@@ -436,7 +440,8 @@ if (TrajectoryIdx >= NumTrajectories)
 int StartIdx = TrajInfoStartIndex.Get(TrajectoryIdx);
 int SampleCount = TrajInfoSampleCount.Get(TrajectoryIdx);
 int StartTimeStep = TrajInfoStartTimeStep.Get(TrajectoryIdx);
-int EndTimeStep = TrajInfoEndTimeStep.Get(TrajectoryIdx);
+// Calculate EndTimeStep from StartTimeStep and SampleCount
+int EndTimeStep = StartTimeStep + SampleCount - 1;
 
 // Calculate position index within this trajectory
 int SampleOffset = Particles.SampleOffset;
@@ -566,7 +571,8 @@ int TrajectoryIdx = Particles.TrajectoryIndex;
 int StartIdx = TrajInfoStartIndex.Get(TrajectoryIdx);
 int SampleCount = TrajInfoSampleCount.Get(TrajectoryIdx);
 int StartTimeStep = TrajInfoStartTimeStep.Get(TrajectoryIdx);
-int EndTimeStep = TrajInfoEndTimeStep.Get(TrajectoryIdx);
+// Calculate EndTimeStep from StartTimeStep and SampleCount
+int EndTimeStep = StartTimeStep + SampleCount - 1;
 
 // Check if trajectory exists at current time
 if (CurrentTimeStep >= StartTimeStep && CurrentTimeStep <= EndTimeStep)

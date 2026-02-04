@@ -252,7 +252,6 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 	TArray<int32> StartIndex;
 	TArray<int32> SampleCount;
 	TArray<int32> StartTimeStep;
-	TArray<int32> EndTimeStep;
 	TArray<FVector> Extent;  // Using FVector for Niagara compatibility
 
 	// Reserve space
@@ -261,7 +260,6 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 	StartIndex.Reserve(NumTrajectories);
 	SampleCount.Reserve(NumTrajectories);
 	StartTimeStep.Reserve(NumTrajectories);
-	EndTimeStep.Reserve(NumTrajectories);
 	Extent.Reserve(NumTrajectories);
 
 	// Pack data into arrays
@@ -271,7 +269,6 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 		StartIndex.Add(Info.StartIndex);
 		SampleCount.Add(Info.SampleCount);
 		StartTimeStep.Add(Info.StartTimeStep);
-		EndTimeStep.Add(Info.EndTimeStep);
 		Extent.Add(FVector(Info.Extent));  // Convert FVector3f to FVector
 	}
 
@@ -294,12 +291,6 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 		NiagaraComponent, 
 		FName(*(Prefix + "StartTimeStep")), 
 		StartTimeStep
-	);
-	
-	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
-		NiagaraComponent, 
-		FName(*(Prefix + "EndTimeStep")), 
-		EndTimeStep
 	);
 	
 	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
