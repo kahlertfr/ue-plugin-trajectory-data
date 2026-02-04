@@ -175,7 +175,7 @@ bool UTrajectoryBufferProvider::UpdateFromDataset(int32 DatasetIndex)
 	return true;
 }
 
-int64 UTrajectoryBufferProvider::GetTrajectoryId(int32 TrajectoryIndex) const
+int32 UTrajectoryBufferProvider::GetTrajectoryId(int32 TrajectoryIndex) const
 {
 	if (TrajectoryInfo.IsValidIndex(TrajectoryIndex))
 	{
@@ -213,7 +213,7 @@ void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, 
 	{
 		// Store trajectory info
 		FTrajectoryBufferInfo Info;
-		Info.TrajectoryId = Traj.TrajectoryId;
+		Info.TrajectoryId = static_cast<int32>(Traj.TrajectoryId);  // Cast int64 to int32
 		Info.StartIndex = CurrentIndex;
 		Info.SampleCount = Traj.Samples.Num();
 		Info.StartTimeStep = Traj.StartTimeStep;

@@ -31,6 +31,11 @@ This plugin provides two complementary approaches for visualizing trajectory dat
 - ✅ HLSL array functions: `PositionArray.Get()`, `PositionArray.Length()`
 - ✅ Perfect for ribbon rendering
 - ✅ Can release CPU memory after binding to save RAM
+- ✅ **NEW: TrajectoryInfo Arrays** - Automatically transfers trajectory metadata to Niagara
+  - StartIndex, SampleCount, StartTimeStep
+  - TrajectoryId (int32)
+  - Extent (object half-size)
+  - Enables variable-length trajectories and per-trajectory metadata access in HLSL
 
 ### 2. Texture2DArray Approach (Legacy)
 **Best for:** Blueprint-only workflows where memory efficiency is critical
@@ -88,6 +93,53 @@ Event BeginPlay
 ```
 
 **Done!** Your trajectories are now visualized in Niagara.
+
+---
+
+## Quick Reference: TrajectoryInfo Arrays
+
+The DatasetVisualizationActor automatically transfers TrajectoryInfo arrays to Niagara when `bTransferTrajectoryInfo = true` (default).
+
+### Quick Setup Checklist
+
+**In Niagara System (User Parameters):**
+```
+Add these 5 parameters with prefix "TrajInfo" (or your custom prefix):
+☐ TrajInfoStartIndex (Niagara Int32 Array)
+☐ TrajInfoSampleCount (Niagara Int32 Array)
+☐ TrajInfoStartTimeStep (Niagara Int32 Array)
+☐ TrajInfoTrajectoryId (Niagara Int32 Array)
+☐ TrajInfoExtent (Niagara Float3 Array)
+```
+
+**In HLSL (Example Usage):**
+```hlsl
+int trajIdx = Particles.TrajectoryIndex;
+int startIdx = TrajInfoStartIndex.Get(trajIdx);
+int sampleCount = TrajInfoSampleCount.Get(trajIdx);
+int globalIdx = startIdx + Particles.SampleOffset;
+float3 pos = PositionArray.Get(globalIdx);
+```
+
+### What Each Array Contains
+
+| Array Name | Type | Description | HLSL Access |
+|------------|------|-------------|-------------|
+| `TrajInfoStartIndex` | int32 | Start position in PositionArray | `TrajInfoStartIndex.Get(trajIdx)` |
+| `TrajInfoSampleCount` | int32 | Number of samples in this trajectory | `TrajInfoSampleCount.Get(trajIdx)` |
+| `TrajInfoStartTimeStep` | int32 | First time step when particle exists | `TrajInfoStartTimeStep.Get(trajIdx)` |
+| `TrajInfoTrajectoryId` | int32 | Trajectory ID | `TrajInfoTrajectoryId.Get(trajIdx)` |
+| `TrajInfoExtent` | float3 | Object half-extent in meters | `TrajInfoExtent.Get(trajIdx)` |
+
+**Note:** EndTimeStep can be calculated in HLSL as: `int endTime = TrajInfoStartTimeStep.Get(trajIdx) + TrajInfoSampleCount.Get(trajIdx) - 1;`
+
+### Customizing Parameter Prefix
+
+In DatasetVisualizationActor details panel:
+- Change `TrajectoryInfoParameterPrefix` from "TrajInfo" to your preferred prefix
+- Update your Niagara User Parameters to match (e.g., "MyPrefix" → "MyPrefixStartIndex")
+
+**Done!** Your trajectories are now visualized in Niagara with full metadata access.
 
 ---
 
@@ -293,42 +345,67 @@ Get Metadata (TrajectoryTextureProvider)
 - Content Browser → Right-click → Niagara System → Empty
 - Name: `NS_TrajectoryVisualization`
 
-**2. Add User Parameter**
+**2. Add User Parameter: Position Array**
 
 In User Parameters panel, click **"+"**:
 - **Name**: `PositionArray`
 - **Type**: **Niagara Float3 Array** (built-in type)
 - ✅ Should appear immediately in dropdown - no restart needed!
 
-**3. Add Metadata Parameters**
+**3. Add User Parameters: TrajectoryInfo Arrays (NEW!)**
+
+The DatasetVisualizationActor now automatically transfers TrajectoryInfo arrays to Niagara.
+Add these User Parameters (all arrays, with default prefix "TrajInfo"):
+
+| Parameter Name | Type | Description |
+|----------------|------|-------------|
+| `TrajInfoStartIndex` | **Niagara Int32 Array** | Start index in PositionArray for each trajectory |
+| `TrajInfoSampleCount` | **Niagara Int32 Array** | Number of samples per trajectory |
+| `TrajInfoStartTimeStep` | **Niagara Int32 Array** | Start time step for each trajectory |
+| `TrajInfoTrajectoryId` | **Niagara Int32 Array** | Trajectory ID |
+| `TrajInfoExtent` | **Niagara Float3 Array** | Object extent (half-size) for each trajectory |
+
+**Note:** If you change the prefix in `TrajectoryInfoParameterPrefix` property (default: "TrajInfo"), 
+adjust these parameter names accordingly (e.g., "MyPrefix" → "MyPrefixStartIndex").
+
+**EndTimeStep Calculation:** EndTimeStep is not transferred as it can be calculated in HLSL:
+```hlsl
+int endTime = TrajInfoStartTimeStep.Get(trajIdx) + TrajInfoSampleCount.Get(trajIdx) - 1;
+```
+
+**4. Add Metadata Parameters (Optional)**
 - `NumTrajectories` (int)
-- `MaxSamplesPerTrajectory` (int)
 - `TotalSampleCount` (int)
+- `FirstTimeStep` (int)
+- `LastTimeStep` (int)
 - `BoundsMin` (vector)
 - `BoundsMax` (vector)
 
-**4. Create Custom Particle Attributes**
+**Note:** `MaxSamplesPerTrajectory` is no longer recommended as trajectories have variable lengths. Use TrajectoryInfo arrays instead.
+
+**5. Create Custom Particle Attributes**
 
 ⚠️ **IMPORTANT**: These attributes are required for HLSL examples to work:
 
 In Emitter Properties → Attributes → Add Attribute:
-- `TrajectoryID` (int) - Which trajectory this particle represents
-- `SampleID` (int) - Which sample point along the trajectory
+- `TrajectoryIndex` (int) - Which trajectory this particle represents (0-based)
+- `SampleOffset` (int) - Which sample point along the trajectory (0-based)
 
 **How to initialize them** (in Particle Spawn script):
+
+With TrajectoryInfo arrays, you need to spawn particles based on the actual sample counts:
 ```hlsl
-// Assign based on particle spawn order
-int TotalParticlesPerTrajectory = MaxSamplesPerTrajectory;
-Particles.TrajectoryID = Particles.ID / TotalParticlesPerTrajectory;
-Particles.SampleID = Particles.ID % TotalParticlesPerTrajectory;
+// This requires custom logic to spawn the correct number of particles per trajectory
+// See Example 1 for the recommended approach using TrajectoryInfo arrays
+// The TrajectoryIndex and SampleOffset must be set based on your spawning strategy
 ```
 
-**5. Configure Emitter**
+**6. Configure Emitter**
 - Add GPU Compute emitter
 - Set Emitter Properties → Sim Target: **GPUComputeSim**
 - Spawn rate: High (e.g., 100,000 particles/sec or burst)
 
-**6. Add Ribbon Renderer** (optional for line rendering)
+**7. Add Ribbon Renderer** (optional for line rendering)
 - Add Renderer → Ribbon Renderer
 - Configure ribbon width, material, etc.
 
@@ -342,42 +419,69 @@ Same as above, but:
 
 ## HLSL Examples
 
-⚠️ **Required**: These examples use custom particle attributes `Particles.TrajectoryID` and `Particles.SampleID`. Create these in your Niagara emitter (see "Niagara System Setup" above).
+⚠️ **Required**: These examples use custom particle attributes `Particles.TrajectoryIndex` and `Particles.SampleOffset`. Create these in your Niagara emitter (see "Niagara System Setup" above).
 
-### Example 1: Basic Ribbon Rendering (Position Array)
+### Example 1: Basic Rendering with TrajectoryInfo Arrays (NEW!)
 
 **Niagara Module**: `UpdateParticle` (custom HLSL)
 
+This example shows the recommended approach using TrajectoryInfo arrays for correct position indexing:
+
 ```hlsl
-// Calculate global position index
-int TrajectoryIndex = Particles.TrajectoryID;
-int SampleOffset = Particles.SampleID;
+// Get trajectory index for this particle
+int TrajectoryIdx = Particles.TrajectoryIndex;
 
-int StartIndex = TrajectoryIndex * MaxSamplesPerTrajectory;
-int GlobalIndex = StartIndex + SampleOffset;
+// Validate trajectory index
+if (TrajectoryIdx >= NumTrajectories)
+{
+    // Invalid trajectory - hide particle
+    Particles.Scale = float3(0, 0, 0);
+    return;
+}
 
-// Get position from Position Array NDI
+// Get trajectory metadata from TrajectoryInfo arrays
+int StartIdx = TrajInfoStartIndex.Get(TrajectoryIdx);
+int SampleCount = TrajInfoSampleCount.Get(TrajectoryIdx);
+int StartTimeStep = TrajInfoStartTimeStep.Get(TrajectoryIdx);
+// Calculate EndTimeStep from StartTimeStep and SampleCount
+int EndTimeStep = StartTimeStep + SampleCount - 1;
+
+// Calculate position index within this trajectory
+int SampleOffset = Particles.SampleOffset;
+
+// Validate sample offset
+if (SampleOffset >= SampleCount)
+{
+    // Beyond trajectory length - hide particle
+    Particles.Scale = float3(0, 0, 0);
+    return;
+}
+
+// Get position from PositionArray using TrajectoryInfo
+int GlobalIndex = StartIdx + SampleOffset;
 float3 Position = PositionArray.Get(GlobalIndex);
 
-// Validate position
-int TotalPositions = PositionArray.Length();
-if (GlobalIndex < TotalPositions && !isnan(Position.x))
+// Check for NaN (invalid/missing sample due to particle appearance/disappearance)
+if (isnan(Position.x) || isnan(Position.y) || isnan(Position.z))
+{
+    // Invalid position - hide particle
+    Particles.Scale = float3(0, 0, 0);
+}
+else
 {
     // Valid position - update particle
     Particles.Position = Position;
     Particles.Scale = float3(1, 1, 1);
 }
-else
-{
-    // Invalid position - hide particle
-    Particles.Scale = float3(0, 0, 0);
-}
 ```
 
-### Example 2: Color-Coded Trajectories
+### Example 2: Color-Coded Trajectories with TrajectoryInfo
+
+**Note:** The HSVtoRGB helper function is shown here for completeness. 
+In practice, define it once in a shared module or at the top of your script.
 
 ```hlsl
-// HSV to RGB helper function
+// HSV to RGB helper function (define once, reuse in multiple modules)
 float3 HSVtoRGB(float3 HSV)
 {
     float H = HSV.x;
@@ -399,30 +503,140 @@ float3 HSVtoRGB(float3 HSV)
     return RGB + float3(m, m, m);
 }
 
+// Get trajectory info
+int TrajectoryIdx = Particles.TrajectoryIndex;
+int StartIdx = TrajInfoStartIndex.Get(TrajectoryIdx);
+int SampleCount = TrajInfoSampleCount.Get(TrajectoryIdx);
+
 // Color based on trajectory ID
-float Hue = (float(Particles.TrajectoryID) / float(NumTrajectories)) * 360.0;
+int TrajId = TrajInfoTrajectoryId.Get(TrajectoryIdx);
+float Hue = (float(TrajId % 360));
 Particles.Color = float4(HSVtoRGB(float3(Hue, 0.8, 0.9)), 1.0);
 
 // Get and set position
-int GlobalIndex = (Particles.TrajectoryID * MaxSamplesPerTrajectory) + Particles.SampleID;
-Particles.Position = PositionArray.Get(GlobalIndex);
+int GlobalIndex = StartIdx + Particles.SampleOffset;
+float3 Position = PositionArray.Get(GlobalIndex);
+
+if (!isnan(Position.x) && !isnan(Position.y) && !isnan(Position.z))
+{
+    Particles.Position = Position;
+    Particles.Scale = float3(1, 1, 1);
+}
+else
+{
+    Particles.Scale = float3(0, 0, 0);
+}
 ```
 
-### Example 3: Animated Trajectory Growth
+### Example 3: Time-Based Filtering with TrajectoryInfo
+
+This example shows only trajectories that exist at a specific time step:
+
+```hlsl
+// Get current time step to display (could be controlled by a User Parameter)
+int CurrentTimeStep = FirstTimeStep + int(Engine.Time * 10.0);  // Advance 10 steps per second
+
+// Get trajectory info
+int TrajectoryIdx = Particles.TrajectoryIndex;
+int StartIdx = TrajInfoStartIndex.Get(TrajectoryIdx);
+int SampleCount = TrajInfoSampleCount.Get(TrajectoryIdx);
+int StartTimeStep = TrajInfoStartTimeStep.Get(TrajectoryIdx);
+// Calculate EndTimeStep from StartTimeStep and SampleCount
+int EndTimeStep = StartTimeStep + SampleCount - 1;
+
+// Check if trajectory exists at current time
+if (CurrentTimeStep >= StartTimeStep && CurrentTimeStep <= EndTimeStep)
+{
+    // Trajectory exists - calculate which sample to show
+    int TimeOffset = CurrentTimeStep - StartTimeStep;
+    
+    // Clamp to valid range
+    if (TimeOffset < SampleCount)
+    {
+        int GlobalIndex = StartIdx + TimeOffset;
+        float3 Position = PositionArray.Get(GlobalIndex);
+        
+        if (!isnan(Position.x) && !isnan(Position.y) && !isnan(Position.z))
+        {
+            Particles.Position = Position;
+            Particles.Scale = float3(1, 1, 1);
+        }
+        else
+        {
+            Particles.Scale = float3(0, 0, 0);
+        }
+    }
+    else
+    {
+        Particles.Scale = float3(0, 0, 0);
+    }
+}
+else
+{
+    // Trajectory doesn't exist at this time - hide particle
+    Particles.Scale = float3(0, 0, 0);
+}
+```
+
+### Example 4: Particle Size Based on Extent
+
+Use the trajectory extent information for particle sizing:
+
+```hlsl
+// Get trajectory info
+int TrajectoryIdx = Particles.TrajectoryIndex;
+int StartIdx = TrajInfoStartIndex.Get(TrajectoryIdx);
+float3 Extent = TrajInfoExtent.Get(TrajectoryIdx);
+
+// Get position
+int GlobalIndex = StartIdx + Particles.SampleOffset;
+float3 Position = PositionArray.Get(GlobalIndex);
+
+if (!isnan(Position.x) && !isnan(Position.y) && !isnan(Position.z))
+{
+    Particles.Position = Position;
+    
+    // Scale particle based on object extent (converted from half-extent to full diameter)
+    float AvgExtent = (Extent.x + Extent.y + Extent.z) / 3.0;
+    Particles.Scale = float3(AvgExtent * 2.0, AvgExtent * 2.0, AvgExtent * 2.0);
+}
+else
+{
+    Particles.Scale = float3(0, 0, 0);
+}
+```
+
+### Example 5: Animated Trajectory Growth
 
 ```hlsl
 // Animate trajectory reveal over time
 float RevealProgress = frac(Engine.Time * 0.1);  // 0 to 1 over 10 seconds
-int MaxRevealedSample = int(RevealProgress * MaxSamplesPerTrajectory);
 
-int SampleOffset = Particles.SampleID;
+// Get trajectory info
+int TrajectoryIdx = Particles.TrajectoryIndex;
+int StartIdx = TrajInfoStartIndex.Get(TrajectoryIdx);
+int SampleCount = TrajInfoSampleCount.Get(TrajectoryIdx);
 
-if (SampleOffset <= MaxRevealedSample)
+// Calculate max revealed sample for this trajectory
+int MaxRevealedSample = int(RevealProgress * float(SampleCount));
+
+int SampleOffset = Particles.SampleOffset;
+
+if (SampleOffset <= MaxRevealedSample && SampleOffset < SampleCount)
 {
     // Revealed - show particle
-    int GlobalIndex = (Particles.TrajectoryID * MaxSamplesPerTrajectory) + SampleOffset;
-    Particles.Position = PositionArray.Get(GlobalIndex);
-    Particles.Scale = float3(1, 1, 1);
+    int GlobalIndex = StartIdx + SampleOffset;
+    float3 Position = PositionArray.Get(GlobalIndex);
+    
+    if (!isnan(Position.x) && !isnan(Position.y) && !isnan(Position.z))
+    {
+        Particles.Position = Position;
+        Particles.Scale = float3(1, 1, 1);
+    }
+    else
+    {
+        Particles.Scale = float3(0, 0, 0);
+    }
 }
 else
 {
@@ -431,14 +645,14 @@ else
 }
 ```
 
-### Example 4: Texture2DArray Sampling (Legacy)
+### Example 6: Texture2DArray Sampling (Legacy)
 
 ```hlsl
 // Calculate texture coordinates
-int SliceIndex = Particles.TrajectoryID / 1024;
-int LocalTrajectoryIndex = Particles.TrajectoryID % 1024;
+int SliceIndex = Particles.TrajectoryIndex / 1024;
+int LocalTrajectoryIndex = Particles.TrajectoryIndex % 1024;
 
-float U = float(Particles.SampleID) / float(MaxSamplesPerTrajectory);
+float U = float(Particles.SampleOffset) / float(MaxSamplesPerTrajectory);
 float V = (float(LocalTrajectoryIndex) + 0.5) / 1024.0;
 
 // Sample from Texture2DArray
@@ -458,30 +672,6 @@ else
 {
     Particles.Scale = float3(0, 0, 0);
 }
-```
-
-### Example 5: Velocity-Based Coloring
-
-```hlsl
-// Calculate velocity from position difference
-int GlobalIndex = (Particles.TrajectoryID * MaxSamplesPerTrajectory) + Particles.SampleID;
-float3 CurrentPos = PositionArray.Get(GlobalIndex);
-
-// Get next position for velocity calculation
-int NextIndex = GlobalIndex + 1;
-float3 NextPos = PositionArray.Get(NextIndex);
-
-// Calculate velocity
-float3 Velocity = NextPos - CurrentPos;
-float Speed = length(Velocity);
-
-// Color based on speed
-float NormalizedSpeed = saturate(Speed / 100.0);  // Adjust 100.0 to max speed
-Particles.Color = lerp(float4(0, 0, 1, 1),  // Blue (slow)
-                       float4(1, 0, 0, 1),  // Red (fast)
-                       NormalizedSpeed);
-
-Particles.Position = CurrentPos;
 ```
 
 ---
@@ -556,9 +746,10 @@ Buffer.ReleaseCPUPositionData();  // Saves hundreds of MB
 1. ✅ Niagara system is active: `NiagaraComponent->Activate()`
 2. ✅ Dataset loaded successfully: `LoadAndBindDataset()` returns true
 3. ✅ Position Array parameter name matches: "PositionArray" (default)
-4. ✅ Emitter set to GPU simulation
-5. ✅ Spawn rate is high enough or burst spawn configured
-6. ✅ Custom attributes `TrajectoryID` and `SampleID` are created
+4. ✅ TrajectoryInfo arrays parameter names match prefix: "TrajInfo" (default)
+5. ✅ Emitter set to GPU simulation
+6. ✅ Spawn rate is high enough or burst spawn configured
+7. ✅ Custom attributes `TrajectoryIndex` and `SampleOffset` are initialized
 
 **Debug in HLSL:**
 ```hlsl
@@ -569,14 +760,18 @@ int NumPositions = PositionArray.Length();
 // Check first position
 float3 FirstPos = PositionArray.Get(0);
 // Should be valid (not NaN)
+
+// Check TrajectoryInfo arrays
+int NumTrajectories = TrajInfoStartIndex.Length();
+// Should match number of trajectories in dataset
 ```
 
 ### Particles in wrong positions
 
 **Check:**
-1. Custom attributes initialized correctly in spawn script
-2. Index calculation matches: `GlobalIndex = TrajectoryID × MaxSamplesPerTrajectory + SampleID`
-3. Metadata parameters passed correctly (NumTrajectories, MaxSamplesPerTrajectory)
+1. Custom attributes initialized correctly in spawn script using TrajectoryInfo
+2. Index calculation uses TrajectoryInfo: `GlobalIndex = TrajInfoStartIndex.Get(trajIdx) + SampleOffset`
+3. TrajectoryInfo arrays bound correctly with matching prefix
 4. Position Array bound to correct parameter name
 
 ### Performance issues

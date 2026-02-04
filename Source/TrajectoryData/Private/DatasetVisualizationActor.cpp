@@ -79,6 +79,15 @@ bool ADatasetVisualizationActor::LoadAndBindDataset(int32 DatasetIndex)
 		return false;
 	}
 
+	// Populate TrajectoryInfo arrays if enabled
+	if (bTransferTrajectoryInfo)
+	{
+		if (!PopulateTrajectoryInfoArrays())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("DatasetVisualizationActor: Failed to populate TrajectoryInfo arrays (non-critical)"));
+		}
+	}
+
 	// Pass metadata parameters
 	if (!PassMetadataToNiagara())
 	{
@@ -218,6 +227,86 @@ bool ADatasetVisualizationActor::PopulatePositionArrayNDI()
 	{
 		BufferProvider->ReleaseCPUPositionData();
 	}
+
+	return true;
+}
+
+bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
+{
+	if (!BufferProvider || !NiagaraComponent)
+	{
+		return false;
+	}
+
+	// Get trajectory info array from buffer provider
+	TArray<FTrajectoryBufferInfo> TrajectoryInfo = BufferProvider->GetTrajectoryInfo();
+	
+	if (TrajectoryInfo.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("DatasetVisualizationActor: No trajectory info available"));
+		return false;
+	}
+
+	// Prepare arrays for each field
+	TArray<int32> TrajectoryId;
+	TArray<int32> StartIndex;
+	TArray<int32> SampleCount;
+	TArray<int32> StartTimeStep;
+	TArray<FVector> Extent;  // Using FVector for Niagara compatibility
+
+	// Reserve space
+	const int32 NumTrajectories = TrajectoryInfo.Num();
+	TrajectoryId.Reserve(NumTrajectories);
+	StartIndex.Reserve(NumTrajectories);
+	SampleCount.Reserve(NumTrajectories);
+	StartTimeStep.Reserve(NumTrajectories);
+	Extent.Reserve(NumTrajectories);
+
+	// Pack data into arrays
+	for (const FTrajectoryBufferInfo& Info : TrajectoryInfo)
+	{
+		TrajectoryId.Add(Info.TrajectoryId);
+		StartIndex.Add(Info.StartIndex);
+		SampleCount.Add(Info.SampleCount);
+		StartTimeStep.Add(Info.StartTimeStep);
+		Extent.Add(FVector(Info.Extent));  // Convert FVector3f to FVector
+	}
+
+	// Transfer arrays to Niagara using the parameter prefix
+	FString Prefix = TrajectoryInfoParameterPrefix.ToString();
+	
+	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
+		NiagaraComponent, 
+		FName(*(Prefix + "StartIndex")), 
+		StartIndex
+	);
+	
+	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
+		NiagaraComponent, 
+		FName(*(Prefix + "SampleCount")), 
+		SampleCount
+	);
+	
+	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
+		NiagaraComponent, 
+		FName(*(Prefix + "StartTimeStep")), 
+		StartTimeStep
+	);
+	
+	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
+		NiagaraComponent, 
+		FName(*(Prefix + "TrajectoryId")), 
+		TrajectoryId
+	);
+	
+	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayPosition(
+		NiagaraComponent, 
+		FName(*(Prefix + "Extent")), 
+		Extent
+	);
+
+	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully populated TrajectoryInfo arrays with %d trajectories"), 
+	       NumTrajectories);
 
 	return true;
 }
