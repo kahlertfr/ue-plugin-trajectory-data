@@ -119,6 +119,14 @@ protected:
 	bool PopulatePositionArrayNDI();
 
 	/**
+	 * Populate TrajectoryInfo arrays to Niagara
+	 * Transfers trajectory metadata as separate int arrays for HLSL access
+	 * 
+	 * @return True if successful
+	 */
+	bool PopulateTrajectoryInfoArrays();
+
+	/**
 	 * Pass metadata parameters to Niagara
 	 * 
 	 * @return True if successful
@@ -138,6 +146,14 @@ public:
 	/** Name of Position Array NDI parameter in Niagara (User Parameter of type Niagara Float3 Array) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trajectory Visualization")
 	FName PositionArrayParameterName = TEXT("PositionArray");
+
+	/** Enable TrajectoryInfo array transfer to Niagara (requires Int Array User Parameters) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trajectory Visualization|TrajectoryInfo")
+	bool bTransferTrajectoryInfo = true;
+
+	/** Name prefix for TrajectoryInfo array parameters in Niagara (creates: <Prefix>StartIndex, <Prefix>SampleCount, etc.) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trajectory Visualization|TrajectoryInfo")
+	FName TrajectoryInfoParameterPrefix = TEXT("TrajInfo");
 
 	/** Auto-activate Niagara system after loading dataset */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trajectory Visualization")
