@@ -505,8 +505,11 @@ else
 
 ### Example 3: Color-Coded Trajectories with TrajectoryInfo
 
+**Note:** The HSVtoRGB helper function is shown here for completeness. 
+In practice, define it once in a shared module or at the top of your script.
+
 ```hlsl
-// HSV to RGB helper function
+// HSV to RGB helper function (define once, reuse in multiple modules)
 float3 HSVtoRGB(float3 HSV)
 {
     float H = HSV.x;
@@ -553,40 +556,6 @@ else
 {
     Particles.Scale = float3(0, 0, 0);
 }
-```
-
-### Example 4: Time-Based Filtering with TrajectoryInfo
-
-```hlsl
-// HSV to RGB helper function
-float3 HSVtoRGB(float3 HSV)
-{
-    float H = HSV.x;
-    float S = HSV.y;
-    float V = HSV.z;
-    
-    float C = V * S;
-    float X = C * (1.0 - abs(fmod(H / 60.0, 2.0) - 1.0));
-    float m = V - C;
-    
-    float3 RGB;
-    if (H < 60.0) RGB = float3(C, X, 0);
-    else if (H < 120.0) RGB = float3(X, C, 0);
-    else if (H < 180.0) RGB = float3(0, C, X);
-    else if (H < 240.0) RGB = float3(0, X, C);
-    else if (H < 300.0) RGB = float3(X, 0, C);
-    else RGB = float3(C, 0, X);
-    
-    return RGB + float3(m, m, m);
-}
-
-// Color based on trajectory ID
-float Hue = (float(Particles.TrajectoryID) / float(NumTrajectories)) * 360.0;
-Particles.Color = float4(HSVtoRGB(float3(Hue, 0.8, 0.9)), 1.0);
-
-// Get and set position
-int GlobalIndex = (Particles.TrajectoryID * MaxSamplesPerTrajectory) + Particles.SampleID;
-Particles.Position = PositionArray.Get(GlobalIndex);
 ```
 
 ### Example 4: Time-Based Filtering with TrajectoryInfo
@@ -709,10 +678,10 @@ else
 
 ```hlsl
 // Calculate texture coordinates
-int SliceIndex = Particles.TrajectoryID / 1024;
-int LocalTrajectoryIndex = Particles.TrajectoryID % 1024;
+int SliceIndex = Particles.TrajectoryIndex / 1024;
+int LocalTrajectoryIndex = Particles.TrajectoryIndex % 1024;
 
-float U = float(Particles.SampleID) / float(MaxSamplesPerTrajectory);
+float U = float(Particles.SampleOffset) / float(MaxSamplesPerTrajectory);
 float V = (float(LocalTrajectoryIndex) + 0.5) / 1024.0;
 
 // Sample from Texture2DArray
@@ -734,28 +703,40 @@ else
 }
 ```
 
-### Example 5: Velocity-Based Coloring
+### Example 8: Velocity-Based Coloring (Legacy Fixed-Size Method)
+
+**Note:** Uses fixed-size indexing. For variable-length trajectories, use TrajectoryInfo arrays.
 
 ```hlsl
 // Calculate velocity from position difference
-int GlobalIndex = (Particles.TrajectoryID * MaxSamplesPerTrajectory) + Particles.SampleID;
+int GlobalIndex = (Particles.TrajectoryIndex * MaxSamplesPerTrajectory) + Particles.SampleOffset;
 float3 CurrentPos = PositionArray.Get(GlobalIndex);
 
 // Get next position for velocity calculation
 int NextIndex = GlobalIndex + 1;
 float3 NextPos = PositionArray.Get(NextIndex);
 
-// Calculate velocity
-float3 Velocity = NextPos - CurrentPos;
-float Speed = length(Velocity);
-
-// Color based on speed
-float NormalizedSpeed = saturate(Speed / 100.0);  // Adjust 100.0 to max speed
-Particles.Color = lerp(float4(0, 0, 1, 1),  // Blue (slow)
-                       float4(1, 0, 0, 1),  // Red (fast)
-                       NormalizedSpeed);
-
-Particles.Position = CurrentPos;
+// Check for valid positions (NaN check)
+if (!isnan(CurrentPos.x) && !isnan(NextPos.x))
+{
+    // Calculate velocity
+    float3 Velocity = NextPos - CurrentPos;
+    float Speed = length(Velocity);
+    
+    // Color based on speed
+    float NormalizedSpeed = saturate(Speed / 100.0);  // Adjust 100.0 to max speed
+    Particles.Color = lerp(float4(0, 0, 1, 1),  // Blue (slow)
+                           float4(1, 0, 0, 1),  // Red (fast)
+                           NormalizedSpeed);
+    
+    Particles.Position = CurrentPos;
+    Particles.Scale = float3(1, 1, 1);
+}
+else
+{
+    // Invalid position - hide particle
+    Particles.Scale = float3(0, 0, 0);
+}
 ```
 
 ---
