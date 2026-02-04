@@ -591,17 +591,18 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 				// SLOW PATH: Sample rate > 1 - load individual samples with skipping
 				// NOTE: NaN values are preserved and passed through to Niagara for HLSL-based filtering
 				int32 NumSamplesToLoad = ((LoadEnd - LoadStart) + Params.SampleRate - 1) / Params.SampleRate;
-				ShardSamples.Reserve(NumSamplesToLoad);
+				ShardSamples.SetNumUninitialized(NumSamplesToLoad);
 				
 				// Iterate through the range with sample rate stride
+				int32 SampleIndex = 0;
 				for (int32 TimeStepIdx = LoadStart; TimeStepIdx < LoadEnd; TimeStepIdx += Params.SampleRate)
 				{
 					// Read position from PositionsArray[TimeStepIdx]
 					// This corresponds to global time step: ShardStartTimeStep + TimeStepIdx
 					const FPositionSampleBinary& BinarySample = PositionsArray[TimeStepIdx];
 					
-					// Add sample including NaN values (handled in Niagara HLSL)
-					ShardSamples.Add(FVector3f(BinarySample.X, BinarySample.Y, BinarySample.Z));
+					// Copy sample including NaN values (handled in Niagara HLSL)
+					ShardSamples[SampleIndex++] = FVector3f(BinarySample.X, BinarySample.Y, BinarySample.Z);
 				}
 			}
 			
