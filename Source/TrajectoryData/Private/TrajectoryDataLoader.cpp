@@ -954,9 +954,8 @@ TArray<int64> UTrajectoryDataLoader::BuildTrajectoryIdList(const FTrajectoryLoad
 				// Load exactly NumToLoad trajectories distributed across the dataset
 				for (int32 j = 0; j < NumToLoad; ++j)
 				{
-					int32 Index = FMath::FloorToInt(j * StepFloat);
-					// Clamp to ensure we don't go out of bounds due to floating point precision
-					Index = FMath::Clamp(Index, 0, TrajMetas.Num() - 1);
+					// Calculate index with proper bounds to avoid floating-point precision issues
+					int32 Index = FMath::Min(FMath::FloorToInt(j * StepFloat), TrajMetas.Num() - 1);
 					TrajectoryIds.Add(TrajMetas[Index].TrajectoryId);
 				}
 			}
