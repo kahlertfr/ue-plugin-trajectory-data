@@ -12,11 +12,13 @@
 
 void FTrajectoryPositionBufferResource::Initialize(const TArray<FVector3f>& PositionData)
 {
-	// Use copy to preserve const correctness - caller may still need the data
+	// Store data on game thread before passing to render thread
+	// This is safe because we're copying the data
 	CPUPositionData = PositionData;
 	NumElements = PositionData.Num();
 
-	// Update resource on render thread
+	// Capture data size for render thread (CPUPositionData will be accessed on render thread)
+	// The actual data copy to GPU happens on the render thread in InitResource()
 	ENQUEUE_RENDER_COMMAND(UpdateTrajectoryPositionBuffer)(
 		[this](FRHICommandListImmediate& RHICmdList)
 		{
@@ -30,11 +32,13 @@ void FTrajectoryPositionBufferResource::Initialize(const TArray<FVector3f>& Posi
 
 void FTrajectoryPositionBufferResource::Initialize(TArray<FVector3f>&& PositionData)
 {
-	// Use move semantics to transfer ownership - no copy!
+	// Move data on game thread - this transfers ownership to CPUPositionData
+	// Safe because the moved-from array is no longer used by the caller
 	CPUPositionData = MoveTemp(PositionData);
 	NumElements = CPUPositionData.Num();
 
-	// Update resource on render thread
+	// Queue GPU upload on render thread
+	// CPUPositionData is owned by this object and won't be modified on game thread after this point
 	ENQUEUE_RENDER_COMMAND(UpdateTrajectoryPositionBuffer)(
 		[this](FRHICommandListImmediate& RHICmdList)
 		{
@@ -133,6 +137,10 @@ void UTrajectoryBufferProvider::BeginDestroy()
 
 bool UTrajectoryBufferProvider::UpdateFromDataset(int32 DatasetIndex)
 {
+	// NOTE: This function runs on the GAME THREAD
+	// Array population (PackTrajectories) happens here on the game thread
+	// Data is then transferred to the render thread via Initialize()
+	
 	// Get dataset manager
 	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
 	if (!Loader)
@@ -174,13 +182,16 @@ bool UTrajectoryBufferProvider::UpdateFromDataset(int32 DatasetIndex)
 		Metadata.MaxSamplesPerTrajectory = FMath::Max(Metadata.MaxSamplesPerTrajectory, Traj.Samples.Num());
 	}
 
-	// Pack trajectory data into flat position array
+	// GAME THREAD: Pack trajectory data into flat position array
+	// This happens on the game thread - all array building/population is done here
 	TArray<FVector3f> PositionData;
 	PackTrajectories(Dataset, PositionData);
 
 	Metadata.TotalSampleCount = PositionData.Num();
 
-	// Initialize GPU buffer with position data using move semantics to avoid copying
+	// THREAD HANDOFF: Transfer data to render thread via Initialize()
+	// Initialize() stores the data and enqueues GPU upload to the render thread
+	// After this call, we don't modify PositionData or the buffer resource data on game thread
 	if (PositionBufferResource)
 	{
 		PositionBufferResource->InitializeResource();
