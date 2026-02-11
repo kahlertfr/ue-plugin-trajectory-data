@@ -218,8 +218,8 @@ const TArray<FVector3f>& UTrajectoryBufferProvider::GetAllPositionsRef() const
 	{
 		return PositionBufferResource->GetCPUPositionData();
 	}
-	// Return a reference to a thread-local static empty array
-	static thread_local const TArray<FVector3f> EmptyArray;
+	// Return a reference to a thread-local static empty array for thread safety
+	static thread_local TArray<FVector3f> EmptyArray;
 	return EmptyArray;
 }
 
