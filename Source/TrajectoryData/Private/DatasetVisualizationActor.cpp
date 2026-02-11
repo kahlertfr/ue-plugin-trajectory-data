@@ -343,15 +343,11 @@ bool ADatasetVisualizationActor::PopulateSampleTimeStepsArray()
 		SampleTimeSteps
 	);
 
-	// Compute global first and last time steps across all samples
-	int32 GlobalFirstTimeStep = TNumericLimits<int32>::Max();
-	int32 GlobalLastTimeStep = TNumericLimits<int32>::Min();
-	
-	for (int32 TimeStep : SampleTimeSteps)
-	{
-		GlobalFirstTimeStep = FMath::Min(GlobalFirstTimeStep, TimeStep);
-		GlobalLastTimeStep = FMath::Max(GlobalLastTimeStep, TimeStep);
-	}
+	// Get global time step range from metadata (already computed during dataset loading)
+	// This avoids iterating through 20M time steps on the game thread
+	FTrajectoryBufferMetadata Metadata = BufferProvider->GetMetadata();
+	int32 GlobalFirstTimeStep = Metadata.FirstTimeStep;
+	int32 GlobalLastTimeStep = Metadata.LastTimeStep;
 
 	// Transfer global time step range to Niagara as int parameters
 	NiagaraComponent->SetIntParameter(TEXT("GlobalFirstTimeStep"), GlobalFirstTimeStep);
