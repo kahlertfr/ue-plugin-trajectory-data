@@ -5,6 +5,7 @@
 #include "NiagaraDataInterfaceArrayFunctionLibrary.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
+#include "Async/ParallelFor.h"
 
 ADatasetVisualizationActor::ADatasetVisualizationActor()
 {
@@ -212,15 +213,18 @@ bool ADatasetVisualizationActor::PopulatePositionArrayNDI()
 	}
 
 	// GAME THREAD: Convert FVector3f to FVector for Niagara API
-	// All array building happens here on the game thread
+	// Using ParallelFor to avoid frame drop for large datasets
 	// Note: Niagara's SetNiagaraArrayPosition expects TArray<FVector> (double precision)
 	// even though internally it may use float precision
 	TArray<FVector> AllPositions;
-	AllPositions.Reserve(AllPositions3f.Num());
-	for (const FVector3f& Pos3f : AllPositions3f)
+	AllPositions.SetNumUninitialized(AllPositions3f.Num());
+	
+	// Use parallel processing to convert millions of positions without stalling the frame
+	// This distributes the work across multiple threads
+	ParallelFor(AllPositions3f.Num(), [&AllPositions, &AllPositions3f](int32 Index)
 	{
-		AllPositions.Add(FVector(Pos3f));
-	}
+		AllPositions[Index] = FVector(AllPositions3f[Index]);
+	});
 
 	// GAME THREAD: Transfer to Niagara
 	// SetNiagaraArrayPosition runs on the game thread and handles internal Niagara updates
@@ -264,24 +268,25 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 	}
 
 	// GAME THREAD: Prepare arrays for each field
-	// All array building happens here on the game thread
+	// Using SetNumUninitialized and ParallelFor to avoid frame drops
 	TArray<int32> TrajectoryId;
 	TArray<int32> StartIndex;
 	TArray<FVector> Extent;  // Using FVector for Niagara compatibility
 
-	// Reserve space
+	// Pre-allocate arrays
 	const int32 NumTrajectories = TrajectoryInfo.Num();
-	TrajectoryId.Reserve(NumTrajectories);
-	StartIndex.Reserve(NumTrajectories);
-	Extent.Reserve(NumTrajectories);
+	TrajectoryId.SetNumUninitialized(NumTrajectories);
+	StartIndex.SetNumUninitialized(NumTrajectories);
+	Extent.SetNumUninitialized(NumTrajectories);
 
-	// Pack data into arrays
-	for (const FTrajectoryBufferInfo& Info : TrajectoryInfo)
+	// Pack data into arrays using parallel processing
+	ParallelFor(NumTrajectories, [&](int32 Index)
 	{
-		TrajectoryId.Add(Info.TrajectoryId);
-		StartIndex.Add(Info.StartIndex);
-		Extent.Add(FVector(Info.Extent));  // Convert FVector3f to FVector
-	}
+		const FTrajectoryBufferInfo& Info = TrajectoryInfo[Index];
+		TrajectoryId[Index] = Info.TrajectoryId;
+		StartIndex[Index] = Info.StartIndex;
+		Extent[Index] = FVector(Info.Extent);  // Convert FVector3f to FVector
+	});
 
 	// GAME THREAD: Transfer arrays to Niagara
 	// SetNiagaraArray* functions run on the game thread
