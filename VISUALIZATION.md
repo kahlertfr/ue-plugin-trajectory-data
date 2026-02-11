@@ -32,10 +32,14 @@ This plugin provides two complementary approaches for visualizing trajectory dat
 - ✅ Perfect for ribbon rendering
 - ✅ Can release CPU memory after binding to save RAM
 - ✅ **NEW: TrajectoryInfo Arrays** - Automatically transfers trajectory metadata to Niagara
-  - StartIndex, SampleCount, StartTimeStep
+  - StartIndex, StartTimeStep
   - TrajectoryId (int32)
   - Extent (object half-size)
   - Enables variable-length trajectories and per-trajectory metadata access in HLSL
+- ✅ **NEW: SampleTimeSteps Array** - Time step for each sample point
+  - One entry per sample across all trajectories
+  - Aligned with position data for easy lookup
+  - Global time range (GlobalFirstTimeStep, GlobalLastTimeStep) also provided
 
 ### 2. Texture2DArray Approach (Legacy)
 **Best for:** Blueprint-only workflows where memory efficiency is critical
@@ -104,34 +108,49 @@ The DatasetVisualizationActor automatically transfers TrajectoryInfo arrays to N
 
 **In Niagara System (User Parameters):**
 ```
-Add these 5 parameters with prefix "TrajInfo" (or your custom prefix):
+Add these parameters:
+
+TrajectoryInfo Arrays (with prefix "TrajInfo" or your custom prefix):
 ☐ TrajInfoStartIndex (Niagara Int32 Array)
-☐ TrajInfoSampleCount (Niagara Int32 Array)
 ☐ TrajInfoStartTimeStep (Niagara Int32 Array)
 ☐ TrajInfoTrajectoryId (Niagara Int32 Array)
 ☐ TrajInfoExtent (Niagara Float3 Array)
+
+Sample Time Information:
+☐ SampleTimeSteps (Niagara Int32 Array)
+☐ GlobalFirstTimeStep (Int)
+☐ GlobalLastTimeStep (Int)
 ```
 
 **In HLSL (Example Usage):**
 ```hlsl
 int trajIdx = Particles.TrajectoryIndex;
 int startIdx = TrajInfoStartIndex.Get(trajIdx);
-int sampleCount = TrajInfoSampleCount.Get(trajIdx);
-int globalIdx = startIdx + Particles.SampleOffset;
-float3 pos = PositionArray.Get(globalIdx);
+int sampleIdx = startIdx + Particles.SampleOffset;
+float3 pos = PositionArray.Get(sampleIdx);
+int timeStep = SampleTimeSteps.Get(sampleIdx);
 ```
 
 ### What Each Array Contains
 
+**TrajectoryInfo Arrays:**
+
 | Array Name | Type | Description | HLSL Access |
 |------------|------|-------------|-------------|
 | `TrajInfoStartIndex` | int32 | Start position in PositionArray | `TrajInfoStartIndex.Get(trajIdx)` |
-| `TrajInfoSampleCount` | int32 | Number of samples in this trajectory | `TrajInfoSampleCount.Get(trajIdx)` |
 | `TrajInfoStartTimeStep` | int32 | First time step when particle exists | `TrajInfoStartTimeStep.Get(trajIdx)` |
 | `TrajInfoTrajectoryId` | int32 | Trajectory ID | `TrajInfoTrajectoryId.Get(trajIdx)` |
 | `TrajInfoExtent` | float3 | Object half-extent in meters | `TrajInfoExtent.Get(trajIdx)` |
 
-**Note:** EndTimeStep can be calculated in HLSL as: `int endTime = TrajInfoStartTimeStep.Get(trajIdx) + TrajInfoSampleCount.Get(trajIdx) - 1;`
+**Sample Time Information:**
+
+| Parameter Name | Type | Description | HLSL Access |
+|----------------|------|-------------|-------------|
+| `SampleTimeSteps` | int32 array | Time step for each sample point (aligned with PositionArray) | `SampleTimeSteps.Get(sampleIdx)` |
+| `GlobalFirstTimeStep` | int32 | Minimum time step across all samples | Direct access |
+| `GlobalLastTimeStep` | int32 | Maximum time step across all samples | Direct access |
+
+**Note:** SampleCount has been removed. To get the number of samples for a trajectory, calculate from the next trajectory's StartIndex or use the total array length.
 
 ### Customizing Parameter Prefix
 
@@ -360,7 +379,6 @@ Add these User Parameters (all arrays, with default prefix "TrajInfo"):
 | Parameter Name | Type | Description |
 |----------------|------|-------------|
 | `TrajInfoStartIndex` | **Niagara Int32 Array** | Start index in PositionArray for each trajectory |
-| `TrajInfoSampleCount` | **Niagara Int32 Array** | Number of samples per trajectory |
 | `TrajInfoStartTimeStep` | **Niagara Int32 Array** | Start time step for each trajectory |
 | `TrajInfoTrajectoryId` | **Niagara Int32 Array** | Trajectory ID |
 | `TrajInfoExtent` | **Niagara Float3 Array** | Object extent (half-size) for each trajectory |
@@ -368,12 +386,19 @@ Add these User Parameters (all arrays, with default prefix "TrajInfo"):
 **Note:** If you change the prefix in `TrajectoryInfoParameterPrefix` property (default: "TrajInfo"), 
 adjust these parameter names accordingly (e.g., "MyPrefix" → "MyPrefixStartIndex").
 
-**EndTimeStep Calculation:** EndTimeStep is not transferred as it can be calculated in HLSL:
-```hlsl
-int endTime = TrajInfoStartTimeStep.Get(trajIdx) + TrajInfoSampleCount.Get(trajIdx) - 1;
-```
+**Note:** `TrajInfoSampleCount` has been removed. Sample count can be derived from the difference between consecutive StartIndex values.
 
-**4. Add Metadata Parameters (Optional)**
+**4. Add User Parameters: Sample Time Information (NEW!)**
+
+Add these User Parameters for per-sample time steps:
+
+| Parameter Name | Type | Description |
+|----------------|------|-------------|
+| `SampleTimeSteps` | **Niagara Int32 Array** | Time step for each sample point (aligned with PositionArray) |
+| `GlobalFirstTimeStep` | **Int** | Minimum time step across all samples |
+| `GlobalLastTimeStep` | **Int** | Maximum time step across all samples |
+
+**5. Add Metadata Parameters (Optional)**
 - `NumTrajectories` (int)
 - `TotalSampleCount` (int)
 - `FirstTimeStep` (int)
@@ -441,25 +466,23 @@ if (TrajectoryIdx >= NumTrajectories)
 
 // Get trajectory metadata from TrajectoryInfo arrays
 int StartIdx = TrajInfoStartIndex.Get(TrajectoryIdx);
-int SampleCount = TrajInfoSampleCount.Get(TrajectoryIdx);
 int StartTimeStep = TrajInfoStartTimeStep.Get(TrajectoryIdx);
-// Calculate EndTimeStep from StartTimeStep and SampleCount
-int EndTimeStep = StartTimeStep + SampleCount - 1;
 
 // Calculate position index within this trajectory
 int SampleOffset = Particles.SampleOffset;
+int GlobalIndex = StartIdx + SampleOffset;
 
-// Validate sample offset
-if (SampleOffset >= SampleCount)
+// Validate against total array size
+if (GlobalIndex >= TotalSampleCount)
 {
-    // Beyond trajectory length - hide particle
+    // Beyond array bounds - hide particle
     Particles.Scale = float3(0, 0, 0);
     return;
 }
 
-// Get position from PositionArray using TrajectoryInfo
-int GlobalIndex = StartIdx + SampleOffset;
+// Get position and time step from arrays (aligned indexing)
 float3 Position = PositionArray.Get(GlobalIndex);
+int TimeStep = SampleTimeSteps.Get(GlobalIndex);
 
 // Check for NaN (invalid/missing sample due to particle appearance/disappearance)
 if (isnan(Position.x) || isnan(Position.y) || isnan(Position.z))
@@ -472,6 +495,9 @@ else
     // Valid position - update particle
     Particles.Position = Position;
     Particles.Scale = float3(1, 1, 1);
+    
+    // Optional: Use TimeStep for time-based effects
+    // e.g., color based on time: Particles.Color = lerp(StartColor, EndColor, (TimeStep - GlobalFirstTimeStep) / (GlobalLastTimeStep - GlobalFirstTimeStep));
 }
 ```
 
@@ -506,7 +532,6 @@ float3 HSVtoRGB(float3 HSV)
 // Get trajectory info
 int TrajectoryIdx = Particles.TrajectoryIndex;
 int StartIdx = TrajInfoStartIndex.Get(TrajectoryIdx);
-int SampleCount = TrajInfoSampleCount.Get(TrajectoryIdx);
 
 // Color based on trajectory ID
 int TrajId = TrajInfoTrajectoryId.Get(TrajectoryIdx);
@@ -528,9 +553,9 @@ else
 }
 ```
 
-### Example 3: Time-Based Filtering with TrajectoryInfo
+### Example 3: Time-Based Filtering with SampleTimeSteps
 
-This example shows only trajectories that exist at a specific time step:
+This example shows only particles that exist at a specific time step using the SampleTimeSteps array:
 
 ```hlsl
 // Get current time step to display (could be controlled by a User Parameter)
@@ -539,32 +564,20 @@ int CurrentTimeStep = FirstTimeStep + int(Engine.Time * 10.0);  // Advance 10 st
 // Get trajectory info
 int TrajectoryIdx = Particles.TrajectoryIndex;
 int StartIdx = TrajInfoStartIndex.Get(TrajectoryIdx);
-int SampleCount = TrajInfoSampleCount.Get(TrajectoryIdx);
-int StartTimeStep = TrajInfoStartTimeStep.Get(TrajectoryIdx);
-// Calculate EndTimeStep from StartTimeStep and SampleCount
-int EndTimeStep = StartTimeStep + SampleCount - 1;
+int GlobalIndex = StartIdx + Particles.SampleOffset;
 
-// Check if trajectory exists at current time
-if (CurrentTimeStep >= StartTimeStep && CurrentTimeStep <= EndTimeStep)
+// Get the time step for this specific sample
+int SampleTimeStep = SampleTimeSteps.Get(GlobalIndex);
+
+// Check if this sample matches the current display time
+if (SampleTimeStep == CurrentTimeStep)
 {
-    // Trajectory exists - calculate which sample to show
-    int TimeOffset = CurrentTimeStep - StartTimeStep;
+    float3 Position = PositionArray.Get(GlobalIndex);
     
-    // Clamp to valid range
-    if (TimeOffset < SampleCount)
+    if (!isnan(Position.x) && !isnan(Position.y) && !isnan(Position.z))
     {
-        int GlobalIndex = StartIdx + TimeOffset;
-        float3 Position = PositionArray.Get(GlobalIndex);
-        
-        if (!isnan(Position.x) && !isnan(Position.y) && !isnan(Position.z))
-        {
-            Particles.Position = Position;
-            Particles.Scale = float3(1, 1, 1);
-        }
-        else
-        {
-            Particles.Scale = float3(0, 0, 0);
-        }
+        Particles.Position = Position;
+        Particles.Scale = float3(1, 1, 1);
     }
     else
     {
@@ -573,7 +586,7 @@ if (CurrentTimeStep >= StartTimeStep && CurrentTimeStep <= EndTimeStep)
 }
 else
 {
-    // Trajectory doesn't exist at this time - hide particle
+    // Sample doesn't match current time - hide particle
     Particles.Scale = float3(0, 0, 0);
 }
 ```
@@ -606,26 +619,27 @@ else
 }
 ```
 
-### Example 5: Animated Trajectory Growth
+### Example 5: Animated Trajectory Growth with Time
+
+Animate trajectory reveal over time using the SampleTimeSteps array:
 
 ```hlsl
-// Animate trajectory reveal over time
-float RevealProgress = frac(Engine.Time * 0.1);  // 0 to 1 over 10 seconds
+// Animate based on time range (reveal from GlobalFirstTimeStep to GlobalLastTimeStep)
+float TimeProgress = frac(Engine.Time * 0.1);  // 0 to 1 over 10 seconds
+int RevealUpToTime = GlobalFirstTimeStep + int(TimeProgress * float(GlobalLastTimeStep - GlobalFirstTimeStep));
 
 // Get trajectory info
 int TrajectoryIdx = Particles.TrajectoryIndex;
 int StartIdx = TrajInfoStartIndex.Get(TrajectoryIdx);
-int SampleCount = TrajInfoSampleCount.Get(TrajectoryIdx);
-
-// Calculate max revealed sample for this trajectory
-int MaxRevealedSample = int(RevealProgress * float(SampleCount));
-
 int SampleOffset = Particles.SampleOffset;
+int GlobalIndex = StartIdx + SampleOffset;
 
-if (SampleOffset <= MaxRevealedSample && SampleOffset < SampleCount)
+// Get the time step for this sample
+int SampleTimeStep = SampleTimeSteps.Get(GlobalIndex);
+
+if (SampleTimeStep <= RevealUpToTime)
 {
     // Revealed - show particle
-    int GlobalIndex = StartIdx + SampleOffset;
     float3 Position = PositionArray.Get(GlobalIndex);
     
     if (!isnan(Position.x) && !isnan(Position.y) && !isnan(Position.z))
