@@ -948,10 +948,16 @@ TArray<int64> UTrajectoryDataLoader::BuildTrajectoryIdList(const FTrajectoryLoad
 			int32 NumToLoad = FMath::Min(Params.NumTrajectories, TrajMetas.Num());
 			if (NumToLoad > 0 && TrajMetas.Num() > 0)
 			{
-				int32 Step = FMath::Max(1, TrajMetas.Num() / NumToLoad);
-				for (int32 i = 0; i < TrajMetas.Num() && TrajectoryIds.Num() < NumToLoad; i += Step)
+				// Calculate step as float to ensure proper distribution
+				float StepFloat = static_cast<float>(TrajMetas.Num()) / static_cast<float>(NumToLoad);
+				
+				// Load exactly NumToLoad trajectories distributed across the dataset
+				for (int32 j = 0; j < NumToLoad; ++j)
 				{
-					TrajectoryIds.Add(TrajMetas[i].TrajectoryId);
+					int32 Index = FMath::FloorToInt(j * StepFloat);
+					// Clamp to ensure we don't go out of bounds due to floating point precision
+					Index = FMath::Clamp(Index, 0, TrajMetas.Num() - 1);
+					TrajectoryIds.Add(TrajMetas[Index].TrajectoryId);
 				}
 			}
 		}
