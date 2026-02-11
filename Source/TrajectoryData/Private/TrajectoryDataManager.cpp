@@ -247,7 +247,7 @@ bool UTrajectoryDataManager::ParseMetadataFile(const FString& MetadataFilePath, 
 	return true;
 }
 
-TArray<FTrajectoryDatasetInfo> UTrajectoryDataManager::GetAvailableDatasets() const
+const TArray<FTrajectoryDatasetInfo>& UTrajectoryDataManager::GetAvailableDatasets() const
 {
 	return Datasets;
 }

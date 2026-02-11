@@ -27,11 +27,11 @@ public:
 	bool ScanDatasets();
 
 	/**
-	 * Get all available trajectory datasets
-	 * @return Array of dataset information structures
+	 * Get all available trajectory datasets (const reference - no copy)
+	 * @return Const reference to array of dataset information structures
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Trajectory Data")
-	TArray<FTrajectoryDatasetInfo> GetAvailableDatasets() const;
+	const TArray<FTrajectoryDatasetInfo>& GetAvailableDatasets() const;
 
 	/**
 	 * Get information about a specific dataset by name
