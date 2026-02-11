@@ -83,6 +83,19 @@ struct TRAJECTORYDATA_API FTrajectoryBufferInfo
 /**
  * Render resource for trajectory position buffer
  * Manages GPU buffer lifecycle on render thread
+ * 
+ * THREADING MODEL:
+ * - Initialize() is called on the GAME THREAD and stores data in CPUPositionData
+ * - ENQUEUE_RENDER_COMMAND queues InitResource() to run on the RENDER THREAD
+ * - InitResource() runs on the RENDER THREAD and uploads CPUPositionData to GPU
+ * - CPUPositionData must not be modified on the game thread after Initialize() is called
+ * - This is safe because UpdateFromDataset() doesn't get called again until user requests it
+ * 
+ * MEMORY FLOW:
+ * 1. Game Thread: Array building/population in UpdateFromDataset()
+ * 2. Game Thread: Initialize() stores or moves data to CPUPositionData
+ * 3. Render Thread: InitResource() uploads CPUPositionData to GPU buffer
+ * 4. Optional: ReleaseCPUData() can be called to free CPUPositionData after GPU upload
  */
 class FTrajectoryPositionBufferResource : public FRenderResource
 {
@@ -90,10 +103,22 @@ public:
 	FTrajectoryPositionBufferResource() = default;
 	virtual ~FTrajectoryPositionBufferResource() = default;
 
-	/** Initialize with position data */
+	/** 
+	 * Initialize with position data (copy)
+	 * GAME THREAD: Stores copy of data, then queues GPU upload to render thread
+	 */
 	void Initialize(const TArray<FVector3f>& PositionData);
+	
+	/** 
+	 * Initialize with position data (move) - transfers ownership to avoid copying
+	 * GAME THREAD: Moves data into CPUPositionData, then queues GPU upload to render thread
+	 */
+	void Initialize(TArray<FVector3f>&& PositionData);
 
-	/** Initialize resource */
+	/** 
+	 * Initialize resource
+	 * GAME THREAD: Queues initialization on render thread
+	 */
 	void InitializeResource();
 
 	/** Get the structured buffer SRV */
@@ -177,6 +202,12 @@ public:
 
 	/**
 	 * Update buffers from a loaded dataset
+	 * 
+	 * THREADING: This function runs on the GAME THREAD.
+	 * - Array population (PackTrajectories) happens on the game thread
+	 * - Data is then transferred to the render thread for GPU upload via Initialize()
+	 * - After calling this, the buffer resource should not be modified until the next UpdateFromDataset call
+	 * 
 	 * @param DatasetIndex Index into LoadedDatasets array
 	 * @return True if successful
 	 */
@@ -192,9 +223,18 @@ public:
 	/**
 	 * Get trajectory information array
 	 * Used to map from trajectory index to buffer positions
+	 * 
+	 * For C++ code: Use GetTrajectoryInfoRef() for const reference (no copy)
+	 * For Blueprint: This function returns a copy (Blueprint requirement)
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
 	TArray<FTrajectoryBufferInfo> GetTrajectoryInfo() const { return TrajectoryInfo; }
+	
+	/**
+	 * Get trajectory information array as const reference (C++ only - no copy)
+	 * For efficient access from C++ code when you don't need to modify the array
+	 */
+	const TArray<FTrajectoryBufferInfo>& GetTrajectoryInfoRef() const { return TrajectoryInfo; }
 
 	/**
 	 * Get trajectory ID for a given trajectory index
@@ -222,21 +262,42 @@ public:
 	/**
 	 * Get all positions as a flat array
 	 * Returns the entire position data array for use with built-in Niagara array NDIs
+	 * Note: Will be empty if ReleaseCPUPositionData() was called.
+	 * 
+	 * For C++ code: Use GetAllPositionsRef() for const reference (no copy)
+	 * For Blueprint: This function returns a copy (Blueprint requirement)
 	 * 
 	 * @return Array of all position vectors in the dataset
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
 	TArray<FVector3f> GetAllPositions() const;
+	
+	/**
+	 * Get all positions as const reference (C++ only - no copy)
+	 * For efficient access from C++ code when you don't need to modify the array
+	 * @return Const reference to array of all position vectors
+	 */
+	const TArray<FVector3f>& GetAllPositionsRef() const;
 
 	/**
 	 * Get sample time steps array
 	 * Returns an array of time step values, one for each sample point
 	 * Aligned with position data (same indexing)
 	 * 
+	 * For C++ code: Use GetSampleTimeStepsRef() for const reference (no copy)
+	 * For Blueprint: This function returns a copy (Blueprint requirement)
+	 * 
 	 * @return Array of time steps for each sample
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
 	TArray<int32> GetSampleTimeSteps() const { return SampleTimeSteps; }
+	
+	/**
+	 * Get sample time steps array as const reference (C++ only - no copy)
+	 * For efficient access from C++ code when you don't need to modify the array
+	 * @return Const reference to array of time steps
+	 */
+	const TArray<int32>& GetSampleTimeStepsRef() const { return SampleTimeSteps; }
 
 	/**
 	 * Release CPU copy of position data to save memory

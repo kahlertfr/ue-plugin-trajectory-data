@@ -28,10 +28,21 @@ public:
 
 	/**
 	 * Get all available trajectory datasets
+	 * 
+	 * For C++ code: Use GetAvailableDatasetsRef() for const reference (no copy)
+	 * For Blueprint: This function returns a copy (Blueprint requirement)
+	 * 
 	 * @return Array of dataset information structures
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Trajectory Data")
-	TArray<FTrajectoryDatasetInfo> GetAvailableDatasets() const;
+	TArray<FTrajectoryDatasetInfo> GetAvailableDatasets() const { return Datasets; }
+	
+	/**
+	 * Get all available trajectory datasets as const reference (C++ only - no copy)
+	 * For efficient access from C++ code when you don't need to modify the array
+	 * @return Const reference to array of dataset information structures
+	 */
+	const TArray<FTrajectoryDatasetInfo>& GetAvailableDatasetsRef() const { return Datasets; }
 
 	/**
 	 * Get information about a specific dataset by name

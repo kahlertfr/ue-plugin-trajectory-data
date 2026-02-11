@@ -5,6 +5,7 @@
 #include "NiagaraDataInterfaceArrayFunctionLibrary.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
+#include "Async/ParallelFor.h"
 
 ADatasetVisualizationActor::ADatasetVisualizationActor()
 {
@@ -154,6 +155,8 @@ TArray<FTrajectoryBufferInfo> ADatasetVisualizationActor::GetTrajectoryInfoArray
 {
 	if (BufferProvider)
 	{
+		// Return a copy for Blueprint use (Blueprint requires value return)
+		// The underlying getter now returns const reference, so this is a single copy
 		return BufferProvider->GetTrajectoryInfo();
 	}
 	return TArray<FTrajectoryBufferInfo>();
@@ -184,6 +187,9 @@ void ADatasetVisualizationActor::SetVisualizationActive(bool bActivate)
 
 bool ADatasetVisualizationActor::PopulatePositionArrayNDI()
 {
+	// NOTE: This function runs on the GAME THREAD
+	// All array population for Niagara happens here, never on the render thread
+	
 	if (!BufferProvider || !NiagaraComponent)
 	{
 		return false;
@@ -196,9 +202,9 @@ bool ADatasetVisualizationActor::PopulatePositionArrayNDI()
 		return false;
 	}
 
-	// Get all positions from buffer provider as a flat array
+	// Get all positions from buffer provider as a flat array (const reference - no copy!)
 	FTrajectoryBufferMetadata Metadata = BufferProvider->GetMetadata();
-	TArray<FVector3f> AllPositions3f = BufferProvider->GetAllPositions();
+	const TArray<FVector3f>& AllPositions3f = BufferProvider->GetAllPositionsRef();
 	
 	if (AllPositions3f.Num() == 0)
 	{
@@ -206,17 +212,22 @@ bool ADatasetVisualizationActor::PopulatePositionArrayNDI()
 		return false;
 	}
 
-	// Convert FVector3f to FVector for Niagara API
+	// GAME THREAD: Convert FVector3f to FVector for Niagara API
+	// Using ParallelFor to avoid frame drop for large datasets
 	// Note: Niagara's SetNiagaraArrayPosition expects TArray<FVector> (double precision)
 	// even though internally it may use float precision
 	TArray<FVector> AllPositions;
-	AllPositions.Reserve(AllPositions3f.Num());
-	for (const FVector3f& Pos3f : AllPositions3f)
+	AllPositions.SetNumUninitialized(AllPositions3f.Num());
+	
+	// Use parallel processing to convert millions of positions without stalling the frame
+	// This distributes the work across multiple threads
+	ParallelFor(AllPositions3f.Num(), [&AllPositions, &AllPositions3f](int32 Index)
 	{
-		AllPositions.Add(FVector(Pos3f));
-	}
+		AllPositions[Index] = FVector(AllPositions3f[Index]);
+	});
 
-	// Set the position array using UE5's built-in array NDI function
+	// GAME THREAD: Transfer to Niagara
+	// SetNiagaraArrayPosition runs on the game thread and handles internal Niagara updates
 	// This automatically finds or creates the Float3 Array NDI and populates it
 	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayPosition(
 		NiagaraComponent, 
@@ -239,13 +250,16 @@ bool ADatasetVisualizationActor::PopulatePositionArrayNDI()
 
 bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 {
+	// NOTE: This function runs on the GAME THREAD
+	// All array population for Niagara happens here, never on the render thread
+	
 	if (!BufferProvider || !NiagaraComponent)
 	{
 		return false;
 	}
 
-	// Get trajectory info array from buffer provider
-	TArray<FTrajectoryBufferInfo> TrajectoryInfo = BufferProvider->GetTrajectoryInfo();
+	// Get trajectory info array from buffer provider (const reference - no copy!)
+	const TArray<FTrajectoryBufferInfo>& TrajectoryInfo = BufferProvider->GetTrajectoryInfoRef();
 	
 	if (TrajectoryInfo.Num() == 0)
 	{
@@ -253,26 +267,29 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 		return false;
 	}
 
-	// Prepare arrays for each field (removed SampleCount and StartTimeStep as they're no longer needed)
+	// GAME THREAD: Prepare arrays for each field
+	// Using SetNumUninitialized and ParallelFor to avoid frame drops
 	TArray<int32> TrajectoryId;
 	TArray<int32> StartIndex;
 	TArray<FVector> Extent;  // Using FVector for Niagara compatibility
 
-	// Reserve space
+	// Pre-allocate arrays
 	const int32 NumTrajectories = TrajectoryInfo.Num();
-	TrajectoryId.Reserve(NumTrajectories);
-	StartIndex.Reserve(NumTrajectories);
-	Extent.Reserve(NumTrajectories);
+	TrajectoryId.SetNumUninitialized(NumTrajectories);
+	StartIndex.SetNumUninitialized(NumTrajectories);
+	Extent.SetNumUninitialized(NumTrajectories);
 
-	// Pack data into arrays
-	for (const FTrajectoryBufferInfo& Info : TrajectoryInfo)
+	// Pack data into arrays using parallel processing
+	ParallelFor(NumTrajectories, [&](int32 Index)
 	{
-		TrajectoryId.Add(Info.TrajectoryId);
-		StartIndex.Add(Info.StartIndex);
-		Extent.Add(FVector(Info.Extent));  // Convert FVector3f to FVector
-	}
+		const FTrajectoryBufferInfo& Info = TrajectoryInfo[Index];
+		TrajectoryId[Index] = Info.TrajectoryId;
+		StartIndex[Index] = Info.StartIndex;
+		Extent[Index] = FVector(Info.Extent);  // Convert FVector3f to FVector
+	});
 
-	// Transfer arrays to Niagara using the parameter prefix
+	// GAME THREAD: Transfer arrays to Niagara
+	// SetNiagaraArray* functions run on the game thread
 	FString Prefix = TrajectoryInfoParameterPrefix.ToString();
 	
 	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
@@ -293,7 +310,7 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 		Extent
 	);
 
-	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully populated TrajectoryInfo arrays with %d trajectories (SampleCount and StartTimeStep removed)"), 
+	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully populated TrajectoryInfo arrays with %d trajectories"), 
 	       NumTrajectories);
 
 	return true;
@@ -301,13 +318,16 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 
 bool ADatasetVisualizationActor::PopulateSampleTimeStepsArray()
 {
+	// NOTE: This function runs on the GAME THREAD
+	// All array population for Niagara happens here, never on the render thread
+	
 	if (!BufferProvider || !NiagaraComponent)
 	{
 		return false;
 	}
 
-	// Get sample time steps array from buffer provider
-	TArray<int32> SampleTimeSteps = BufferProvider->GetSampleTimeSteps();
+	// Get sample time steps array from buffer provider (const reference - no copy!)
+	const TArray<int32>& SampleTimeSteps = BufferProvider->GetSampleTimeStepsRef();
 	
 	if (SampleTimeSteps.Num() == 0)
 	{
@@ -315,22 +335,19 @@ bool ADatasetVisualizationActor::PopulateSampleTimeStepsArray()
 		return false;
 	}
 
-	// Transfer SampleTimeSteps array to Niagara
+	// GAME THREAD: Transfer SampleTimeSteps array to Niagara
+	// SetNiagaraArrayInt32 runs on the game thread
 	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
 		NiagaraComponent, 
 		TEXT("SampleTimeSteps"), 
 		SampleTimeSteps
 	);
 
-	// Compute global first and last time steps across all samples
-	int32 GlobalFirstTimeStep = TNumericLimits<int32>::Max();
-	int32 GlobalLastTimeStep = TNumericLimits<int32>::Min();
-	
-	for (int32 TimeStep : SampleTimeSteps)
-	{
-		GlobalFirstTimeStep = FMath::Min(GlobalFirstTimeStep, TimeStep);
-		GlobalLastTimeStep = FMath::Max(GlobalLastTimeStep, TimeStep);
-	}
+	// Get global time step range from metadata (already computed during dataset loading)
+	// This avoids iterating through 20M time steps on the game thread
+	FTrajectoryBufferMetadata Metadata = BufferProvider->GetMetadata();
+	int32 GlobalFirstTimeStep = Metadata.FirstTimeStep;
+	int32 GlobalLastTimeStep = Metadata.LastTimeStep;
 
 	// Transfer global time step range to Niagara as int parameters
 	NiagaraComponent->SetIntParameter(TEXT("GlobalFirstTimeStep"), GlobalFirstTimeStep);
