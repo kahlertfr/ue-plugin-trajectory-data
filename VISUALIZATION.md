@@ -32,7 +32,7 @@ This plugin provides two complementary approaches for visualizing trajectory dat
 - ✅ Perfect for ribbon rendering
 - ✅ Can release CPU memory after binding to save RAM
 - ✅ **NEW: TrajectoryInfo Arrays** - Automatically transfers trajectory metadata to Niagara
-  - StartIndex, StartTimeStep
+  - StartIndex
   - TrajectoryId (int32)
   - Extent (object half-size)
   - Enables variable-length trajectories and per-trajectory metadata access in HLSL
@@ -40,6 +40,7 @@ This plugin provides two complementary approaches for visualizing trajectory dat
   - One entry per sample across all trajectories
   - Aligned with position data for easy lookup
   - Global time range (GlobalFirstTimeStep, GlobalLastTimeStep) also provided
+  - Replaces per-trajectory StartTimeStep with per-sample time information
 
 ### 2. Texture2DArray Approach (Legacy)
 **Best for:** Blueprint-only workflows where memory efficiency is critical
@@ -112,7 +113,6 @@ Add these parameters:
 
 TrajectoryInfo Arrays (with prefix "TrajInfo" or your custom prefix):
 ☐ TrajInfoStartIndex (Niagara Int32 Array)
-☐ TrajInfoStartTimeStep (Niagara Int32 Array)
 ☐ TrajInfoTrajectoryId (Niagara Int32 Array)
 ☐ TrajInfoExtent (Niagara Float3 Array)
 
@@ -138,7 +138,6 @@ int timeStep = SampleTimeSteps.Get(sampleIdx);
 | Array Name | Type | Description | HLSL Access |
 |------------|------|-------------|-------------|
 | `TrajInfoStartIndex` | int32 | Start position in PositionArray | `TrajInfoStartIndex.Get(trajIdx)` |
-| `TrajInfoStartTimeStep` | int32 | First time step when particle exists | `TrajInfoStartTimeStep.Get(trajIdx)` |
 | `TrajInfoTrajectoryId` | int32 | Trajectory ID | `TrajInfoTrajectoryId.Get(trajIdx)` |
 | `TrajInfoExtent` | float3 | Object half-extent in meters | `TrajInfoExtent.Get(trajIdx)` |
 
@@ -150,7 +149,7 @@ int timeStep = SampleTimeSteps.Get(sampleIdx);
 | `GlobalFirstTimeStep` | int32 | Minimum time step across all samples | Direct access |
 | `GlobalLastTimeStep` | int32 | Maximum time step across all samples | Direct access |
 
-**Note:** SampleCount has been removed. To get the number of samples for a trajectory, calculate from the next trajectory's StartIndex or use the total array length.
+**Note:** SampleCount and StartTimeStep have been removed from TrajectoryInfo. Use SampleTimeSteps array for per-sample time information. To get the number of samples for a trajectory, calculate from the next trajectory's StartIndex or use the total array length.
 
 ### Customizing Parameter Prefix
 
@@ -379,14 +378,13 @@ Add these User Parameters (all arrays, with default prefix "TrajInfo"):
 | Parameter Name | Type | Description |
 |----------------|------|-------------|
 | `TrajInfoStartIndex` | **Niagara Int32 Array** | Start index in PositionArray for each trajectory |
-| `TrajInfoStartTimeStep` | **Niagara Int32 Array** | Start time step for each trajectory |
 | `TrajInfoTrajectoryId` | **Niagara Int32 Array** | Trajectory ID |
 | `TrajInfoExtent` | **Niagara Float3 Array** | Object extent (half-size) for each trajectory |
 
 **Note:** If you change the prefix in `TrajectoryInfoParameterPrefix` property (default: "TrajInfo"), 
 adjust these parameter names accordingly (e.g., "MyPrefix" → "MyPrefixStartIndex").
 
-**Note:** `TrajInfoSampleCount` has been removed. Sample count can be derived from the difference between consecutive StartIndex values.
+**Note:** `TrajInfoSampleCount` and `TrajInfoStartTimeStep` have been removed. Use `SampleTimeSteps` array for per-sample time information. Sample count can be derived from the difference between consecutive StartIndex values.
 
 **4. Add User Parameters: Sample Time Information (NEW!)**
 
@@ -466,7 +464,6 @@ if (TrajectoryIdx >= NumTrajectories)
 
 // Get trajectory metadata from TrajectoryInfo arrays
 int StartIdx = TrajInfoStartIndex.Get(TrajectoryIdx);
-int StartTimeStep = TrajInfoStartTimeStep.Get(TrajectoryIdx);
 
 // Calculate position index within this trajectory
 int SampleOffset = Particles.SampleOffset;

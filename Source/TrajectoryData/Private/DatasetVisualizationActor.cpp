@@ -253,17 +253,15 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 		return false;
 	}
 
-	// Prepare arrays for each field (removed SampleCount as it's no longer needed)
+	// Prepare arrays for each field (removed SampleCount and StartTimeStep as they're no longer needed)
 	TArray<int32> TrajectoryId;
 	TArray<int32> StartIndex;
-	TArray<int32> StartTimeStep;
 	TArray<FVector> Extent;  // Using FVector for Niagara compatibility
 
 	// Reserve space
 	const int32 NumTrajectories = TrajectoryInfo.Num();
 	TrajectoryId.Reserve(NumTrajectories);
 	StartIndex.Reserve(NumTrajectories);
-	StartTimeStep.Reserve(NumTrajectories);
 	Extent.Reserve(NumTrajectories);
 
 	// Pack data into arrays
@@ -271,7 +269,6 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 	{
 		TrajectoryId.Add(Info.TrajectoryId);
 		StartIndex.Add(Info.StartIndex);
-		StartTimeStep.Add(Info.StartTimeStep);
 		Extent.Add(FVector(Info.Extent));  // Convert FVector3f to FVector
 	}
 
@@ -286,12 +283,6 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 	
 	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
 		NiagaraComponent, 
-		FName(*(Prefix + "StartTimeStep")), 
-		StartTimeStep
-	);
-	
-	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
-		NiagaraComponent, 
 		FName(*(Prefix + "TrajectoryId")), 
 		TrajectoryId
 	);
@@ -302,7 +293,7 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 		Extent
 	);
 
-	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully populated TrajectoryInfo arrays with %d trajectories (SampleCount removed)"), 
+	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully populated TrajectoryInfo arrays with %d trajectories (SampleCount and StartTimeStep removed)"), 
 	       NumTrajectories);
 
 	return true;
