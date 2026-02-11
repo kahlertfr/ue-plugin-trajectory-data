@@ -79,6 +79,21 @@ bool ADatasetVisualizationActor::LoadAndBindDataset(int32 DatasetIndex)
 		return false;
 	}
 
+	// Populate TrajectoryInfo arrays if enabled
+	if (bTransferTrajectoryInfo)
+	{
+		if (!PopulateTrajectoryInfoArrays())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("DatasetVisualizationActor: Failed to populate TrajectoryInfo arrays (non-critical)"));
+		}
+	}
+
+	// Populate SampleTimeSteps array
+	if (!PopulateSampleTimeStepsArray())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("DatasetVisualizationActor: Failed to populate SampleTimeSteps array (non-critical)"));
+	}
+
 	// Pass metadata parameters
 	if (!PassMetadataToNiagara())
 	{
@@ -218,6 +233,111 @@ bool ADatasetVisualizationActor::PopulatePositionArrayNDI()
 	{
 		BufferProvider->ReleaseCPUPositionData();
 	}
+
+	return true;
+}
+
+bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
+{
+	if (!BufferProvider || !NiagaraComponent)
+	{
+		return false;
+	}
+
+	// Get trajectory info array from buffer provider
+	TArray<FTrajectoryBufferInfo> TrajectoryInfo = BufferProvider->GetTrajectoryInfo();
+	
+	if (TrajectoryInfo.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("DatasetVisualizationActor: No trajectory info available"));
+		return false;
+	}
+
+	// Prepare arrays for each field (removed SampleCount and StartTimeStep as they're no longer needed)
+	TArray<int32> TrajectoryId;
+	TArray<int32> StartIndex;
+	TArray<FVector> Extent;  // Using FVector for Niagara compatibility
+
+	// Reserve space
+	const int32 NumTrajectories = TrajectoryInfo.Num();
+	TrajectoryId.Reserve(NumTrajectories);
+	StartIndex.Reserve(NumTrajectories);
+	Extent.Reserve(NumTrajectories);
+
+	// Pack data into arrays
+	for (const FTrajectoryBufferInfo& Info : TrajectoryInfo)
+	{
+		TrajectoryId.Add(Info.TrajectoryId);
+		StartIndex.Add(Info.StartIndex);
+		Extent.Add(FVector(Info.Extent));  // Convert FVector3f to FVector
+	}
+
+	// Transfer arrays to Niagara using the parameter prefix
+	FString Prefix = TrajectoryInfoParameterPrefix.ToString();
+	
+	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
+		NiagaraComponent, 
+		FName(*(Prefix + "StartIndex")), 
+		StartIndex
+	);
+	
+	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
+		NiagaraComponent, 
+		FName(*(Prefix + "TrajectoryId")), 
+		TrajectoryId
+	);
+	
+	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayPosition(
+		NiagaraComponent, 
+		FName(*(Prefix + "Extent")), 
+		Extent
+	);
+
+	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully populated TrajectoryInfo arrays with %d trajectories (SampleCount and StartTimeStep removed)"), 
+	       NumTrajectories);
+
+	return true;
+}
+
+bool ADatasetVisualizationActor::PopulateSampleTimeStepsArray()
+{
+	if (!BufferProvider || !NiagaraComponent)
+	{
+		return false;
+	}
+
+	// Get sample time steps array from buffer provider
+	TArray<int32> SampleTimeSteps = BufferProvider->GetSampleTimeSteps();
+	
+	if (SampleTimeSteps.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("DatasetVisualizationActor: No sample time steps available"));
+		return false;
+	}
+
+	// Transfer SampleTimeSteps array to Niagara
+	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
+		NiagaraComponent, 
+		TEXT("SampleTimeSteps"), 
+		SampleTimeSteps
+	);
+
+	// Compute global first and last time steps across all samples
+	int32 GlobalFirstTimeStep = TNumericLimits<int32>::Max();
+	int32 GlobalLastTimeStep = TNumericLimits<int32>::Min();
+	
+	for (int32 TimeStep : SampleTimeSteps)
+	{
+		GlobalFirstTimeStep = FMath::Min(GlobalFirstTimeStep, TimeStep);
+		GlobalLastTimeStep = FMath::Max(GlobalLastTimeStep, TimeStep);
+	}
+
+	// Transfer global time step range to Niagara as int parameters
+	NiagaraComponent->SetIntParameter(TEXT("GlobalFirstTimeStep"), GlobalFirstTimeStep);
+	NiagaraComponent->SetIntParameter(TEXT("GlobalLastTimeStep"), GlobalLastTimeStep);
+
+	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully populated SampleTimeSteps array with %d entries (time range: %d to %d)"), 
+	       SampleTimeSteps.Num(), GlobalFirstTimeStep, GlobalLastTimeStep);
 
 	return true;
 }

@@ -175,7 +175,7 @@ bool UTrajectoryBufferProvider::UpdateFromDataset(int32 DatasetIndex)
 	return true;
 }
 
-int64 UTrajectoryBufferProvider::GetTrajectoryId(int32 TrajectoryIndex) const
+int32 UTrajectoryBufferProvider::GetTrajectoryId(int32 TrajectoryIndex) const
 {
 	if (TrajectoryInfo.IsValidIndex(TrajectoryIndex))
 	{
@@ -204,6 +204,8 @@ void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, 
 
 	// Pre-allocate arrays
 	OutPositionData.Reserve(TotalSamples);
+	SampleTimeSteps.Reset();
+	SampleTimeSteps.Reserve(TotalSamples);
 	TrajectoryInfo.Reset();
 	TrajectoryInfo.Reserve(Dataset.Trajectories.Num());
 
@@ -213,7 +215,7 @@ void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, 
 	{
 		// Store trajectory info
 		FTrajectoryBufferInfo Info;
-		Info.TrajectoryId = Traj.TrajectoryId;
+		Info.TrajectoryId = static_cast<int32>(Traj.TrajectoryId);  // Cast int64 to int32
 		Info.StartIndex = CurrentIndex;
 		Info.SampleCount = Traj.Samples.Num();
 		Info.StartTimeStep = Traj.StartTimeStep;
@@ -225,10 +227,33 @@ void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, 
 		// TArray::Append is optimized for bulk copying and handles all memory operations internally
 		OutPositionData.Append(Traj.Samples);
 
+		// Generate time steps for each sample in this trajectory
+		int32 NumSamples = Traj.Samples.Num();
+		if (NumSamples > 0)
+		{
+			if (NumSamples == 1)
+			{
+				// Single sample - use start time step
+				SampleTimeSteps.Add(Traj.StartTimeStep);
+			}
+			else
+			{
+				// Multiple samples - distribute evenly between start and end time steps
+				for (int32 i = 0; i < NumSamples; ++i)
+				{
+					// Linear interpolation: TimeStep = StartTime + (i / (NumSamples - 1)) * (EndTime - StartTime)
+					float t = static_cast<float>(i) / static_cast<float>(NumSamples - 1);
+					int32 TimeStep = Traj.StartTimeStep + FMath::RoundToInt(t * (Traj.EndTimeStep - Traj.StartTimeStep));
+					SampleTimeSteps.Add(TimeStep);
+				}
+			}
+		}
+
 		CurrentIndex += Traj.Samples.Num();
 	}
 
 	check(OutPositionData.Num() == TotalSamples);
+	check(SampleTimeSteps.Num() == TotalSamples);
 	check(TrajectoryInfo.Num() == Dataset.Trajectories.Num());
 }
 

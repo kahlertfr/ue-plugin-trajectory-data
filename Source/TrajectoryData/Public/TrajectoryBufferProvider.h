@@ -57,7 +57,7 @@ struct TRAJECTORYDATA_API FTrajectoryBufferInfo
 
 	/** Original trajectory ID */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	int64 TrajectoryId = 0;
+	int32 TrajectoryId = 0;
 
 	/** Start index in the position buffer */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
@@ -200,7 +200,7 @@ public:
 	 * Get trajectory ID for a given trajectory index
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
-	int64 GetTrajectoryId(int32 TrajectoryIndex) const;
+	int32 GetTrajectoryId(int32 TrajectoryIndex) const;
 
 	/**
 	 * Get the position buffer resource (for binding to Niagara in C++)
@@ -229,6 +229,16 @@ public:
 	TArray<FVector3f> GetAllPositions() const;
 
 	/**
+	 * Get sample time steps array
+	 * Returns an array of time step values, one for each sample point
+	 * Aligned with position data (same indexing)
+	 * 
+	 * @return Array of time steps for each sample
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
+	TArray<int32> GetSampleTimeSteps() const { return SampleTimeSteps; }
+
+	/**
 	 * Release CPU copy of position data to save memory
 	 * Call this after data has been transferred to Niagara system
 	 * This can save significant memory (e.g., 240MB for 10K trajectories × 2K samples)
@@ -248,10 +258,14 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	TArray<FTrajectoryBufferInfo> TrajectoryInfo;
 
+	/** Time step for each sample point (aligned with position data) */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	TArray<int32> SampleTimeSteps;
+
 private:
 	/** GPU buffer resource for position data */
 	FTrajectoryPositionBufferResource* PositionBufferResource;
 
-	/** Pack trajectory data into flat position array */
+	/** Pack trajectory data into flat position array and generate time steps */
 	void PackTrajectories(const FLoadedDataset& Dataset, TArray<FVector3f>& OutPositionData);
 };

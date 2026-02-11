@@ -503,12 +503,28 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			// FMemory::Memcpy(&EntryTrajId, EntryPtr + 0, sizeof(uint64));
 			
 			// Read start_time_step_in_interval at offset 8 (4 bytes)
+			// Per specification: -1 if no valid samples exist in this interval
 			int32 StartTimeStepInInterval;
 			FMemory::Memcpy(&StartTimeStepInInterval, EntryPtr + 8, sizeof(int32));
 			
 			// Read valid_sample_count at offset 12 (4 bytes)
 			int32 ValidSampleCount;
 			FMemory::Memcpy(&ValidSampleCount, EntryPtr + 12, sizeof(int32));
+			
+			// Check for sentinel value indicating no valid samples in this interval
+			// Per specification: start_time_step_in_interval == -1 means "none valid"
+			if (StartTimeStepInInterval == -1)
+			{
+				return; // No valid samples in this interval for this trajectory
+			}
+			
+			// Validate sample count - should be positive if StartTimeStepInInterval is valid
+			if (ValidSampleCount <= 0)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Trajectory %llu in shard has valid StartTimeStepInInterval (%d) but invalid ValidSampleCount (%d). Skipping."),
+					TrajId, StartTimeStepInInterval, ValidSampleCount);
+				return; // Invalid data - skip this trajectory entry
+			}
 			
 			// Positions array starts at offset 16
 			// It contains ALL time_step_interval_size samples (indexed 0..TimeStepIntervalSize-1)
@@ -554,6 +570,8 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			TArray<FVector3f> ShardSamples;
 			
 			// FAST PATH: Sample rate 1 - bulk load all consecutive samples with memcpy
+			// NOTE: NaN values are preserved and passed through to Niagara for HLSL-based filtering
+			// This maintains correct position array indexing for trajectory ID mapping in Niagara
 			if (Params.SampleRate == 1)
 			{
 				// Calculate exact number of samples to load
@@ -562,29 +580,29 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 				// Pre-allocate array
 				ShardSamples.SetNumUninitialized(NumSamples);
 				
-				// Bulk copy position data using memcpy
+				// Bulk copy position data using memcpy (including NaN values)
 				// FPositionSampleBinary (3 floats, 12 bytes) maps directly to FVector3f (3 floats, 12 bytes)
 				// PositionsArray[LoadStart] corresponds to time step (ShardStartTimeStep + LoadStart)
+				// NaN values represent invalid/missing samples per specification and are handled in Niagara HLSL
 				FMemory::Memcpy(ShardSamples.GetData(), &PositionsArray[LoadStart], NumSamples * sizeof(FPositionSampleBinary));
 			}
 			else
 			{
 				// SLOW PATH: Sample rate > 1 - load individual samples with skipping
+				// NOTE: NaN values are preserved and passed through to Niagara for HLSL-based filtering
 				int32 NumSamplesToLoad = ((LoadEnd - LoadStart) + Params.SampleRate - 1) / Params.SampleRate;
-				ShardSamples.Reserve(NumSamplesToLoad);
+				ShardSamples.SetNumUninitialized(NumSamplesToLoad);
 				
 				// Iterate through the range with sample rate stride
+				int32 SampleIndex = 0;
 				for (int32 TimeStepIdx = LoadStart; TimeStepIdx < LoadEnd; TimeStepIdx += Params.SampleRate)
 				{
 					// Read position from PositionsArray[TimeStepIdx]
 					// This corresponds to global time step: ShardStartTimeStep + TimeStepIdx
 					const FPositionSampleBinary& BinarySample = PositionsArray[TimeStepIdx];
 					
-					// Filter out NaN samples (invalid positions as per specification)
-					if (!FMath::IsNaN(BinarySample.X) && !FMath::IsNaN(BinarySample.Y) && !FMath::IsNaN(BinarySample.Z))
-					{
-						ShardSamples.Add(FVector3f(BinarySample.X, BinarySample.Y, BinarySample.Z));
-					}
+					// Copy sample including NaN values (handled in Niagara HLSL)
+					ShardSamples[SampleIndex++] = FVector3f(BinarySample.X, BinarySample.Y, BinarySample.Z);
 				}
 			}
 			
@@ -930,10 +948,17 @@ TArray<int64> UTrajectoryDataLoader::BuildTrajectoryIdList(const FTrajectoryLoad
 			int32 NumToLoad = FMath::Min(Params.NumTrajectories, TrajMetas.Num());
 			if (NumToLoad > 0 && TrajMetas.Num() > 0)
 			{
-				int32 Step = FMath::Max(1, TrajMetas.Num() / NumToLoad);
-				for (int32 i = 0; i < TrajMetas.Num() && TrajectoryIds.Num() < NumToLoad; i += Step)
+				// Calculate step as double for better precision with large datasets
+				double StepDouble = static_cast<double>(TrajMetas.Num()) / static_cast<double>(NumToLoad);
+				int32 MaxIndex = TrajMetas.Num() - 1;
+				
+				// Load exactly NumToLoad trajectories distributed across the dataset
+				for (int32 j = 0; j < NumToLoad; ++j)
 				{
-					TrajectoryIds.Add(TrajMetas[i].TrajectoryId);
+					// Calculate index with bounds check (needed only for final iteration due to floating-point precision)
+					int32 Index = FMath::FloorToInt(j * StepDouble);
+					Index = FMath::Min(Index, MaxIndex);
+					TrajectoryIds.Add(TrajMetas[Index].TrajectoryId);
 				}
 			}
 		}
