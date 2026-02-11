@@ -154,6 +154,8 @@ TArray<FTrajectoryBufferInfo> ADatasetVisualizationActor::GetTrajectoryInfoArray
 {
 	if (BufferProvider)
 	{
+		// Return a copy for Blueprint use (Blueprint requires value return)
+		// The underlying getter now returns const reference, so this is a single copy
 		return BufferProvider->GetTrajectoryInfo();
 	}
 	return TArray<FTrajectoryBufferInfo>();
@@ -196,9 +198,9 @@ bool ADatasetVisualizationActor::PopulatePositionArrayNDI()
 		return false;
 	}
 
-	// Get all positions from buffer provider as a flat array
+	// Get all positions from buffer provider as a flat array (const reference - no copy!)
 	FTrajectoryBufferMetadata Metadata = BufferProvider->GetMetadata();
-	TArray<FVector3f> AllPositions3f = BufferProvider->GetAllPositions();
+	const TArray<FVector3f>& AllPositions3f = BufferProvider->GetAllPositions();
 	
 	if (AllPositions3f.Num() == 0)
 	{
@@ -244,8 +246,8 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 		return false;
 	}
 
-	// Get trajectory info array from buffer provider
-	TArray<FTrajectoryBufferInfo> TrajectoryInfo = BufferProvider->GetTrajectoryInfo();
+	// Get trajectory info array from buffer provider (const reference - no copy!)
+	const TArray<FTrajectoryBufferInfo>& TrajectoryInfo = BufferProvider->GetTrajectoryInfo();
 	
 	if (TrajectoryInfo.Num() == 0)
 	{
@@ -306,8 +308,8 @@ bool ADatasetVisualizationActor::PopulateSampleTimeStepsArray()
 		return false;
 	}
 
-	// Get sample time steps array from buffer provider
-	TArray<int32> SampleTimeSteps = BufferProvider->GetSampleTimeSteps();
+	// Get sample time steps array from buffer provider (const reference - no copy!)
+	const TArray<int32>& SampleTimeSteps = BufferProvider->GetSampleTimeSteps();
 	
 	if (SampleTimeSteps.Num() == 0)
 	{

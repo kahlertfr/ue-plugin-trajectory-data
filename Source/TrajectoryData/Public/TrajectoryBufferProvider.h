@@ -90,8 +90,11 @@ public:
 	FTrajectoryPositionBufferResource() = default;
 	virtual ~FTrajectoryPositionBufferResource() = default;
 
-	/** Initialize with position data */
+	/** Initialize with position data (copy) */
 	void Initialize(const TArray<FVector3f>& PositionData);
+	
+	/** Initialize with position data (move) - transfers ownership to avoid copying */
+	void Initialize(TArray<FVector3f>&& PositionData);
 
 	/** Initialize resource */
 	void InitializeResource();
@@ -190,11 +193,11 @@ public:
 	FTrajectoryBufferMetadata GetMetadata() const { return Metadata; }
 
 	/**
-	 * Get trajectory information array
+	 * Get trajectory information array (const reference - no copy)
 	 * Used to map from trajectory index to buffer positions
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
-	TArray<FTrajectoryBufferInfo> GetTrajectoryInfo() const { return TrajectoryInfo; }
+	const TArray<FTrajectoryBufferInfo>& GetTrajectoryInfo() const { return TrajectoryInfo; }
 
 	/**
 	 * Get trajectory ID for a given trajectory index
@@ -220,23 +223,24 @@ public:
 	bool IsBufferValid() const { return PositionBufferResource != nullptr; }
 
 	/**
-	 * Get all positions as a flat array
+	 * Get all positions as a flat array (const reference - no copy)
 	 * Returns the entire position data array for use with built-in Niagara array NDIs
+	 * Note: Returns reference to internal data. Will be empty if ReleaseCPUPositionData() was called.
 	 * 
-	 * @return Array of all position vectors in the dataset
+	 * @return Const reference to array of all position vectors in the dataset
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
-	TArray<FVector3f> GetAllPositions() const;
+	const TArray<FVector3f>& GetAllPositions() const;
 
 	/**
-	 * Get sample time steps array
+	 * Get sample time steps array (const reference - no copy)
 	 * Returns an array of time step values, one for each sample point
 	 * Aligned with position data (same indexing)
 	 * 
 	 * @return Array of time steps for each sample
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
-	TArray<int32> GetSampleTimeSteps() const { return SampleTimeSteps; }
+	const TArray<int32>& GetSampleTimeSteps() const { return SampleTimeSteps; }
 
 	/**
 	 * Release CPU copy of position data to save memory

@@ -12,8 +12,27 @@
 
 void FTrajectoryPositionBufferResource::Initialize(const TArray<FVector3f>& PositionData)
 {
+	// Use copy to preserve const correctness - caller may still need the data
 	CPUPositionData = PositionData;
 	NumElements = PositionData.Num();
+
+	// Update resource on render thread
+	ENQUEUE_RENDER_COMMAND(UpdateTrajectoryPositionBuffer)(
+		[this](FRHICommandListImmediate& RHICmdList)
+		{
+			if (IsInitialized())
+			{
+				ReleaseResource();
+			}
+			InitResource(RHICmdList);
+		});
+}
+
+void FTrajectoryPositionBufferResource::Initialize(TArray<FVector3f>&& PositionData)
+{
+	// Use move semantics to transfer ownership - no copy!
+	CPUPositionData = MoveTemp(PositionData);
+	NumElements = CPUPositionData.Num();
 
 	// Update resource on render thread
 	ENQUEUE_RENDER_COMMAND(UpdateTrajectoryPositionBuffer)(
@@ -161,11 +180,11 @@ bool UTrajectoryBufferProvider::UpdateFromDataset(int32 DatasetIndex)
 
 	Metadata.TotalSampleCount = PositionData.Num();
 
-	// Initialize GPU buffer with position data
+	// Initialize GPU buffer with position data using move semantics to avoid copying
 	if (PositionBufferResource)
 	{
 		PositionBufferResource->InitializeResource();
-		PositionBufferResource->Initialize(PositionData);
+		PositionBufferResource->Initialize(MoveTemp(PositionData));
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("TrajectoryBufferProvider: Updated with %d trajectories, %d total samples, %.2f MB"),
@@ -184,13 +203,15 @@ int32 UTrajectoryBufferProvider::GetTrajectoryId(int32 TrajectoryIndex) const
 	return -1;
 }
 
-TArray<FVector3f> UTrajectoryBufferProvider::GetAllPositions() const
+const TArray<FVector3f>& UTrajectoryBufferProvider::GetAllPositions() const
 {
 	if (PositionBufferResource)
 	{
 		return PositionBufferResource->GetCPUPositionData();
 	}
-	return TArray<FVector3f>();
+	// Return a reference to a static empty array to avoid temporary object
+	static const TArray<FVector3f> EmptyArray;
+	return EmptyArray;
 }
 
 void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, TArray<FVector3f>& OutPositionData)
