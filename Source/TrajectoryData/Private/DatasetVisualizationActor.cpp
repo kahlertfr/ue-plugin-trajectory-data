@@ -88,6 +88,12 @@ bool ADatasetVisualizationActor::LoadAndBindDataset(int32 DatasetIndex)
 		}
 	}
 
+	// Populate SampleTimeSteps array
+	if (!PopulateSampleTimeStepsArray())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("DatasetVisualizationActor: Failed to populate SampleTimeSteps array (non-critical)"));
+	}
+
 	// Pass metadata parameters
 	if (!PassMetadataToNiagara())
 	{
@@ -247,10 +253,9 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 		return false;
 	}
 
-	// Prepare arrays for each field
+	// Prepare arrays for each field (removed SampleCount as it's no longer needed)
 	TArray<int32> TrajectoryId;
 	TArray<int32> StartIndex;
-	TArray<int32> SampleCount;
 	TArray<int32> StartTimeStep;
 	TArray<FVector> Extent;  // Using FVector for Niagara compatibility
 
@@ -258,7 +263,6 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 	const int32 NumTrajectories = TrajectoryInfo.Num();
 	TrajectoryId.Reserve(NumTrajectories);
 	StartIndex.Reserve(NumTrajectories);
-	SampleCount.Reserve(NumTrajectories);
 	StartTimeStep.Reserve(NumTrajectories);
 	Extent.Reserve(NumTrajectories);
 
@@ -267,7 +271,6 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 	{
 		TrajectoryId.Add(Info.TrajectoryId);
 		StartIndex.Add(Info.StartIndex);
-		SampleCount.Add(Info.SampleCount);
 		StartTimeStep.Add(Info.StartTimeStep);
 		Extent.Add(FVector(Info.Extent));  // Convert FVector3f to FVector
 	}
@@ -279,12 +282,6 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 		NiagaraComponent, 
 		FName(*(Prefix + "StartIndex")), 
 		StartIndex
-	);
-	
-	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
-		NiagaraComponent, 
-		FName(*(Prefix + "SampleCount")), 
-		SampleCount
 	);
 	
 	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
@@ -305,8 +302,51 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 		Extent
 	);
 
-	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully populated TrajectoryInfo arrays with %d trajectories"), 
+	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully populated TrajectoryInfo arrays with %d trajectories (SampleCount removed)"), 
 	       NumTrajectories);
+
+	return true;
+}
+
+bool ADatasetVisualizationActor::PopulateSampleTimeStepsArray()
+{
+	if (!BufferProvider || !NiagaraComponent)
+	{
+		return false;
+	}
+
+	// Get sample time steps array from buffer provider
+	TArray<int32> SampleTimeSteps = BufferProvider->GetSampleTimeSteps();
+	
+	if (SampleTimeSteps.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("DatasetVisualizationActor: No sample time steps available"));
+		return false;
+	}
+
+	// Transfer SampleTimeSteps array to Niagara
+	UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
+		NiagaraComponent, 
+		TEXT("SampleTimeSteps"), 
+		SampleTimeSteps
+	);
+
+	// Compute global first and last time steps across all samples
+	int32 GlobalFirstTimeStep = TNumericLimits<int32>::Max();
+	int32 GlobalLastTimeStep = TNumericLimits<int32>::Min();
+	
+	for (int32 TimeStep : SampleTimeSteps)
+	{
+		GlobalFirstTimeStep = FMath::Min(GlobalFirstTimeStep, TimeStep);
+		GlobalLastTimeStep = FMath::Max(GlobalLastTimeStep, TimeStep);
+	}
+
+	// Transfer global time step range to Niagara as int parameters
+	NiagaraComponent->SetIntParameter(TEXT("GlobalFirstTimeStep"), GlobalFirstTimeStep);
+	NiagaraComponent->SetIntParameter(TEXT("GlobalLastTimeStep"), GlobalLastTimeStep);
+
+	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully populated SampleTimeSteps array with %d entries (time range: %d to %d)"), 
+	       SampleTimeSteps.Num(), GlobalFirstTimeStep, GlobalLastTimeStep);
 
 	return true;
 }

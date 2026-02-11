@@ -127,6 +127,14 @@ protected:
 	bool PopulateTrajectoryInfoArrays();
 
 	/**
+	 * Populate SampleTimeSteps array to Niagara
+	 * Transfers time step for each sample point (aligned with position data)
+	 * 
+	 * @return True if successful
+	 */
+	bool PopulateSampleTimeStepsArray();
+
+	/**
 	 * Pass metadata parameters to Niagara
 	 * 
 	 * @return True if successful
