@@ -203,14 +203,23 @@ int32 UTrajectoryBufferProvider::GetTrajectoryId(int32 TrajectoryIndex) const
 	return -1;
 }
 
-const TArray<FVector3f>& UTrajectoryBufferProvider::GetAllPositions() const
+TArray<FVector3f> UTrajectoryBufferProvider::GetAllPositions() const
 {
 	if (PositionBufferResource)
 	{
 		return PositionBufferResource->GetCPUPositionData();
 	}
-	// Return a reference to a static empty array to avoid temporary object
-	static const TArray<FVector3f> EmptyArray;
+	return TArray<FVector3f>();
+}
+
+const TArray<FVector3f>& UTrajectoryBufferProvider::GetAllPositionsRef() const
+{
+	if (PositionBufferResource)
+	{
+		return PositionBufferResource->GetCPUPositionData();
+	}
+	// Return a reference to a thread-local static empty array
+	static thread_local const TArray<FVector3f> EmptyArray;
 	return EmptyArray;
 }
 

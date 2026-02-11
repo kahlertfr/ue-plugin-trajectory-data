@@ -200,7 +200,7 @@ bool ADatasetVisualizationActor::PopulatePositionArrayNDI()
 
 	// Get all positions from buffer provider as a flat array (const reference - no copy!)
 	FTrajectoryBufferMetadata Metadata = BufferProvider->GetMetadata();
-	const TArray<FVector3f>& AllPositions3f = BufferProvider->GetAllPositions();
+	const TArray<FVector3f>& AllPositions3f = BufferProvider->GetAllPositionsRef();
 	
 	if (AllPositions3f.Num() == 0)
 	{
@@ -247,7 +247,7 @@ bool ADatasetVisualizationActor::PopulateTrajectoryInfoArrays()
 	}
 
 	// Get trajectory info array from buffer provider (const reference - no copy!)
-	const TArray<FTrajectoryBufferInfo>& TrajectoryInfo = BufferProvider->GetTrajectoryInfo();
+	const TArray<FTrajectoryBufferInfo>& TrajectoryInfo = BufferProvider->GetTrajectoryInfoRef();
 	
 	if (TrajectoryInfo.Num() == 0)
 	{
@@ -309,7 +309,7 @@ bool ADatasetVisualizationActor::PopulateSampleTimeStepsArray()
 	}
 
 	// Get sample time steps array from buffer provider (const reference - no copy!)
-	const TArray<int32>& SampleTimeSteps = BufferProvider->GetSampleTimeSteps();
+	const TArray<int32>& SampleTimeSteps = BufferProvider->GetSampleTimeStepsRef();
 	
 	if (SampleTimeSteps.Num() == 0)
 	{

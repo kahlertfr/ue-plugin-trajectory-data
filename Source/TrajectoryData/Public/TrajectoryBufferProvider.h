@@ -193,11 +193,20 @@ public:
 	FTrajectoryBufferMetadata GetMetadata() const { return Metadata; }
 
 	/**
-	 * Get trajectory information array (const reference - no copy)
+	 * Get trajectory information array
 	 * Used to map from trajectory index to buffer positions
+	 * 
+	 * For C++ code: Use GetTrajectoryInfoRef() for const reference (no copy)
+	 * For Blueprint: This function returns a copy (Blueprint requirement)
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
-	const TArray<FTrajectoryBufferInfo>& GetTrajectoryInfo() const { return TrajectoryInfo; }
+	TArray<FTrajectoryBufferInfo> GetTrajectoryInfo() const { return TrajectoryInfo; }
+	
+	/**
+	 * Get trajectory information array as const reference (C++ only - no copy)
+	 * For efficient access from C++ code when you don't need to modify the array
+	 */
+	const TArray<FTrajectoryBufferInfo>& GetTrajectoryInfoRef() const { return TrajectoryInfo; }
 
 	/**
 	 * Get trajectory ID for a given trajectory index
@@ -223,24 +232,44 @@ public:
 	bool IsBufferValid() const { return PositionBufferResource != nullptr; }
 
 	/**
-	 * Get all positions as a flat array (const reference - no copy)
+	 * Get all positions as a flat array
 	 * Returns the entire position data array for use with built-in Niagara array NDIs
-	 * Note: Returns reference to internal data. Will be empty if ReleaseCPUPositionData() was called.
+	 * Note: Will be empty if ReleaseCPUPositionData() was called.
 	 * 
-	 * @return Const reference to array of all position vectors in the dataset
+	 * For C++ code: Use GetAllPositionsRef() for const reference (no copy)
+	 * For Blueprint: This function returns a copy (Blueprint requirement)
+	 * 
+	 * @return Array of all position vectors in the dataset
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
-	const TArray<FVector3f>& GetAllPositions() const;
+	TArray<FVector3f> GetAllPositions() const;
+	
+	/**
+	 * Get all positions as const reference (C++ only - no copy)
+	 * For efficient access from C++ code when you don't need to modify the array
+	 * @return Const reference to array of all position vectors
+	 */
+	const TArray<FVector3f>& GetAllPositionsRef() const;
 
 	/**
-	 * Get sample time steps array (const reference - no copy)
+	 * Get sample time steps array
 	 * Returns an array of time step values, one for each sample point
 	 * Aligned with position data (same indexing)
+	 * 
+	 * For C++ code: Use GetSampleTimeStepsRef() for const reference (no copy)
+	 * For Blueprint: This function returns a copy (Blueprint requirement)
 	 * 
 	 * @return Array of time steps for each sample
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")
-	const TArray<int32>& GetSampleTimeSteps() const { return SampleTimeSteps; }
+	TArray<int32> GetSampleTimeSteps() const { return SampleTimeSteps; }
+	
+	/**
+	 * Get sample time steps array as const reference (C++ only - no copy)
+	 * For efficient access from C++ code when you don't need to modify the array
+	 * @return Const reference to array of time steps
+	 */
+	const TArray<int32>& GetSampleTimeStepsRef() const { return SampleTimeSteps; }
 
 	/**
 	 * Release CPU copy of position data to save memory
