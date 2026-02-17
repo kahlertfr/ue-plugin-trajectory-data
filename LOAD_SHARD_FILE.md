@@ -69,7 +69,7 @@ void LoadAndProcessShard()
 
 ## Shard File Structure
 
-Each shard file follows this binary layout (see [specification-trajectory-data-shard.md](../specification-trajectory-data-shard.md)):
+Each shard file follows this binary layout (see [specification-trajectory-data-shard.md](specification-trajectory-data-shard.md)):
 
 ### Header (32 bytes)
 ```

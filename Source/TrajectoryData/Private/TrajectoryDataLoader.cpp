@@ -255,7 +255,8 @@ FShardFileData UTrajectoryDataLoader::LoadShardFile(const FString& ShardFilePath
 	}
 
 	// Allocate memory for entire file content
-	ShardData.RawData.SetNumUninitialized(FileSize);
+	// Using SetNum instead of SetNumUninitialized since Read will overwrite all bytes
+	ShardData.RawData.SetNum(FileSize);
 
 	// Read entire file content into memory with a single read operation
 	if (!FileHandle->Read(ShardData.RawData.GetData(), FileSize))
