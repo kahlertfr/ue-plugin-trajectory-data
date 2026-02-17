@@ -337,6 +337,17 @@ FShardFileData UTrajectoryDataLoader::LoadShardFile(const FString& ShardFilePath
 			return ShardData;
 		}
 
+		// Validate buffer size before parsing
+		if (EntryBuffer.Num() < sizeof(FTrajectoryEntryHeaderBinary))
+		{
+			delete FileHandle;
+			ShardData.ErrorMessage = FString::Printf(
+				TEXT("Entry buffer too small for header (entry %d: %d bytes, need %d bytes)"),
+				i, EntryBuffer.Num(), sizeof(FTrajectoryEntryHeaderBinary));
+			ShardData.Entries.Empty();
+			return ShardData;
+		}
+
 		// Parse entry using efficient bulk memory operations
 		FShardTrajectoryEntry Entry;
 
@@ -348,12 +359,26 @@ FShardFileData UTrajectoryDataLoader::LoadShardFile(const FString& ShardFilePath
 		Entry.StartTimeStepInInterval = HeaderBinary->StartTimeStepInInterval;
 		Entry.ValidSampleCount = HeaderBinary->ValidSampleCount;
 
+		// Calculate positions data size and validate buffer
+		const int32 PositionsDataSize = ShardData.Header.TimeStepIntervalSize * sizeof(FVector3f);
+		const int32 RequiredBufferSize = sizeof(FTrajectoryEntryHeaderBinary) + PositionsDataSize;
+		
+		if (EntryBuffer.Num() < RequiredBufferSize)
+		{
+			delete FileHandle;
+			ShardData.ErrorMessage = FString::Printf(
+				TEXT("Entry buffer too small for positions data (entry %d: %d bytes, need %d bytes)"),
+				i, EntryBuffer.Num(), RequiredBufferSize);
+			ShardData.Entries.Empty();
+			return ShardData;
+		}
+
 		// Bulk copy positions array with single memcpy operation
 		// FVector3f has the same memory layout as 3 consecutive floats (12 bytes)
 		// This allows direct memcpy of the entire positions array at once
+		// Note: SetNumUninitialized is safe here because memcpy immediately initializes all elements
 		Entry.Positions.SetNumUninitialized(ShardData.Header.TimeStepIntervalSize);
 		
-		const int32 PositionsDataSize = ShardData.Header.TimeStepIntervalSize * sizeof(FVector3f);
 		const uint8* PositionsDataPtr = EntryBuffer.GetData() + sizeof(FTrajectoryEntryHeaderBinary);
 		
 		// Single bulk memcpy for all positions - much faster than per-position loops
