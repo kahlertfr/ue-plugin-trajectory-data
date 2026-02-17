@@ -6,6 +6,7 @@ Load and visualize large-scale trajectory datasets from simulation outputs in Un
 
 - **[Quick Start Guide](QUICKSTART.md)** - Get started in 5 minutes
 - **[Loading & Memory Management](LOADING_AND_MEMORY.md)** - Load data and manage memory
+- **[Load Single Shard Files](LOAD_SHARD_FILE.md)** - Direct access to shard file data for external components
 - **[Visualization Guide](VISUALIZATION.md)** - Visualize with Niagara systems
 - **[Naming Conventions](NAMING_CONVENTION.md)** - Directory structure and organization
 - **[Data Format Specification](specification-trajectory-data-shard.md)** - Technical specification
@@ -19,6 +20,7 @@ Load and visualize large-scale trajectory datasets from simulation outputs in Un
 - **Multi-Dataset Support** - Load and visualize multiple related datasets
 - **Time-Range Filtering** - Load only needed time ranges to save memory
 - **Thread-Safe** - All loading happens on background threads
+- **Direct Shard Access** - Load complete shard files for external processing (hash tables, custom indexing)
 
 ## Installation
 
