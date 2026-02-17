@@ -208,6 +208,96 @@ void UTrajectoryDataLoader::UnloadAll()
 	CurrentMemoryUsage = 0;
 }
 
+FShardFileData UTrajectoryDataLoader::LoadShardFile(const FString& ShardFilePath)
+{
+	FShardFileData ShardData;
+	ShardData.FilePath = ShardFilePath;
+	ShardData.bSuccess = false;
+
+	// Validate file path
+	if (ShardFilePath.IsEmpty())
+	{
+		ShardData.ErrorMessage = TEXT("Shard file path is empty");
+		return ShardData;
+	}
+
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	
+	// Check if file exists
+	if (!PlatformFile.FileExists(*ShardFilePath))
+	{
+		ShardData.ErrorMessage = FString::Printf(TEXT("Shard file does not exist: %s"), *ShardFilePath);
+		return ShardData;
+	}
+
+	// Get file size
+	int64 FileSize = PlatformFile.FileSize(*ShardFilePath);
+	if (FileSize <= 0)
+	{
+		ShardData.ErrorMessage = FString::Printf(TEXT("Invalid shard file size: %lld"), FileSize);
+		return ShardData;
+	}
+
+	// Validate minimum size (at least header size)
+	if (FileSize < sizeof(FDataBlockHeaderBinary))
+	{
+		ShardData.ErrorMessage = FString::Printf(TEXT("Shard file too small (size: %lld, minimum: %d)"), 
+			FileSize, sizeof(FDataBlockHeaderBinary));
+		return ShardData;
+	}
+
+	// Open file for reading
+	IFileHandle* FileHandle = PlatformFile.OpenRead(*ShardFilePath);
+	if (!FileHandle)
+	{
+		ShardData.ErrorMessage = FString::Printf(TEXT("Failed to open shard file: %s"), *ShardFilePath);
+		return ShardData;
+	}
+
+	// Allocate memory for entire file content
+	ShardData.RawData.SetNumUninitialized(FileSize);
+
+	// Read entire file content into memory with a single read operation
+	if (!FileHandle->Read(ShardData.RawData.GetData(), FileSize))
+	{
+		delete FileHandle;
+		ShardData.ErrorMessage = TEXT("Failed to read shard file content");
+		ShardData.RawData.Empty();
+		return ShardData;
+	}
+
+	delete FileHandle;
+
+	// Copy header from raw data
+	FMemory::Memcpy(&ShardData.Header, ShardData.RawData.GetData(), sizeof(FDataBlockHeaderBinary));
+
+	// Validate magic number
+	if (FMemory::Memcmp(ShardData.Header.Magic, "TDDB", 4) != 0)
+	{
+		ShardData.ErrorMessage = TEXT("Invalid shard file format: magic number mismatch");
+		ShardData.RawData.Empty();
+		return ShardData;
+	}
+
+	// Validate format version
+	if (ShardData.Header.FormatVersion != 1)
+	{
+		ShardData.ErrorMessage = FString::Printf(TEXT("Unsupported shard file format version: %d"), 
+			ShardData.Header.FormatVersion);
+		ShardData.RawData.Empty();
+		return ShardData;
+	}
+
+	// Success
+	ShardData.bSuccess = true;
+	ShardData.ErrorMessage = TEXT("");
+
+	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Successfully loaded shard file %s (size: %lld bytes, entries: %d)"),
+		*ShardFilePath, FileSize, ShardData.Header.TrajectoryEntryCount);
+
+	return ShardData;
+}
+
 FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTrajectoryDatasetInfo& DatasetInfo, const FTrajectoryLoadParams& Params)
 {
 	FTrajectoryLoadResult Result;

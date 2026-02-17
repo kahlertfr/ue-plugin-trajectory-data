@@ -468,3 +468,75 @@ void ExampleMultipleDatasets()
 	// Clean up all loaded datasets
 	Loader->UnloadAll();
 }
+
+// Example 10: Load a single shard file for external processing (e.g., hash table creation)
+void ExampleLoadShardFile()
+{
+	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
+	
+	// Construct path to a specific shard file
+	// Typically, you would get this from dataset metadata or by discovering shard files
+	FString ShardFilePath = TEXT("C:/Data/TrajectoryScenarios/my_scenario/my_dataset/shard-0.bin");
+	
+	// Load the entire shard file into memory
+	FShardFileData ShardData = Loader->LoadShardFile(ShardFilePath);
+	
+	if (!ShardData.bSuccess)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Failed to load shard file: %s"), *ShardData.ErrorMessage);
+		return;
+	}
+	
+	// Successfully loaded - the entire file content is now in memory
+	UE_LOG(LogTemp, Log, TEXT("Successfully loaded shard file: %s"), *ShardData.FilePath);
+	UE_LOG(LogTemp, Log, TEXT("  File size: %d bytes"), ShardData.RawData.Num());
+	UE_LOG(LogTemp, Log, TEXT("  Global interval index: %d"), ShardData.Header.GlobalIntervalIndex);
+	UE_LOG(LogTemp, Log, TEXT("  Time step interval size: %d"), ShardData.Header.TimeStepIntervalSize);
+	UE_LOG(LogTemp, Log, TEXT("  Trajectory entry count: %d"), ShardData.Header.TrajectoryEntryCount);
+	UE_LOG(LogTemp, Log, TEXT("  Data section offset: %lld"), ShardData.Header.DataSectionOffset);
+	
+	// Access the raw binary data for external processing
+	// The entire file is now available in ShardData.RawData
+	// You can pass this to other components like hash table builders
+	const uint8* RawDataPtr = ShardData.RawData.GetData();
+	int32 RawDataSize = ShardData.RawData.Num();
+	
+	// Example: Pass to external hash table component
+	// ExternalHashTableBuilder->BuildFromShardData(RawDataPtr, RawDataSize, ShardData.Header);
+	
+	// Example: Extract trajectory entries manually
+	// Entry layout per specification:
+	// - offset 0:  uint64 trajectory_id (8 bytes)
+	// - offset 8:  int32 start_time_step_in_interval (4 bytes)
+	// - offset 12: int32 valid_sample_count (4 bytes)
+	// - offset 16: float[time_step_interval_size][3] positions array
+	
+	int32 EntrySizeBytes = 16 + (ShardData.Header.TimeStepIntervalSize * 3 * sizeof(float));
+	const uint8* DataSection = RawDataPtr + ShardData.Header.DataSectionOffset;
+	
+	for (int32 i = 0; i < ShardData.Header.TrajectoryEntryCount; ++i)
+	{
+		const uint8* EntryPtr = DataSection + (i * EntrySizeBytes);
+		
+		// Read trajectory ID
+		uint64 TrajectoryId;
+		FMemory::Memcpy(&TrajectoryId, EntryPtr, sizeof(uint64));
+		
+		// Read metadata
+		int32 StartTimeStepInInterval;
+		FMemory::Memcpy(&StartTimeStepInInterval, EntryPtr + 8, sizeof(int32));
+		
+		int32 ValidSampleCount;
+		FMemory::Memcpy(&ValidSampleCount, EntryPtr + 12, sizeof(int32));
+		
+		if (i == 0) // Log first entry as example
+		{
+			UE_LOG(LogTemp, Log, TEXT("  First entry - Trajectory ID: %lld, Start: %d, Valid count: %d"),
+				TrajectoryId, StartTimeStepInInterval, ValidSampleCount);
+		}
+		
+		// Access position data starting at offset 16
+		// const float* PositionsArray = reinterpret_cast<const float*>(EntryPtr + 16);
+		// ... process positions ...
+	}
+}

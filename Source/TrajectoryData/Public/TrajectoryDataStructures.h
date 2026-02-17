@@ -82,6 +82,43 @@ struct FPositionSampleBinary
 #pragma pack(pop)
 
 /**
+ * Structure to hold complete shard file data in memory
+ * Contains both the header and the raw binary data blob
+ * This allows other components to access the full shard content
+ */
+USTRUCT(BlueprintType)
+struct TRAJECTORYDATA_API FShardFileData
+{
+	GENERATED_BODY()
+
+	/** Shard file header containing metadata */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FDataBlockHeaderBinary Header;
+
+	/** Raw binary data from the shard file (includes header + all entries) */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	TArray<uint8> RawData;
+
+	/** Path to the shard file that was loaded */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString FilePath;
+
+	/** Whether the load was successful */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	bool bSuccess;
+
+	/** Error message if load failed */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString ErrorMessage;
+
+	FShardFileData()
+		: bSuccess(false)
+	{
+		FMemory::Memzero(&Header, sizeof(FDataBlockHeaderBinary));
+	}
+};
+
+/**
  * Blueprint-exposed structure for a single 3D position sample
  * Simplified for maximum memory efficiency - stores only position data
  * Time step is implicit from array index + trajectory StartTimeStep

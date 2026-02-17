@@ -130,6 +130,16 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data|Loading")
 	int64 GetLoadedDataMemoryUsage() const;
 
+	/**
+	 * Load the entire content of a single shard file into memory
+	 * This method mem-copies the complete shard file content into a struct
+	 * Useful for other components like hash table creation
+	 * @param ShardFilePath Full path to the shard file to load
+	 * @return FShardFileData containing header and raw data blob
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Trajectory Data|Loading")
+	FShardFileData LoadShardFile(const FString& ShardFilePath);
+
 	/** Progress callback for async loading */
 	UPROPERTY(BlueprintAssignable, Category = "Trajectory Data|Loading")
 	FOnTrajectoryLoadProgress OnLoadProgress;
