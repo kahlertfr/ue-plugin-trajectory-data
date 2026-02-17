@@ -52,21 +52,46 @@ struct FTrajectoryMetaBinary
 /**
  * Binary structure for Data Block Header (shard-*.bin)
  * Total size: 32 bytes
+ * Note: This is a USTRUCT to allow use in Blueprint-exposed structs
+ * Fields match the binary file format exactly for memcpy compatibility
  */
-#pragma pack(push, 1)
-struct FDataBlockHeaderBinary
+USTRUCT(BlueprintType)
+struct TRAJECTORYDATA_API FDataBlockHeaderBinary
 {
+	GENERATED_BODY()
+
 	char Magic[4];                      // "TDDB"
 	uint8 FormatVersion;                // = 1
 	uint8 EndiannessFlag;               // 0 = little, 1 = big
 	uint16 Reserved;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int32 GlobalIntervalIndex;          // which interval this file represents
+	
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int32 TimeStepIntervalSize;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int32 TrajectoryEntryCount;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int64 DataSectionOffset;            // byte offset where entries begin
+	
 	uint32 Reserved2;
+
+	FDataBlockHeaderBinary()
+		: FormatVersion(0)
+		, EndiannessFlag(0)
+		, Reserved(0)
+		, GlobalIntervalIndex(0)
+		, TimeStepIntervalSize(0)
+		, TrajectoryEntryCount(0)
+		, DataSectionOffset(0)
+		, Reserved2(0)
+	{
+		FMemory::Memzero(Magic, sizeof(Magic));
+	}
 };
-#pragma pack(pop)
 
 /**
  * Binary structure for raw position data as stored in shard files
