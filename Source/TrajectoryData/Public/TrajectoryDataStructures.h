@@ -52,32 +52,36 @@ struct FTrajectoryMetaBinary
 /**
  * Binary structure for Data Block Header (shard-*.bin)
  * Total size: 32 bytes
- * Note: This is a USTRUCT to allow use in Blueprint-exposed structs
- * Fields match the binary file format exactly for memcpy compatibility
+ * Note: This is a USTRUCT to allow use in Blueprint-exposed structs.
+ * WARNING: This struct is used for binary file I/O with FMemory::Memcpy.
+ * The field layout must match the specification exactly (no padding).
+ * In Unreal Engine, USTRUCT maintains field order without adding padding,
+ * so this is safe for binary I/O operations.
  */
 USTRUCT(BlueprintType)
 struct TRAJECTORYDATA_API FDataBlockHeaderBinary
 {
 	GENERATED_BODY()
 
-	char Magic[4];                      // "TDDB"
-	uint8 FormatVersion;                // = 1
-	uint8 EndiannessFlag;               // 0 = little, 1 = big
-	uint16 Reserved;
+	char Magic[4];                      // "TDDB" - 4 bytes at offset 0
+	uint8 FormatVersion;                // 1 byte at offset 4
+	uint8 EndiannessFlag;               // 1 byte at offset 5 (0 = little, 1 = big)
+	uint16 Reserved;                    // 2 bytes at offset 6
 	
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	int32 GlobalIntervalIndex;          // which interval this file represents
+	int32 GlobalIntervalIndex;          // 4 bytes at offset 8 - which interval this file represents
 	
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	int32 TimeStepIntervalSize;
+	int32 TimeStepIntervalSize;         // 4 bytes at offset 12
 	
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	int32 TrajectoryEntryCount;
+	int32 TrajectoryEntryCount;         // 4 bytes at offset 16
 	
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	int64 DataSectionOffset;            // byte offset where entries begin
+	int64 DataSectionOffset;            // 8 bytes at offset 20 - byte offset where entries begin
 	
-	uint32 Reserved2;
+	uint32 Reserved2;                   // 4 bytes at offset 28
+	// Total: 32 bytes
 
 	FDataBlockHeaderBinary()
 		: FormatVersion(0)
