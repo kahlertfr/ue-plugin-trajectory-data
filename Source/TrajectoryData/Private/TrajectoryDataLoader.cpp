@@ -322,13 +322,13 @@ FShardFileData UTrajectoryDataLoader::LoadShardFile(const FString& ShardFilePath
 	// Reserve space for entries
 	ShardData.Entries.Reserve(ShardData.Header.TrajectoryEntryCount);
 
-	// Read and parse each trajectory entry
+	// Read and parse each trajectory entry using efficient bulk memory copy
 	TArray<uint8> EntryBuffer;
 	EntryBuffer.SetNum(EntrySizeBytes);
 
 	for (int32 i = 0; i < ShardData.Header.TrajectoryEntryCount; ++i)
 	{
-		// Read entry data
+		// Read entire entry data in one operation
 		if (!FileHandle->Read(EntryBuffer.GetData(), EntrySizeBytes))
 		{
 			delete FileHandle;
@@ -337,32 +337,27 @@ FShardFileData UTrajectoryDataLoader::LoadShardFile(const FString& ShardFilePath
 			return ShardData;
 		}
 
-		// Parse entry
+		// Parse entry using efficient bulk memory operations
 		FShardTrajectoryEntry Entry;
 
-		// Read trajectory ID (offset 0, uint64)
-		uint64 TrajectoryIdU64;
-		FMemory::Memcpy(&TrajectoryIdU64, EntryBuffer.GetData(), sizeof(uint64));
-		Entry.TrajectoryId = static_cast<int64>(TrajectoryIdU64);
+		// Copy header fields using the binary-packed header struct
+		const FTrajectoryEntryHeaderBinary* HeaderBinary = 
+			reinterpret_cast<const FTrajectoryEntryHeaderBinary*>(EntryBuffer.GetData());
+		
+		Entry.TrajectoryId = static_cast<int64>(HeaderBinary->TrajectoryId);
+		Entry.StartTimeStepInInterval = HeaderBinary->StartTimeStepInInterval;
+		Entry.ValidSampleCount = HeaderBinary->ValidSampleCount;
 
-		// Read start time step in interval (offset 8, int32)
-		FMemory::Memcpy(&Entry.StartTimeStepInInterval, EntryBuffer.GetData() + 8, sizeof(int32));
-
-		// Read valid sample count (offset 12, int32)
-		FMemory::Memcpy(&Entry.ValidSampleCount, EntryBuffer.GetData() + 12, sizeof(int32));
-
-		// Read positions array (offset 16, array of float[3])
-		// Allocate space for all positions in the interval
-		Entry.Positions.SetNum(ShardData.Header.TimeStepIntervalSize);
-
-		// Copy position data directly as FVector3f (3 floats = 12 bytes each)
-		const float* PositionsData = reinterpret_cast<const float*>(EntryBuffer.GetData() + 16);
-		for (int32 PosIdx = 0; PosIdx < ShardData.Header.TimeStepIntervalSize; ++PosIdx)
-		{
-			Entry.Positions[PosIdx].X = PositionsData[PosIdx * 3 + 0];
-			Entry.Positions[PosIdx].Y = PositionsData[PosIdx * 3 + 1];
-			Entry.Positions[PosIdx].Z = PositionsData[PosIdx * 3 + 2];
-		}
+		// Bulk copy positions array with single memcpy operation
+		// FVector3f has the same memory layout as 3 consecutive floats (12 bytes)
+		// This allows direct memcpy of the entire positions array at once
+		Entry.Positions.SetNumUninitialized(ShardData.Header.TimeStepIntervalSize);
+		
+		const int32 PositionsDataSize = ShardData.Header.TimeStepIntervalSize * sizeof(FVector3f);
+		const uint8* PositionsDataPtr = EntryBuffer.GetData() + sizeof(FTrajectoryEntryHeaderBinary);
+		
+		// Single bulk memcpy for all positions - much faster than per-position loops
+		FMemory::Memcpy(Entry.Positions.GetData(), PositionsDataPtr, PositionsDataSize);
 
 		ShardData.Entries.Add(Entry);
 	}

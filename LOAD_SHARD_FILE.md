@@ -96,6 +96,51 @@ void LoadAndProcessShard()
 }
 ```
 
+## Performance Optimization
+
+The implementation uses **efficient bulk memory operations** for maximum performance:
+
+### Single Memcpy for Positions Array
+
+Instead of iterating over individual positions, the entire positions array is copied with a single `memcpy` operation:
+
+```cpp
+// OLD APPROACH (slow - iterates over each position)
+for (int32 i = 0; i < TimeStepIntervalSize; ++i)
+{
+    Entry.Positions[i].X = PositionsData[i * 3 + 0];
+    Entry.Positions[i].Y = PositionsData[i * 3 + 1];
+    Entry.Positions[i].Z = PositionsData[i * 3 + 2];
+}
+
+// NEW APPROACH (fast - single bulk copy)
+FMemory::Memcpy(Entry.Positions.GetData(), PositionsDataPtr, PositionsDataSize);
+```
+
+### Binary-Packed Header Struct
+
+The entry header is accessed using a binary-packed struct (`FTrajectoryEntryHeaderBinary`) that exactly matches the file format:
+
+```cpp
+#pragma pack(push, 1)
+struct FTrajectoryEntryHeaderBinary
+{
+    uint64 TrajectoryId;                // 8 bytes
+    int32 StartTimeStepInInterval;      // 4 bytes
+    int32 ValidSampleCount;             // 4 bytes
+};
+#pragma pack(pop)
+```
+
+This allows direct casting and field access without manual offset calculations.
+
+### Performance Benefits
+
+- **Eliminates per-position loops**: For a shard with 50 time steps and 1000 trajectories, this eliminates 50,000 individual field assignments
+- **Better CPU cache utilization**: Bulk memcpy is highly optimized for sequential memory operations
+- **Reduced function call overhead**: Single memcpy instead of thousands of individual assignments
+- **Memory layout matches binary format**: `FVector3f` (3 consecutive floats) matches the file's float[3] layout exactly
+
 ## Shard File Structure
 
 Each shard file follows this binary layout (see [specification-trajectory-data-shard.md](specification-trajectory-data-shard.md)):

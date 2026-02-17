@@ -82,8 +82,24 @@ struct FPositionSampleBinary
 #pragma pack(pop)
 
 /**
+ * Binary header structure for trajectory entry as stored in shard files
+ * This is the fixed-size header that precedes the positions array
+ */
+#pragma pack(push, 1)
+struct FTrajectoryEntryHeaderBinary
+{
+	uint64 TrajectoryId;                    // 8 bytes
+	int32 StartTimeStepInInterval;          // 4 bytes
+	int32 ValidSampleCount;                 // 4 bytes
+	// Total: 16 bytes
+	// Positions array follows immediately after this header
+};
+#pragma pack(pop)
+
+/**
  * Structure representing a single trajectory entry from a shard file
- * Parsed from binary format according to specification
+ * Uses efficient bulk memory copy from binary format
+ * The positions array is stored contiguously in memory matching the binary layout
  */
 USTRUCT(BlueprintType)
 struct TRAJECTORYDATA_API FShardTrajectoryEntry
