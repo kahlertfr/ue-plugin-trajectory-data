@@ -89,8 +89,13 @@ struct FDataBlockHeaderBinary
 static_assert(sizeof(FDataBlockHeaderBinary) == 32, "FDataBlockHeaderBinary must be exactly 32 bytes");
 static_assert(offsetof(FDataBlockHeaderBinary, Magic) == 0, "Magic must be at offset 0");
 static_assert(offsetof(FDataBlockHeaderBinary, FormatVersion) == 4, "FormatVersion must be at offset 4");
+static_assert(offsetof(FDataBlockHeaderBinary, EndiannessFlag) == 5, "EndiannessFlag must be at offset 5");
+static_assert(offsetof(FDataBlockHeaderBinary, Reserved) == 6, "Reserved must be at offset 6");
 static_assert(offsetof(FDataBlockHeaderBinary, GlobalIntervalIndex) == 8, "GlobalIntervalIndex must be at offset 8");
+static_assert(offsetof(FDataBlockHeaderBinary, TimeStepIntervalSize) == 12, "TimeStepIntervalSize must be at offset 12");
+static_assert(offsetof(FDataBlockHeaderBinary, TrajectoryEntryCount) == 16, "TrajectoryEntryCount must be at offset 16");
 static_assert(offsetof(FDataBlockHeaderBinary, DataSectionOffset) == 20, "DataSectionOffset must be at offset 20");
+static_assert(offsetof(FDataBlockHeaderBinary, Reserved2) == 28, "Reserved2 must be at offset 28");
 
 /**
  * Binary structure for raw position data as stored in shard files
