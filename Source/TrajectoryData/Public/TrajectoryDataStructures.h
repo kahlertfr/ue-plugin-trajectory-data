@@ -85,6 +85,13 @@ struct FDataBlockHeaderBinary
 };
 #pragma pack(pop)
 
+// Compile-time verification of struct layout for binary I/O safety
+static_assert(sizeof(FDataBlockHeaderBinary) == 32, "FDataBlockHeaderBinary must be exactly 32 bytes");
+static_assert(offsetof(FDataBlockHeaderBinary, Magic) == 0, "Magic must be at offset 0");
+static_assert(offsetof(FDataBlockHeaderBinary, FormatVersion) == 4, "FormatVersion must be at offset 4");
+static_assert(offsetof(FDataBlockHeaderBinary, GlobalIntervalIndex) == 8, "GlobalIntervalIndex must be at offset 8");
+static_assert(offsetof(FDataBlockHeaderBinary, DataSectionOffset) == 20, "DataSectionOffset must be at offset 20");
+
 /**
  * Binary structure for raw position data as stored in shard files
  * Matches the exact layout in shard-*.bin files for blob copy optimization
