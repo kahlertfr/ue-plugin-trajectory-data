@@ -532,26 +532,26 @@ void ExampleLoadShardFile()
 		}
 	}
 	
-	// Example: Build hash table from trajectory IDs
-	TMap<int64, const FShardTrajectoryEntry*> TrajectoryHashTable;
-	for (const FShardTrajectoryEntry& Entry : ShardData.Entries)
+	// Example: Build hash table mapping trajectory ID to entry index
+	// (Using indices avoids lifetime issues with pointers)
+	TMap<int64, int32> TrajectoryIndexMap;
+	for (int32 i = 0; i < ShardData.Entries.Num(); ++i)
 	{
-		TrajectoryHashTable.Add(Entry.TrajectoryId, &Entry);
+		TrajectoryIndexMap.Add(ShardData.Entries[i].TrajectoryId, i);
 	}
 	
-	UE_LOG(LogTemp, Log, TEXT("Built hash table with %d entries"), TrajectoryHashTable.Num());
+	UE_LOG(LogTemp, Log, TEXT("Built index map with %d entries"), TrajectoryIndexMap.Num());
 	
 	// Example: Quick lookup by trajectory ID
 	int64 SearchId = ShardData.Entries.Num() > 0 ? ShardData.Entries[0].TrajectoryId : 0;
-	if (const FShardTrajectoryEntry** FoundEntry = TrajectoryHashTable.Find(SearchId))
+	if (int32* FoundIndex = TrajectoryIndexMap.Find(SearchId))
 	{
+		const FShardTrajectoryEntry& Entry = ShardData.Entries[*FoundIndex];
 		UE_LOG(LogTemp, Log, TEXT("Quick lookup found trajectory %lld with %d positions"),
-			(*FoundEntry)->TrajectoryId, (*FoundEntry)->Positions.Num());
+			Entry.TrajectoryId, Entry.Positions.Num());
 	}
 	
 	// Pass structured data to external components
 	// ExternalHashTableBuilder->BuildFromShard(ShardData);
 	// CustomIndexer->ProcessEntries(ShardData.Entries);
-}
-	}
 }

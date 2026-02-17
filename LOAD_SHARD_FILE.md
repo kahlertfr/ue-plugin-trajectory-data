@@ -172,21 +172,36 @@ Example of using structured data for hash table construction:
 ```cpp
 void BuildHashTable(const FShardFileData& ShardData)
 {
-    TMap<int64, FShardTrajectoryEntry*> TrajectoryHashTable;
+    // Build hash table mapping trajectory ID to entry index
+    TMap<int64, int32> TrajectoryIndexMap;
     
-    // Build hash table from trajectory IDs
-    for (FShardTrajectoryEntry& Entry : ShardData.Entries)
+    for (int32 i = 0; i < ShardData.Entries.Num(); ++i)
     {
-        TrajectoryHashTable.Add(Entry.TrajectoryId, &Entry);
+        TrajectoryIndexMap.Add(ShardData.Entries[i].TrajectoryId, i);
     }
     
     // Quick lookup by trajectory ID
     int64 SearchId = 1234;
-    if (FShardTrajectoryEntry** FoundEntry = TrajectoryHashTable.Find(SearchId))
+    if (int32* FoundIndex = TrajectoryIndexMap.Find(SearchId))
     {
+        const FShardTrajectoryEntry& Entry = ShardData.Entries[*FoundIndex];
         UE_LOG(LogTemp, Log, TEXT("Found trajectory %lld with %d positions"),
-            (*FoundEntry)->TrajectoryId, (*FoundEntry)->Positions.Num());
+            Entry.TrajectoryId, Entry.Positions.Num());
     }
+}
+
+// Alternative: Copy entry data into hash table for independent lifetime
+void BuildPersistentHashTable(const FShardFileData& ShardData)
+{
+    TMap<int64, FShardTrajectoryEntry> TrajectoryHashTable;
+    
+    // Copy entries into hash table (data persists independently)
+    for (const FShardTrajectoryEntry& Entry : ShardData.Entries)
+    {
+        TrajectoryHashTable.Add(Entry.TrajectoryId, Entry);
+    }
+    
+    // Hash table can be used after ShardData goes out of scope
 }
 ```
 

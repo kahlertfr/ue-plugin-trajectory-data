@@ -295,8 +295,9 @@ FShardFileData UTrajectoryDataLoader::LoadShardFile(const FString& ShardFilePath
 	}
 
 	// Calculate entry size from header
-	// Entry size = 16 bytes (header) + (TimeStepIntervalSize * 3 * sizeof(float)) for positions
-	int32 EntrySizeBytes = 16 + (ShardData.Header.TimeStepIntervalSize * 3 * sizeof(float));
+	// Per specification: Entry header = 8 bytes (trajectory_id) + 4 bytes (start_time_step) + 4 bytes (valid_sample_count)
+	constexpr int32 EntryHeaderSize = sizeof(uint64) + sizeof(int32) + sizeof(int32);  // = 16 bytes
+	int32 EntrySizeBytes = EntryHeaderSize + (ShardData.Header.TimeStepIntervalSize * 3 * sizeof(float));
 
 	// Validate we have enough data for all entries
 	int64 RequiredDataSize = ShardData.Header.DataSectionOffset + 
