@@ -2,18 +2,21 @@
 
 ## Overview
 
-The `LoadShardFile` function provides a public API for loading and parsing the complete content of a single shard file into structured, easily accessible data. This is useful for external components that need direct access to trajectory data, such as:
+The `LoadShardFile` function provides a **C++ only** API for loading and parsing the complete content of a single shard file into structured, easily accessible data. This is useful for C++ components that need direct access to trajectory data, such as:
 
 - Hash table builders
 - Custom data indexing systems
 - External data processing pipelines
 - Performance analysis tools
 
+**Note:** This API is not exposed to Blueprints. For Blueprint trajectory loading, use `LoadTrajectoriesSync` or `LoadTrajectoriesAsync` instead.
+
 ## API
 
 ### Function Signature
 
 ```cpp
+// C++ Only - Not exposed to Blueprints
 FShardFileData LoadShardFile(const FString& ShardFilePath);
 ```
 

@@ -52,34 +52,21 @@ struct FTrajectoryMetaBinary
 /**
  * Binary structure for Data Block Header (shard-*.bin)
  * Total size: 32 bytes
- * Note: This is a USTRUCT to allow use in Blueprint-exposed structs.
- * WARNING: This struct is used for binary file I/O with FMemory::Memcpy.
- * The field layout must match the specification exactly (no padding).
- * In Unreal Engine, USTRUCT maintains field order without adding padding,
- * so this is safe for binary I/O operations.
+ * C++ Only: This struct is used for binary file I/O with FMemory::Memcpy.
+ * WARNING: The field layout must match the specification exactly (no padding).
+ * Uses #pragma pack(push, 1) for precise binary layout control.
  */
-USTRUCT(BlueprintType)
-struct TRAJECTORYDATA_API FDataBlockHeaderBinary
+#pragma pack(push, 1)
+struct FDataBlockHeaderBinary
 {
-	GENERATED_BODY()
-
 	char Magic[4];                      // "TDDB" - 4 bytes at offset 0
 	uint8 FormatVersion;                // 1 byte at offset 4
 	uint8 EndiannessFlag;               // 1 byte at offset 5 (0 = little, 1 = big)
 	uint16 Reserved;                    // 2 bytes at offset 6
-	
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int32 GlobalIntervalIndex;          // 4 bytes at offset 8 - which interval this file represents
-	
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int32 TimeStepIntervalSize;         // 4 bytes at offset 12
-	
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int32 TrajectoryEntryCount;         // 4 bytes at offset 16
-	
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int64 DataSectionOffset;            // 8 bytes at offset 20 - byte offset where entries begin
-	
 	uint32 Reserved2;                   // 4 bytes at offset 28
 	// Total: 32 bytes
 
@@ -96,6 +83,7 @@ struct TRAJECTORYDATA_API FDataBlockHeaderBinary
 		FMemory::Memzero(Magic, sizeof(Magic));
 	}
 };
+#pragma pack(pop)
 
 /**
  * Binary structure for raw position data as stored in shard files
@@ -127,28 +115,22 @@ struct FTrajectoryEntryHeaderBinary
 
 /**
  * Structure representing a single trajectory entry from a shard file
- * Uses efficient bulk memory copy from binary format
- * The positions array is stored contiguously in memory matching the binary layout
+ * C++ Only: Uses efficient bulk memory copy from binary format.
+ * The positions array is stored contiguously in memory matching the binary layout.
+ * For Blueprint use, see FLoadedTrajectory instead.
  */
-USTRUCT(BlueprintType)
-struct TRAJECTORYDATA_API FShardTrajectoryEntry
+struct FShardTrajectoryEntry
 {
-	GENERATED_BODY()
-
 	/** Unique trajectory ID (uint64 from binary) */
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int64 TrajectoryId;
 
 	/** Start time step within this interval (int32 from binary, -1 if no valid samples) */
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int32 StartTimeStepInInterval;
 
 	/** Number of valid samples in this interval (int32 from binary) */
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int32 ValidSampleCount;
 
 	/** Position samples for this trajectory in this interval (array of FVector3f) */
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	TArray<FVector3f> Positions;
 
 	FShardTrajectoryEntry()
@@ -161,32 +143,25 @@ struct TRAJECTORYDATA_API FShardTrajectoryEntry
 
 /**
  * Structure to hold complete shard file data in memory
- * Contains parsed header and trajectory entries with structured access
- * This allows other components to easily access trajectory data
+ * C++ Only: Contains parsed header and trajectory entries for internal processing.
+ * Useful for components that need direct access to raw shard data (e.g., hash table creation).
+ * For Blueprint use, see FTrajectoryLoadResult and FLoadedTrajectory instead.
  */
-USTRUCT(BlueprintType)
-struct TRAJECTORYDATA_API FShardFileData
+struct FShardFileData
 {
-	GENERATED_BODY()
-
 	/** Shard file header containing metadata */
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FDataBlockHeaderBinary Header;
 
 	/** Parsed trajectory entries from the shard file */
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	TArray<FShardTrajectoryEntry> Entries;
 
 	/** Path to the shard file that was loaded */
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FString FilePath;
 
 	/** Whether the load was successful */
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	bool bSuccess;
 
 	/** Error message if load failed */
-	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FString ErrorMessage;
 
 	FShardFileData()
