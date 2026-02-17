@@ -82,9 +82,42 @@ struct FPositionSampleBinary
 #pragma pack(pop)
 
 /**
+ * Structure representing a single trajectory entry from a shard file
+ * Parsed from binary format according to specification
+ */
+USTRUCT(BlueprintType)
+struct TRAJECTORYDATA_API FShardTrajectoryEntry
+{
+	GENERATED_BODY()
+
+	/** Unique trajectory ID (uint64 from binary) */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	int64 TrajectoryId;
+
+	/** Start time step within this interval (int32 from binary, -1 if no valid samples) */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	int32 StartTimeStepInInterval;
+
+	/** Number of valid samples in this interval (int32 from binary) */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	int32 ValidSampleCount;
+
+	/** Position samples for this trajectory in this interval (array of FVector3f) */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	TArray<FVector3f> Positions;
+
+	FShardTrajectoryEntry()
+		: TrajectoryId(0)
+		, StartTimeStepInInterval(-1)
+		, ValidSampleCount(0)
+	{
+	}
+};
+
+/**
  * Structure to hold complete shard file data in memory
- * Contains both the header and the raw binary data blob
- * This allows other components to access the full shard content
+ * Contains parsed header and trajectory entries with structured access
+ * This allows other components to easily access trajectory data
  */
 USTRUCT(BlueprintType)
 struct TRAJECTORYDATA_API FShardFileData
@@ -95,9 +128,9 @@ struct TRAJECTORYDATA_API FShardFileData
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FDataBlockHeaderBinary Header;
 
-	/** Raw binary data from the shard file (includes header + all entries) */
+	/** Parsed trajectory entries from the shard file */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
-	TArray<uint8> RawData;
+	TArray<FShardTrajectoryEntry> Entries;
 
 	/** Path to the shard file that was loaded */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")

@@ -254,47 +254,126 @@ FShardFileData UTrajectoryDataLoader::LoadShardFile(const FString& ShardFilePath
 		return ShardData;
 	}
 
-	// Allocate memory for entire file content
-	// Using SetNum instead of SetNumUninitialized since Read will overwrite all bytes
-	ShardData.RawData.SetNum(FileSize);
-
-	// Read entire file content into memory with a single read operation
-	if (!FileHandle->Read(ShardData.RawData.GetData(), FileSize))
+	// Read the header first
+	TArray<uint8> HeaderData;
+	HeaderData.SetNum(sizeof(FDataBlockHeaderBinary));
+	if (!FileHandle->Read(HeaderData.GetData(), sizeof(FDataBlockHeaderBinary)))
 	{
 		delete FileHandle;
-		ShardData.ErrorMessage = TEXT("Failed to read shard file content");
-		ShardData.RawData.Empty();
+		ShardData.ErrorMessage = TEXT("Failed to read shard file header");
 		return ShardData;
 	}
 
-	delete FileHandle;
-
-	// Copy header from raw data
-	FMemory::Memcpy(&ShardData.Header, ShardData.RawData.GetData(), sizeof(FDataBlockHeaderBinary));
+	// Copy header
+	FMemory::Memcpy(&ShardData.Header, HeaderData.GetData(), sizeof(FDataBlockHeaderBinary));
 
 	// Validate magic number
 	if (FMemory::Memcmp(ShardData.Header.Magic, "TDDB", 4) != 0)
 	{
+		delete FileHandle;
 		ShardData.ErrorMessage = TEXT("Invalid shard file format: magic number mismatch");
-		ShardData.RawData.Empty();
 		return ShardData;
 	}
 
 	// Validate format version
 	if (ShardData.Header.FormatVersion != 1)
 	{
+		delete FileHandle;
 		ShardData.ErrorMessage = FString::Printf(TEXT("Unsupported shard file format version: %d"), 
 			ShardData.Header.FormatVersion);
-		ShardData.RawData.Empty();
 		return ShardData;
 	}
+
+	// Validate data section offset
+	if (ShardData.Header.DataSectionOffset < sizeof(FDataBlockHeaderBinary) || 
+		ShardData.Header.DataSectionOffset >= FileSize)
+	{
+		delete FileHandle;
+		ShardData.ErrorMessage = FString::Printf(TEXT("Invalid data section offset: %lld"), 
+			ShardData.Header.DataSectionOffset);
+		return ShardData;
+	}
+
+	// Calculate entry size from header
+	// Entry size = 16 bytes (header) + (TimeStepIntervalSize * 3 * sizeof(float)) for positions
+	int32 EntrySizeBytes = 16 + (ShardData.Header.TimeStepIntervalSize * 3 * sizeof(float));
+
+	// Validate we have enough data for all entries
+	int64 RequiredDataSize = ShardData.Header.DataSectionOffset + 
+		((int64)ShardData.Header.TrajectoryEntryCount * EntrySizeBytes);
+	if (RequiredDataSize > FileSize)
+	{
+		delete FileHandle;
+		ShardData.ErrorMessage = FString::Printf(
+			TEXT("File too small for declared entry count (need %lld bytes, have %lld bytes)"),
+			RequiredDataSize, FileSize);
+		return ShardData;
+	}
+
+	// Seek to data section
+	if (!FileHandle->Seek(ShardData.Header.DataSectionOffset))
+	{
+		delete FileHandle;
+		ShardData.ErrorMessage = TEXT("Failed to seek to data section");
+		return ShardData;
+	}
+
+	// Reserve space for entries
+	ShardData.Entries.Reserve(ShardData.Header.TrajectoryEntryCount);
+
+	// Read and parse each trajectory entry
+	TArray<uint8> EntryBuffer;
+	EntryBuffer.SetNum(EntrySizeBytes);
+
+	for (int32 i = 0; i < ShardData.Header.TrajectoryEntryCount; ++i)
+	{
+		// Read entry data
+		if (!FileHandle->Read(EntryBuffer.GetData(), EntrySizeBytes))
+		{
+			delete FileHandle;
+			ShardData.ErrorMessage = FString::Printf(TEXT("Failed to read trajectory entry %d"), i);
+			ShardData.Entries.Empty();
+			return ShardData;
+		}
+
+		// Parse entry
+		FShardTrajectoryEntry Entry;
+
+		// Read trajectory ID (offset 0, uint64)
+		uint64 TrajectoryIdU64;
+		FMemory::Memcpy(&TrajectoryIdU64, EntryBuffer.GetData(), sizeof(uint64));
+		Entry.TrajectoryId = static_cast<int64>(TrajectoryIdU64);
+
+		// Read start time step in interval (offset 8, int32)
+		FMemory::Memcpy(&Entry.StartTimeStepInInterval, EntryBuffer.GetData() + 8, sizeof(int32));
+
+		// Read valid sample count (offset 12, int32)
+		FMemory::Memcpy(&Entry.ValidSampleCount, EntryBuffer.GetData() + 12, sizeof(int32));
+
+		// Read positions array (offset 16, array of float[3])
+		// Allocate space for all positions in the interval
+		Entry.Positions.SetNum(ShardData.Header.TimeStepIntervalSize);
+
+		// Copy position data directly as FVector3f (3 floats = 12 bytes each)
+		const float* PositionsData = reinterpret_cast<const float*>(EntryBuffer.GetData() + 16);
+		for (int32 PosIdx = 0; PosIdx < ShardData.Header.TimeStepIntervalSize; ++PosIdx)
+		{
+			Entry.Positions[PosIdx].X = PositionsData[PosIdx * 3 + 0];
+			Entry.Positions[PosIdx].Y = PositionsData[PosIdx * 3 + 1];
+			Entry.Positions[PosIdx].Z = PositionsData[PosIdx * 3 + 2];
+		}
+
+		ShardData.Entries.Add(Entry);
+	}
+
+	delete FileHandle;
 
 	// Success
 	ShardData.bSuccess = true;
 	ShardData.ErrorMessage = TEXT("");
 
-	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Successfully loaded shard file %s (size: %lld bytes, entries: %d)"),
-		*ShardFilePath, FileSize, ShardData.Header.TrajectoryEntryCount);
+	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Successfully loaded and parsed shard file %s (%d entries)"),
+		*ShardFilePath, ShardData.Entries.Num());
 
 	return ShardData;
 }
