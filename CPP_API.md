@@ -259,6 +259,11 @@ All queries execute on background threads automatically. The callback is invoked
 - Memory usage: `NumTrajectories * NumTimeSteps * 12 bytes` (FVector is 12 bytes)
 - For large ranges, consider chunking (see example below)
 
+**Performance Measurement Note:**
+- Timing measurements that capture start time before calling the async API include queueing overhead
+- For pure query execution time, measure inside the query task's Run() method
+- Queueing overhead is typically negligible (< 1ms) but can vary under heavy load
+
 ### Chunked Loading for Large Ranges
 
 When querying large time ranges, split into chunks:

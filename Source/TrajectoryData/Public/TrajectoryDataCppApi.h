@@ -228,6 +228,9 @@ private:
 	/** Singleton instance */
 	static FTrajectoryDataCppApi* Instance;
 	
+	/** Mutex for thread-safe singleton initialization */
+	static FCriticalSection InstanceMutex;
+	
 	/** Active query tasks */
 	TArray<TSharedPtr<FTrajectoryQueryTask>> ActiveTasks;
 	

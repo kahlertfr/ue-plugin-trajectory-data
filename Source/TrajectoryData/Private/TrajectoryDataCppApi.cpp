@@ -10,6 +10,7 @@
 #include "Async/Async.h"
 
 FTrajectoryDataCppApi* FTrajectoryDataCppApi::Instance = nullptr;
+FCriticalSection FTrajectoryDataCppApi::InstanceMutex;
 
 FTrajectoryDataCppApi::FTrajectoryDataCppApi()
 {
@@ -31,8 +32,6 @@ FTrajectoryDataCppApi::~FTrajectoryDataCppApi()
 
 FTrajectoryDataCppApi* FTrajectoryDataCppApi::Get()
 {
-	static FCriticalSection InstanceMutex;
-	
 	// Double-checked locking pattern for thread-safe singleton initialization
 	if (!Instance)
 	{
