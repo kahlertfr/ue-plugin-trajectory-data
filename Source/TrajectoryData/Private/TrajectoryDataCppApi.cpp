@@ -31,9 +31,16 @@ FTrajectoryDataCppApi::~FTrajectoryDataCppApi()
 
 FTrajectoryDataCppApi* FTrajectoryDataCppApi::Get()
 {
+	static FCriticalSection InstanceMutex;
+	
+	// Double-checked locking pattern for thread-safe singleton initialization
 	if (!Instance)
 	{
-		Instance = new FTrajectoryDataCppApi();
+		FScopeLock Lock(&InstanceMutex);
+		if (!Instance)
+		{
+			Instance = new FTrajectoryDataCppApi();
+		}
 	}
 	return Instance;
 }
@@ -148,7 +155,12 @@ FTrajectoryQueryTask::~FTrajectoryQueryTask()
 {
 	if (Thread)
 	{
-		Thread->Kill(true);
+		// Request graceful stop
+		Stop();
+		
+		// Wait for thread to complete (with timeout)
+		Thread->WaitForCompletion();
+		
 		delete Thread;
 		Thread = nullptr;
 	}

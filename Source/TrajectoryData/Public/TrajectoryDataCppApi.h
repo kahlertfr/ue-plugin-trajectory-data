@@ -173,6 +173,7 @@ class TRAJECTORYDATA_API FTrajectoryDataCppApi
 public:
 	/**
 	 * Get the singleton instance of the C++ API
+	 * Thread-safe singleton initialization using double-checked locking
 	 * @return Pointer to the API instance
 	 */
 	static FTrajectoryDataCppApi* Get();

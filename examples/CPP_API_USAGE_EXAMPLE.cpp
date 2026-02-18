@@ -205,7 +205,7 @@ void ExampleIntegratedUsage()
  * Example 4: Building a custom component that uses the C++ API
  * This shows how a plugin component might use the API for interactive features
  */
-class MYPLUGIN_API UMyTrajectoryQueryComponent : public UActorComponent
+class YOURPLUGIN_API UMyTrajectoryQueryComponent : public UActorComponent
 {
 	GENERATED_BODY()
 	
@@ -440,6 +440,7 @@ void ExampleStreamingQuery()
 /**
  * Example 8: Performance comparison
  * Shows how to measure query performance
+ * Note: This measures wall-clock time including queueing overhead
  */
 void ExamplePerformanceMeasurement()
 {
@@ -453,6 +454,7 @@ void ExamplePerformanceMeasurement()
 		TrajectoryIds.Add(i);
 	}
 	
+	// Note: Start time is captured before query starts, so elapsed time includes queue delay
 	double StartTime = FPlatformTime::Seconds();
 	
 	Api->QuerySingleTimeStepAsync(
@@ -466,7 +468,7 @@ void ExamplePerformanceMeasurement()
 			
 			if (Result.bSuccess)
 			{
-				UE_LOG(LogTemp, Log, TEXT("Query completed in %.2f ms"), ElapsedMs);
+				UE_LOG(LogTemp, Log, TEXT("Query completed in %.2f ms (includes queueing overhead)"), ElapsedMs);
 				UE_LOG(LogTemp, Log, TEXT("Retrieved %d samples"), Result.Samples.Num());
 				UE_LOG(LogTemp, Log, TEXT("Average time per trajectory: %.4f ms"), 
 					ElapsedMs / Result.Samples.Num());
