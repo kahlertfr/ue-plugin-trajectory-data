@@ -313,8 +313,9 @@ void TestIntegration()
         TrajectoryIds.Add(i);
     }
     
-    // Calculate a valid time step
-    int32 TimeStep = (Dataset.Metadata.FirstTimeStep + Dataset.Metadata.LastTimeStep) / 2;
+    // Calculate a valid time step (using safe arithmetic to avoid overflow)
+    int32 TimeStep = Dataset.Metadata.FirstTimeStep + 
+        (Dataset.Metadata.LastTimeStep - Dataset.Metadata.FirstTimeStep) / 2;
     
     // Query using C++ API
     FTrajectoryDataCppApi* Api = FTrajectoryDataCppApi::Get();

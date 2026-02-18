@@ -185,7 +185,9 @@ void ExampleIntegratedUsage()
 		TrajectoryIds.Add(i);
 	}
 	
-	int32 MidTimeStep = (DatasetInfo.Metadata.FirstTimeStep + DatasetInfo.Metadata.LastTimeStep) / 2;
+	// Calculate a valid time step (using safe arithmetic to avoid overflow)
+	int32 MidTimeStep = DatasetInfo.Metadata.FirstTimeStep + 
+		(DatasetInfo.Metadata.LastTimeStep - DatasetInfo.Metadata.FirstTimeStep) / 2;
 	
 	Api->QuerySingleTimeStepAsync(
 		DatasetInfo.DatasetPath,
@@ -440,7 +442,10 @@ void ExampleStreamingQuery()
 /**
  * Example 8: Performance comparison
  * Shows how to measure query performance
- * Note: This measures wall-clock time including queueing overhead
+ * Note: This measures wall-clock time including queueing overhead.
+ * Queueing overhead is typically negligible (< 1ms) but can vary under heavy load.
+ * For pure query execution time, measure inside the query task's Run() method.
+ * See CPP_API.md "Performance Considerations" section for details.
  */
 void ExamplePerformanceMeasurement()
 {

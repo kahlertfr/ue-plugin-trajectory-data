@@ -157,7 +157,7 @@ FTrajectoryQueryTask::~FTrajectoryQueryTask()
 		// Request graceful stop
 		Stop();
 		
-		// Wait for thread to complete (with timeout)
+		// Wait for thread to complete
 		Thread->WaitForCompletion();
 		
 		delete Thread;
