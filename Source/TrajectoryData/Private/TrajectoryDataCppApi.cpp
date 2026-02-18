@@ -299,7 +299,8 @@ void FTrajectoryQueryTask::ExecuteSingleTimeStepQuery()
 	FMemory::Memcpy(&ShardHeader, ShardData.GetData(), sizeof(FDataBlockHeaderBinary));
 	
 	// Calculate the time step index within this interval
-	int32 IntervalStartTimeStep = GlobalIntervalIndex * DatasetMeta.TimeStepIntervalSize + DatasetMeta.FirstTimeStep;
+	// Use the actual GlobalIntervalIndex from the shard header, not the calculated one
+	int32 IntervalStartTimeStep = ShardHeader.GlobalIntervalIndex * DatasetMeta.TimeStepIntervalSize + DatasetMeta.FirstTimeStep;
 	int32 TimeStepIndexInInterval = StartTimeStep - IntervalStartTimeStep;
 	
 	// Parse shard entries
