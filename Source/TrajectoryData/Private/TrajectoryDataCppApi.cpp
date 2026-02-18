@@ -302,6 +302,9 @@ void FTrajectoryQueryTask::ExecuteSingleTimeStepQuery()
 	int32 IntervalStartTimeStep = GlobalIntervalIndex * DatasetMeta.TimeStepIntervalSize + DatasetMeta.FirstTimeStep;
 	int32 TimeStepIndexInInterval = StartTimeStep - IntervalStartTimeStep;
 	
+	// OPTIMIZATION: Create TSet for O(1) trajectory ID lookup instead of O(N) array search
+	TSet<int64> RequestedTrajIdSet(TrajectoryIds);
+	
 	// Parse shard entries
 	const uint8* DataPtr = ShardData.GetData() + ShardHeader.DataSectionOffset;
 	int64 RemainingBytes = ShardData.Num() - ShardHeader.DataSectionOffset;
@@ -326,8 +329,8 @@ void FTrajectoryQueryTask::ExecuteSingleTimeStepQuery()
 		DataPtr += sizeof(FTrajectoryEntryHeaderBinary);
 		RemainingBytes -= sizeof(FTrajectoryEntryHeaderBinary);
 		
-		// Check if this trajectory is in our query list
-		bool bIsRequested = TrajectoryIds.Contains(EntryHeader.TrajectoryId);
+		// Check if this trajectory is in our query list (O(1) lookup with TSet)
+		bool bIsRequested = RequestedTrajIdSet.Contains(EntryHeader.TrajectoryId);
 		
 		// Calculate positions array size
 		int32 PositionsArraySize = DatasetMeta.TimeStepIntervalSize * sizeof(FPositionSampleBinary);
@@ -547,31 +550,32 @@ void FTrajectoryQueryTask::ExecuteTimeRangeQuery()
 				int32 FirstSampleInInterval = EntryHeader.StartTimeStepInInterval;
 				int32 LastSampleInInterval = FirstSampleInInterval + EntryHeader.ValidSampleCount - 1;
 				
-				for (int32 TimeStepInInterval = 0; TimeStepInInterval < DatasetMeta.TimeStepIntervalSize; ++TimeStepInInterval)
+				// OPTIMIZATION: Only iterate through the intersection of valid samples and query range
+				// Calculate query range relative to this interval
+				int32 QueryStartInInterval = FMath::Max(0, StartTimeStep - IntervalStartTimeStep);
+				int32 QueryEndInInterval = FMath::Min(DatasetMeta.TimeStepIntervalSize - 1, EndTimeStep - IntervalStartTimeStep);
+				
+				// Intersect with valid sample range
+				int32 IterStart = FMath::Max(FirstSampleInInterval, QueryStartInInterval);
+				int32 IterEnd = FMath::Min(LastSampleInInterval, QueryEndInInterval);
+				
+				for (int32 TimeStepInInterval = IterStart; TimeStepInInterval <= IterEnd; ++TimeStepInInterval)
 				{
 					int32 AbsoluteTimeStep = IntervalStartTimeStep + TimeStepInInterval;
 					
-					// Check if this time step is in our query range
-					if (AbsoluteTimeStep >= StartTimeStep && AbsoluteTimeStep <= EndTimeStep)
+					// Extract sample (no additional range checks needed - already filtered by loop bounds)
+					int32 SampleOffset = TimeStepInInterval * sizeof(FPositionSampleBinary);
+					const uint8* SamplePtr = DataPtr + SampleOffset;
+					
+					FPositionSampleBinary PosBinary;
+					FMemory::Memcpy(&PosBinary, SamplePtr, sizeof(FPositionSampleBinary));
+					
+					// Check if sample is valid (not NaN)
+					if (!FMath::IsNaN(PosBinary.X) && !FMath::IsNaN(PosBinary.Y) && !FMath::IsNaN(PosBinary.Z))
 					{
-						// Check if this time step has valid data
-						if (TimeStepInInterval >= FirstSampleInInterval && TimeStepInInterval <= LastSampleInInterval)
-						{
-							// Extract sample
-							int32 SampleOffset = TimeStepInInterval * sizeof(FPositionSampleBinary);
-							const uint8* SamplePtr = DataPtr + SampleOffset;
-							
-							FPositionSampleBinary PosBinary;
-							FMemory::Memcpy(&PosBinary, SamplePtr, sizeof(FPositionSampleBinary));
-							
-							// Check if sample is valid (not NaN)
-							if (!FMath::IsNaN(PosBinary.X) && !FMath::IsNaN(PosBinary.Y) && !FMath::IsNaN(PosBinary.Z))
-							{
-								// Store in result
-								int32 ResultIndex = AbsoluteTimeStep - StartTimeStep;
-								Series->Samples[ResultIndex] = FVector(PosBinary.X, PosBinary.Y, PosBinary.Z);
-							}
-						}
+						// Store in result
+						int32 ResultIndex = AbsoluteTimeStep - StartTimeStep;
+						Series->Samples[ResultIndex] = FVector(PosBinary.X, PosBinary.Y, PosBinary.Z);
 					}
 				}
 			}

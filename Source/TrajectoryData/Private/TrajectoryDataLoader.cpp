@@ -1279,52 +1279,34 @@ TMap<int32, FShardInfo> UTrajectoryDataLoader::DiscoverShardFiles(const FString&
 		int32 FileIndex = FCString::Atoi(*NumberPart);
 		FString FullPath = FPaths::Combine(DatasetPath, FileName);
 		
-		// Try to read the shard header to get GlobalIntervalIndex
-		TUniquePtr<IMappedFileHandle> MappedFileHandle(PlatformFile.OpenMapped(*FullPath));
-		if (!MappedFileHandle.IsValid())
-		{
-			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Failed to map shard file for discovery: %s"), *FullPath);
-			continue;
-		}
+		// OPTIMIZATION: Calculate time step range directly from filename instead of reading file
+		// The filename format is shard-<GlobalIntervalIndex>.bin where GlobalIntervalIndex
+		// matches the value stored in the file header. This avoids expensive file I/O during discovery.
 		
+		// Verify file exists and has minimum size (optional safety check)
 		int64 FileSize = PlatformFile.FileSize(*FullPath);
 		if (FileSize < sizeof(FDataBlockHeaderBinary))
 		{
+			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Shard file too small, skipping: %s"), *FullPath);
 			continue;
 		}
 		
-		TUniquePtr<IMappedFileRegion> MappedRegion(MappedFileHandle->MapRegion(0, FileSize));
-		if (!MappedRegion.IsValid())
-		{
-			continue;
-		}
-		
-		const uint8* MappedData = MappedRegion->GetMappedPtr();
-		
-		// Read header
-		FDataBlockHeaderBinary Header;
-		if (!ReadShardHeaderMapped(MappedData, FileSize, Header))
-		{
-			UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataLoader: Failed to read shard header for: %s"), *FullPath);
-			continue;
-		}
-		
-		// Build shard info
+		// Build shard info using filename-based calculation
 		FShardInfo Info;
-		Info.GlobalIntervalIndex = Header.GlobalIntervalIndex;
+		Info.GlobalIntervalIndex = FileIndex;  // FileIndex from filename equals GlobalIntervalIndex
 		Info.FilePath = FullPath;
 		
-		// Calculate time step range
+		// Calculate time step range directly from GlobalIntervalIndex
 		// Each shard covers: [GlobalIntervalIndex * TimeStepIntervalSize, (GlobalIntervalIndex + 1) * TimeStepIntervalSize - 1]
 		// Adjusted by the dataset's FirstTimeStep
-		Info.StartTimeStep = DatasetMeta.FirstTimeStep + (Header.GlobalIntervalIndex * DatasetMeta.TimeStepIntervalSize);
+		Info.StartTimeStep = DatasetMeta.FirstTimeStep + (FileIndex * DatasetMeta.TimeStepIntervalSize);
 		Info.EndTimeStep = Info.StartTimeStep + DatasetMeta.TimeStepIntervalSize - 1;
 		
 		// Use FileIndex (from filename) as key to match with DataFileIndex in trajectory metadata
 		ShardInfoTable.Add(FileIndex, Info);
 		
-		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Discovered shard file %d (global interval %d): time steps %d-%d"),
-			FileIndex, Header.GlobalIntervalIndex, Info.StartTimeStep, Info.EndTimeStep);
+		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataLoader: Discovered shard file %d (interval %d): time steps %d-%d"),
+			FileIndex, Info.GlobalIntervalIndex, Info.StartTimeStep, Info.EndTimeStep);
 	}
 	
 	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataLoader: Discovered %d shard files in dataset"), ShardInfoTable.Num());
