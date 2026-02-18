@@ -563,14 +563,14 @@ void FTrajectoryQueryTask::ExecuteTimeRangeQuery()
 				{
 					int32 AbsoluteTimeStep = IntervalStartTimeStep + TimeStepInInterval;
 					
-					// Extract sample (no additional range checks needed - already filtered by loop bounds)
+					// Extract sample - time range checks eliminated by optimized loop bounds
 					int32 SampleOffset = TimeStepInInterval * sizeof(FPositionSampleBinary);
 					const uint8* SamplePtr = DataPtr + SampleOffset;
 					
 					FPositionSampleBinary PosBinary;
 					FMemory::Memcpy(&PosBinary, SamplePtr, sizeof(FPositionSampleBinary));
 					
-					// Check if sample is valid (not NaN)
+					// Validate sample data (not NaN)
 					if (!FMath::IsNaN(PosBinary.X) && !FMath::IsNaN(PosBinary.Y) && !FMath::IsNaN(PosBinary.Z))
 					{
 						// Store in result

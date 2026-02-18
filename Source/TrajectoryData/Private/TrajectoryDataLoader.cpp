@@ -1283,7 +1283,8 @@ TMap<int32, FShardInfo> UTrajectoryDataLoader::DiscoverShardFiles(const FString&
 		// The filename format is shard-<GlobalIntervalIndex>.bin where GlobalIntervalIndex
 		// matches the value stored in the file header. This avoids expensive file I/O during discovery.
 		
-		// Verify file exists and has minimum size (optional safety check)
+		// Basic corruption check: ensure file is at least large enough to contain a header
+		// This is much cheaper than memory-mapping and reading the header while still catching obviously invalid files
 		int64 FileSize = PlatformFile.FileSize(*FullPath);
 		if (FileSize < sizeof(FDataBlockHeaderBinary))
 		{

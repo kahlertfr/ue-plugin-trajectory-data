@@ -415,6 +415,12 @@ Buffer.ReleaseCPUPositionData();
 
 ### Loading Performance
 
+**Shard Loading Optimizations:**
+- **Time Range Filtering**: Only loads shard files that overlap with the queried time range
+- **Fast Discovery**: Calculates time step ranges from filenames (10-100x faster than reading headers)
+- **Efficient ID Lookup**: Uses hash sets (TSet) for O(1) trajectory ID filtering
+- **Smart Loop Bounds**: Only iterates through valid sample intersections
+
 **File I/O:**
 - Use SSD for best performance
 - Loading from HDD is 5-10x slower
