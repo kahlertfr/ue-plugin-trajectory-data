@@ -5,6 +5,7 @@ Load and visualize large-scale trajectory datasets from simulation outputs in Un
 ## Quick Links
 
 - **[Quick Start Guide](QUICKSTART.md)** - Get started in 5 minutes
+- **[C++ API Guide](CPP_API.md)** - **NEW!** Load trajectory data from other C++ plugins
 - **[Loading & Memory Management](LOADING_AND_MEMORY.md)** - Load data and manage memory
 - **[Load Single Shard Files](LOAD_SHARD_FILE.md)** - Direct access to shard file data for external components
 - **[Visualization Guide](VISUALIZATION.md)** - Visualize with Niagara systems
@@ -13,6 +14,8 @@ Load and visualize large-scale trajectory datasets from simulation outputs in Un
 
 ## Features
 
+- **C++ API for Plugin Integration** - Simple async API for loading trajectory data from other C++ plugins
+- **Single Time Step & Time Range Queries** - Load one sample per trajectory or complete paths
 - **Async Loading** - Non-blocking background loading with progress callbacks
 - **Memory Management** - Real-time monitoring and capacity validation
 - **Flexible Selection** - Load first N, distributed, or specific trajectories
@@ -141,6 +144,13 @@ See [VISUALIZATION.md](VISUALIZATION.md) for detailed visualization guide.
 
 ## Key Classes
 
+### C++ Plugin API (New!)
+
+- **FTrajectoryDataCppApi** - Simple API for loading data from other C++ plugins
+- **FTrajectorySample** - Single position sample at a time step
+- **FTrajectoryTimeSeries** - Multiple samples over a time range
+- See [CPP_API.md](CPP_API.md) for complete API documentation
+
 ### Blueprint-Accessible
 
 - **UTrajectoryDataManager** - Scan and discover datasets
@@ -149,7 +159,7 @@ See [VISUALIZATION.md](VISUALIZATION.md) for detailed visualization guide.
 - **ADatasetVisualizationActor** - One-function visualization with Niagara
 - **UTrajectoryBufferProvider** - GPU buffer management (built-in Position Array NDI)
 
-### C++ Only
+### C++ Internal
 
 - **FLoadedDataset** - Loaded trajectory data structure
 - **FTrajectoryLoadParams** - Loading parameters
@@ -220,8 +230,12 @@ Allow users to select time ranges with a slider and dynamically load only the se
 ### Performance Monitoring
 Use memory estimation to show users how much data can fit and adjust loading parameters accordingly.
 
+### Plugin Integration (New!)
+Call the C++ API from other plugins to query trajectory data for AI, physics, or analysis systems.
+
 ## Documentation
 
+- **[CPP_API.md](CPP_API.md)** - **NEW!** C++ API for plugin-to-plugin integration
 - **[QUICKSTART.md](QUICKSTART.md)** - 5-minute getting started guide
 - **[LOADING_AND_MEMORY.md](LOADING_AND_MEMORY.md)** - Loading API and memory management
 - **[VISUALIZATION.md](VISUALIZATION.md)** - Niagara integration and visualization
