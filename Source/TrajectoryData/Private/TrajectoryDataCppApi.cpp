@@ -271,8 +271,10 @@ void FTrajectoryQueryTask::ExecuteSingleTimeStepQuery()
 	}
 	
 	// Calculate which shard file contains this time step
-	int32 GlobalIntervalIndex = (StartTimeStep - DatasetMeta.FirstTimeStep) / DatasetMeta.TimeStepIntervalSize;
-	FString ShardPath = FPaths::Combine(DatasetPath, FString::Printf(TEXT("shard-%d.bin"), GlobalIntervalIndex));
+	// Shard files are named with the actual starting timestep of the interval they cover
+	int32 IntervalIndex = (StartTimeStep - DatasetMeta.FirstTimeStep) / DatasetMeta.TimeStepIntervalSize;
+	int32 ShardStartTimeStep = IntervalIndex * DatasetMeta.TimeStepIntervalSize + DatasetMeta.FirstTimeStep;
+	FString ShardPath = FPaths::Combine(DatasetPath, FString::Printf(TEXT("shard-%d.bin"), ShardStartTimeStep));
 	
 	if (!PlatformFile.FileExists(*ShardPath))
 	{
@@ -299,7 +301,8 @@ void FTrajectoryQueryTask::ExecuteSingleTimeStepQuery()
 	FMemory::Memcpy(&ShardHeader, ShardData.GetData(), sizeof(FDataBlockHeaderBinary));
 	
 	// Calculate the time step index within this interval
-	int32 IntervalStartTimeStep = GlobalIntervalIndex * DatasetMeta.TimeStepIntervalSize + DatasetMeta.FirstTimeStep;
+	// Use the ShardStartTimeStep we calculated when determining which file to open
+	int32 IntervalStartTimeStep = ShardStartTimeStep;
 	int32 TimeStepIndexInInterval = StartTimeStep - IntervalStartTimeStep;
 	
 	// Parse shard entries
@@ -480,7 +483,10 @@ void FTrajectoryQueryTask::ExecuteTimeRangeQuery()
 			return;
 		}
 		
-		FString ShardPath = FPaths::Combine(DatasetPath, FString::Printf(TEXT("shard-%d.bin"), IntervalIndex));
+		// Calculate the actual starting timestep for this interval's shard file
+		// Shard files are named with the actual starting timestep of the interval they cover
+		int32 ShardStartTimeStep = IntervalIndex * DatasetMeta.TimeStepIntervalSize + DatasetMeta.FirstTimeStep;
+		FString ShardPath = FPaths::Combine(DatasetPath, FString::Printf(TEXT("shard-%d.bin"), ShardStartTimeStep));
 		
 		if (!PlatformFile.FileExists(*ShardPath))
 		{
@@ -503,7 +509,8 @@ void FTrajectoryQueryTask::ExecuteTimeRangeQuery()
 		FDataBlockHeaderBinary ShardHeader;
 		FMemory::Memcpy(&ShardHeader, ShardData.GetData(), sizeof(FDataBlockHeaderBinary));
 		
-		int32 IntervalStartTimeStep = IntervalIndex * DatasetMeta.TimeStepIntervalSize + DatasetMeta.FirstTimeStep;
+		// Use the ShardStartTimeStep we calculated when determining which file to open
+		int32 IntervalStartTimeStep = ShardStartTimeStep;
 		
 		// Parse shard entries
 		const uint8* DataPtr = ShardData.GetData() + ShardHeader.DataSectionOffset;
