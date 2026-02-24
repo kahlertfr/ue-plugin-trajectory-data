@@ -308,6 +308,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Trajectory Data")
 	void ReleaseCPUPositionData();
 
+	/**
+	 * Update buffers from a loaded dataset asynchronously
+	 * CPU-heavy data packing runs on a background thread; GPU buffer initialisation
+	 * and the OnComplete callback are called back on the game thread.
+	 *
+	 * THREADING: This function must be called on the GAME THREAD.
+	 * Do not call UnloadAll() or modify the loaded dataset while this is in progress.
+	 *
+	 * @param DatasetIndex Index into LoadedDatasets array
+	 * @param OnComplete   Called on the game thread with true on success, false on failure
+	 */
+	void UpdateFromDatasetAsync(int32 DatasetIndex, TFunction<void(bool)> OnComplete);
+
 protected:
 	virtual void BeginDestroy() override;
 
@@ -327,6 +340,16 @@ private:
 	/** GPU buffer resource for position data */
 	FTrajectoryPositionBufferResource* PositionBufferResource;
 
-	/** Pack trajectory data into flat position array and generate time steps */
+	/** Pack trajectory data into flat position array and generate time steps (writes to class members) */
 	void PackTrajectories(const FLoadedDataset& Dataset, TArray<FVector3f>& OutPositionData);
+
+	/**
+	 * Thread-safe static packing helper – writes to the provided output arrays instead of class
+	 * members so it can safely run on any thread.
+	 */
+	static void PackTrajectoriesStatic(
+		const FLoadedDataset& Dataset,
+		TArray<FVector3f>& OutPositionData,
+		TArray<int32>& OutSampleTimeSteps,
+		TArray<FTrajectoryBufferInfo>& OutTrajectoryInfo);
 };
