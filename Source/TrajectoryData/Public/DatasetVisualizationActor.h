@@ -60,6 +60,18 @@ public:
 	bool LoadAndBindDataset(int32 DatasetIndex);
 
 	/**
+	 * Load trajectory dataset and bind to Niagara system asynchronously (C++ API)
+	 * CPU-heavy data packing runs on a background thread; Niagara binding and the
+	 * OnComplete callback are dispatched on the game thread.
+	 * For Blueprint use, prefer the "Load And Bind Dataset" async action node provided
+	 * by UAsyncLoadAndBindDataset.
+	 *
+	 * @param DatasetIndex Index of dataset to load
+	 * @param OnComplete   Called on the game thread with true on success, false on failure
+	 */
+	void LoadAndBindDatasetAsync(int32 DatasetIndex, TFunction<void(bool)> OnComplete);
+
+	/**
 	 * Update visualization to a different dataset
 	 * Can be called at runtime to switch datasets
 	 * 

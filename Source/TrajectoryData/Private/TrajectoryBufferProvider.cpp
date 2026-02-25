@@ -5,6 +5,7 @@
 #include "RenderingThread.h"
 #include "RHICommandList.h"
 #include "NiagaraComponent.h"
+#include "Async/Async.h"
 
 // ============================================================================
 // FTrajectoryPositionBufferResource Implementation
@@ -236,6 +237,15 @@ const TArray<FVector3f>& UTrajectoryBufferProvider::GetAllPositionsRef() const
 
 void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, TArray<FVector3f>& OutPositionData)
 {
+	PackTrajectoriesStatic(Dataset, OutPositionData, SampleTimeSteps, TrajectoryInfo);
+}
+
+void UTrajectoryBufferProvider::PackTrajectoriesStatic(
+	const FLoadedDataset& Dataset,
+	TArray<FVector3f>& OutPositionData,
+	TArray<int32>& OutSampleTimeSteps,
+	TArray<FTrajectoryBufferInfo>& OutTrajectoryInfo)
+{
 	// Calculate total samples needed
 	int32 TotalSamples = 0;
 	for (const FLoadedTrajectory& Traj : Dataset.Trajectories)
@@ -245,10 +255,10 @@ void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, 
 
 	// Pre-allocate arrays
 	OutPositionData.Reserve(TotalSamples);
-	SampleTimeSteps.Reset();
-	SampleTimeSteps.Reserve(TotalSamples);
-	TrajectoryInfo.Reset();
-	TrajectoryInfo.Reserve(Dataset.Trajectories.Num());
+	OutSampleTimeSteps.Reset();
+	OutSampleTimeSteps.Reserve(TotalSamples);
+	OutTrajectoryInfo.Reset();
+	OutTrajectoryInfo.Reserve(Dataset.Trajectories.Num());
 
 	// Pack all trajectories sequentially
 	int32 CurrentIndex = 0;
@@ -262,7 +272,7 @@ void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, 
 		Info.StartTimeStep = Traj.StartTimeStep;
 		Info.EndTimeStep = Traj.EndTimeStep;
 		Info.Extent = Traj.Extent;
-		TrajectoryInfo.Add(Info);
+		OutTrajectoryInfo.Add(Info);
 
 		// Copy positions using efficient bulk operations
 		// TArray::Append is optimized for bulk copying and handles all memory operations internally
@@ -275,7 +285,7 @@ void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, 
 			if (NumSamples == 1)
 			{
 				// Single sample - use start time step
-				SampleTimeSteps.Add(Traj.StartTimeStep);
+				OutSampleTimeSteps.Add(Traj.StartTimeStep);
 			}
 			else
 			{
@@ -285,7 +295,7 @@ void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, 
 					// Linear interpolation: TimeStep = StartTime + (i / (NumSamples - 1)) * (EndTime - StartTime)
 					float t = static_cast<float>(i) / static_cast<float>(NumSamples - 1);
 					int32 TimeStep = Traj.StartTimeStep + FMath::RoundToInt(t * (Traj.EndTimeStep - Traj.StartTimeStep));
-					SampleTimeSteps.Add(TimeStep);
+					OutSampleTimeSteps.Add(TimeStep);
 				}
 			}
 		}
@@ -294,8 +304,8 @@ void UTrajectoryBufferProvider::PackTrajectories(const FLoadedDataset& Dataset, 
 	}
 
 	check(OutPositionData.Num() == TotalSamples);
-	check(SampleTimeSteps.Num() == TotalSamples);
-	check(TrajectoryInfo.Num() == Dataset.Trajectories.Num());
+	check(OutSampleTimeSteps.Num() == TotalSamples);
+	check(OutTrajectoryInfo.Num() == Dataset.Trajectories.Num());
 }
 
 void UTrajectoryBufferProvider::ReleaseCPUPositionData()
@@ -305,6 +315,118 @@ void UTrajectoryBufferProvider::ReleaseCPUPositionData()
 		PositionBufferResource->ReleaseCPUData();
 		UE_LOG(LogTemp, Log, TEXT("TrajectoryBufferProvider: Released CPU position data to save memory"));
 	}
+}
+
+void UTrajectoryBufferProvider::UpdateFromDatasetAsync(int32 DatasetIndex, TFunction<void(bool)> OnComplete)
+{
+	// NOTE: Must be called on the GAME THREAD
+	check(IsInGameThread());
+
+	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
+	if (!Loader)
+	{
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryBufferProvider: TrajectoryLoader not found"));
+		OnComplete(false);
+		return;
+	}
+
+	const TArray<FLoadedDataset>& LoadedDatasets = Loader->GetLoadedDatasets();
+	if (!LoadedDatasets.IsValidIndex(DatasetIndex))
+	{
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryBufferProvider: Invalid dataset index %d"), DatasetIndex);
+		OnComplete(false);
+		return;
+	}
+
+	const FLoadedDataset& Dataset = LoadedDatasets[DatasetIndex];
+	if (Dataset.Trajectories.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("TrajectoryBufferProvider: Dataset has no trajectories"));
+		OnComplete(false);
+		return;
+	}
+
+	// Update metadata on game thread (fast)
+	Metadata.NumTrajectories = Dataset.Trajectories.Num();
+	Metadata.FirstTimeStep = Dataset.DatasetInfo.Metadata.FirstTimeStep;
+	Metadata.LastTimeStep = Dataset.DatasetInfo.Metadata.LastTimeStep;
+	Metadata.BoundsMin = FVector(Dataset.DatasetInfo.Metadata.BoundingBoxMin[0],
+								  Dataset.DatasetInfo.Metadata.BoundingBoxMin[1],
+								  Dataset.DatasetInfo.Metadata.BoundingBoxMin[2]);
+	Metadata.BoundsMax = FVector(Dataset.DatasetInfo.Metadata.BoundingBoxMax[0],
+								  Dataset.DatasetInfo.Metadata.BoundingBoxMax[1],
+								  Dataset.DatasetInfo.Metadata.BoundingBoxMax[2]);
+
+	Metadata.MaxSamplesPerTrajectory = 0;
+	for (const FLoadedTrajectory& Traj : Dataset.Trajectories)
+	{
+		Metadata.MaxSamplesPerTrajectory = FMath::Max(Metadata.MaxSamplesPerTrajectory, Traj.Samples.Num());
+	}
+
+	// Capture a const pointer to the dataset for the background thread.
+	// CONTRACT: The caller must not call UnloadAll() or otherwise modify the loaded datasets
+	// while this async operation is in flight.  The pointer is stable for the lifetime of the
+	// UTrajectoryDataLoader singleton as long as no load/unload operations run concurrently.
+	const FLoadedDataset* DatasetPtr = &Dataset;
+
+	TWeakObjectPtr<UTrajectoryBufferProvider> WeakThis(this);
+	TWeakObjectPtr<UTrajectoryDataLoader> WeakLoader(Loader);
+
+	// Offload CPU-heavy data packing to a background thread
+	Async(EAsyncExecution::ThreadPool, [WeakThis, WeakLoader, DatasetPtr, OnComplete]()
+	{
+		// Guard: if the loader has been GC'd the DatasetPtr is no longer safe to use
+		if (!WeakLoader.IsValid())
+		{
+			Async(EAsyncExecution::TaskGraphMainThread, [OnComplete]()
+			{
+				UE_LOG(LogTemp, Warning, TEXT("TrajectoryBufferProvider: DataLoader was destroyed during async packing"));
+				OnComplete(false);
+			});
+			return;
+		}
+
+		// Background thread: read-only access to DatasetPtr – writes go to local arrays only
+		TArray<FVector3f> PositionData;
+		TArray<int32> NewSampleTimeSteps;
+		TArray<FTrajectoryBufferInfo> NewTrajectoryInfo;
+
+		PackTrajectoriesStatic(*DatasetPtr, PositionData, NewSampleTimeSteps, NewTrajectoryInfo);
+
+		// Return to game thread to update class members and initialise GPU buffer
+		Async(EAsyncExecution::TaskGraphMainThread,
+			[WeakThis,
+			 Positions = MoveTemp(PositionData),
+			 TimeSteps = MoveTemp(NewSampleTimeSteps),
+			 TrajInfo = MoveTemp(NewTrajectoryInfo),
+			 OnComplete]() mutable
+		{
+			if (!WeakThis.IsValid())
+			{
+				UE_LOG(LogTemp, Warning, TEXT("TrajectoryBufferProvider: Provider was destroyed during async packing"));
+				OnComplete(false);
+				return;
+			}
+
+			// Move packed data into class members
+			WeakThis->TrajectoryInfo = MoveTemp(TrajInfo);
+			WeakThis->SampleTimeSteps = MoveTemp(TimeSteps);
+			WeakThis->Metadata.TotalSampleCount = Positions.Num();
+
+			// Initialise GPU buffer
+			if (WeakThis->PositionBufferResource)
+			{
+				WeakThis->PositionBufferResource->InitializeResource();
+				WeakThis->PositionBufferResource->Initialize(MoveTemp(Positions));
+			}
+
+			UE_LOG(LogTemp, Log, TEXT("TrajectoryBufferProvider: Async update complete – %d trajectories, %d total samples, %.2f MB"),
+				WeakThis->Metadata.NumTrajectories, WeakThis->Metadata.TotalSampleCount,
+				(WeakThis->Metadata.TotalSampleCount * sizeof(FVector3f)) / (1024.0f * 1024.0f));
+
+			OnComplete(true);
+		});
+	});
 }
 
 // Initialize the resource

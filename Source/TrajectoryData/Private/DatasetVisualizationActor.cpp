@@ -114,6 +114,88 @@ bool ADatasetVisualizationActor::LoadAndBindDataset(int32 DatasetIndex)
 	return true;
 }
 
+void ADatasetVisualizationActor::LoadAndBindDatasetAsync(int32 DatasetIndex, TFunction<void(bool)> OnComplete)
+{
+	if (!BufferProvider)
+	{
+		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: BufferProvider is null"));
+		OnComplete(false);
+		return;
+	}
+
+	if (!NiagaraComponent)
+	{
+		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: NiagaraComponent is null"));
+		OnComplete(false);
+		return;
+	}
+
+	TWeakObjectPtr<ADatasetVisualizationActor> WeakThis(this);
+
+	// UpdateFromDatasetAsync packs data on a background thread and calls back on the game thread
+	BufferProvider->UpdateFromDatasetAsync(DatasetIndex,
+		[WeakThis, DatasetIndex, OnComplete](bool bUpdateSuccess)
+		{
+			// Runs on game thread
+			if (!bUpdateSuccess)
+			{
+				UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: Failed to load dataset %d"), DatasetIndex);
+				OnComplete(false);
+				return;
+			}
+
+			if (!WeakThis.IsValid())
+			{
+				OnComplete(false);
+				return;
+			}
+
+			ADatasetVisualizationActor* This = WeakThis.Get();
+
+			// Populate the Position Array NDI with position data
+			if (!This->PopulatePositionArrayNDI())
+			{
+				UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: Failed to populate Position Array NDI"));
+				OnComplete(false);
+				return;
+			}
+
+			// Populate TrajectoryInfo arrays if enabled
+			if (This->bTransferTrajectoryInfo)
+			{
+				if (!This->PopulateTrajectoryInfoArrays())
+				{
+					UE_LOG(LogTemp, Warning, TEXT("DatasetVisualizationActor: Failed to populate TrajectoryInfo arrays (non-critical)"));
+				}
+			}
+
+			// Populate SampleTimeSteps array
+			if (!This->PopulateSampleTimeStepsArray())
+			{
+				UE_LOG(LogTemp, Warning, TEXT("DatasetVisualizationActor: Failed to populate SampleTimeSteps array (non-critical)"));
+			}
+
+			// Pass metadata parameters
+			if (!This->PassMetadataToNiagara())
+			{
+				UE_LOG(LogTemp, Warning, TEXT("DatasetVisualizationActor: Failed to pass metadata to Niagara (non-critical)"));
+			}
+
+			// Activate Niagara if requested
+			if (This->bAutoActivate && !This->NiagaraComponent->IsActive())
+			{
+				This->NiagaraComponent->Activate(true);
+			}
+
+			This->bBuffersBound = true;
+			This->CurrentDatasetIndex = DatasetIndex;
+
+			UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully loaded and bound dataset %d asynchronously"), DatasetIndex);
+
+			OnComplete(true);
+		});
+}
+
 bool ADatasetVisualizationActor::SwitchToDataset(int32 DatasetIndex)
 {
 	// Deactivate current visualization
