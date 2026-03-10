@@ -243,33 +243,6 @@ void FTrajectoryQueryTask::ExecuteSingleTimeStepQuery()
 		return;
 	}
 	
-	// Read trajectory metadata
-	FString TrajMetaPath = FPaths::Combine(DatasetPath, TEXT("dataset-trajmeta.bin"));
-	if (!PlatformFile.FileExists(*TrajMetaPath))
-	{
-		SingleResult.ErrorMessage = TEXT("dataset-trajmeta.bin not found");
-		return;
-	}
-	
-	TArray<uint8> TrajMetaData;
-	if (!FFileHelper::LoadFileToArray(TrajMetaData, *TrajMetaPath))
-	{
-		SingleResult.ErrorMessage = TEXT("Failed to read dataset-trajmeta.bin");
-		return;
-	}
-	
-	int32 NumTrajectories = TrajMetaData.Num() / sizeof(FTrajectoryMetaBinary);
-	TArray<FTrajectoryMetaBinary> TrajMetas;
-	TrajMetas.SetNum(NumTrajectories);
-	FMemory::Memcpy(TrajMetas.GetData(), TrajMetaData.GetData(), TrajMetaData.Num());
-	
-	// Build map of trajectory ID to metadata
-	TMap<int64, FTrajectoryMetaBinary> TrajMetaMap;
-	for (const FTrajectoryMetaBinary& Meta : TrajMetas)
-	{
-		TrajMetaMap.Add(Meta.TrajectoryId, Meta);
-	}
-	
 	// Calculate which shard file contains this time step
 	// Shard files are named with the actual starting timestep of the interval they cover
 	int32 IntervalIndex = (StartTimeStep - DatasetMeta.FirstTimeStep) / DatasetMeta.TimeStepIntervalSize;
@@ -437,15 +410,17 @@ void FTrajectoryQueryTask::ExecuteTimeRangeQuery()
 	}
 	
 	int32 NumTrajectories = TrajMetaData.Num() / sizeof(FTrajectoryMetaBinary);
-	TArray<FTrajectoryMetaBinary> TrajMetas;
-	TrajMetas.SetNum(NumTrajectories);
-	FMemory::Memcpy(TrajMetas.GetData(), TrajMetaData.GetData(), TrajMetaData.Num());
-	
-	// Build map of trajectory ID to metadata
+	// FTrajectoryMetaBinary uses #pragma pack(push, 1), so its alignment is 1 byte,
+	// making a direct cast from uint8* safe on all platforms.
+	static_assert(alignof(FTrajectoryMetaBinary) == 1, "FTrajectoryMetaBinary must be byte-aligned (packed) for direct pointer cast");
+	const FTrajectoryMetaBinary* TrajMetasPtr = reinterpret_cast<const FTrajectoryMetaBinary*>(TrajMetaData.GetData());
+
+	// Build map of trajectory ID to metadata directly from the loaded binary data
 	TMap<int64, FTrajectoryMetaBinary> TrajMetaMap;
-	for (const FTrajectoryMetaBinary& Meta : TrajMetas)
+	TrajMetaMap.Reserve(NumTrajectories);
+	for (int32 i = 0; i < NumTrajectories; ++i)
 	{
-		TrajMetaMap.Add(Meta.TrajectoryId, Meta);
+		TrajMetaMap.Add(TrajMetasPtr[i].TrajectoryId, TrajMetasPtr[i]);
 	}
 	
 	// Initialize result time series for each requested trajectory
