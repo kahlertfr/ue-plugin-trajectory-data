@@ -272,7 +272,35 @@ void FTrajectoryQueryTask::ExecuteSingleTimeStepQuery()
 	// Parse shard header
 	FDataBlockHeaderBinary ShardHeader;
 	FMemory::Memcpy(&ShardHeader, ShardData.GetData(), sizeof(FDataBlockHeaderBinary));
-	
+
+	// Validate magic number
+	if (FMemory::Memcmp(ShardHeader.Magic, "TDDB", 4) != 0)
+	{
+		SingleResult.ErrorMessage = FString::Printf(
+			TEXT("Invalid magic number in shard file %s (got '%c%c%c%c', expected 'TDDB')"),
+			*ShardPath,
+			ShardHeader.Magic[0], ShardHeader.Magic[1], ShardHeader.Magic[2], ShardHeader.Magic[3]);
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataCppApi: %s"), *SingleResult.ErrorMessage);
+		return;
+	}
+
+	UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataCppApi: Shard header - FormatVersion=%d, TrajectoryEntryCount=%d, DataSectionOffset=%lld, TimeStepIntervalSize=%d, GlobalIntervalIndex=%d"),
+		ShardHeader.FormatVersion,
+		ShardHeader.TrajectoryEntryCount,
+		ShardHeader.DataSectionOffset,
+		ShardHeader.TimeStepIntervalSize,
+		ShardHeader.GlobalIntervalIndex);
+
+	// Validate DataSectionOffset is within the file and past the header
+	if (ShardHeader.DataSectionOffset < static_cast<int64>(sizeof(FDataBlockHeaderBinary)) || ShardHeader.DataSectionOffset >= ShardData.Num())
+	{
+		SingleResult.ErrorMessage = FString::Printf(
+			TEXT("Shard file %s has invalid DataSectionOffset=%lld (file size=%d, header size=%d)"),
+			*ShardPath, ShardHeader.DataSectionOffset, ShardData.Num(), (int32)sizeof(FDataBlockHeaderBinary));
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataCppApi: %s"), *SingleResult.ErrorMessage);
+		return;
+	}
+
 	// Calculate the time step index within this interval
 	// Use the ShardStartTimeStep we calculated when determining which file to open
 	int32 IntervalStartTimeStep = ShardStartTimeStep;
@@ -483,7 +511,31 @@ void FTrajectoryQueryTask::ExecuteTimeRangeQuery()
 		// Parse shard header
 		FDataBlockHeaderBinary ShardHeader;
 		FMemory::Memcpy(&ShardHeader, ShardData.GetData(), sizeof(FDataBlockHeaderBinary));
-		
+
+		// Validate magic number
+		if (FMemory::Memcmp(ShardHeader.Magic, "TDDB", 4) != 0)
+		{
+			UE_LOG(LogTemp, Error, TEXT("TrajectoryDataCppApi: Invalid magic number in shard file %s (got '%c%c%c%c', expected 'TDDB')"),
+				*ShardPath,
+				ShardHeader.Magic[0], ShardHeader.Magic[1], ShardHeader.Magic[2], ShardHeader.Magic[3]);
+			continue; // Skip this shard
+		}
+
+		UE_LOG(LogTemp, Verbose, TEXT("TrajectoryDataCppApi: Shard header - FormatVersion=%d, TrajectoryEntryCount=%d, DataSectionOffset=%lld, TimeStepIntervalSize=%d, GlobalIntervalIndex=%d"),
+			ShardHeader.FormatVersion,
+			ShardHeader.TrajectoryEntryCount,
+			ShardHeader.DataSectionOffset,
+			ShardHeader.TimeStepIntervalSize,
+			ShardHeader.GlobalIntervalIndex);
+
+		// Validate DataSectionOffset is within the file and past the header
+		if (ShardHeader.DataSectionOffset < static_cast<int64>(sizeof(FDataBlockHeaderBinary)) || ShardHeader.DataSectionOffset >= ShardData.Num())
+		{
+			UE_LOG(LogTemp, Error, TEXT("TrajectoryDataCppApi: Shard file %s has invalid DataSectionOffset=%lld (file size=%d, header size=%d)"),
+				*ShardPath, ShardHeader.DataSectionOffset, ShardData.Num(), (int32)sizeof(FDataBlockHeaderBinary));
+			continue; // Skip this shard
+		}
+
 		// Use the ShardStartTimeStep we calculated when determining which file to open
 		int32 IntervalStartTimeStep = ShardStartTimeStep;
 		
