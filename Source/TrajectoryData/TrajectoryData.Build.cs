@@ -30,6 +30,7 @@ public class TrajectoryData : ModuleRules
 				"Engine",
 				"Json",
 				"JsonUtilities",
+				"VRInteraction",
 				"RenderCore",      // For texture types
 				"RHI",             // For texture formats
 				"Niagara"          // For UNiagaraComponent binding
