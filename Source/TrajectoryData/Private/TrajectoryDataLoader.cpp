@@ -475,8 +475,8 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		{
 			FLoadedTrajectory& LoadedTraj = TrajectoryMap.Add(TrajId);
 			LoadedTraj.TrajectoryId = TrajId;
-			LoadedTraj.StartTimeStep = TrajMeta->StartTimeStep;
-			LoadedTraj.EndTimeStep = TrajMeta->EndTimeStep;
+			LoadedTraj.StartTimeStep = FMath::Max(TrajMeta->StartTimeStep, StartTime);
+			LoadedTraj.EndTimeStep = FMath::Min(TrajMeta->EndTimeStep, EndTime);
 			LoadedTraj.Extent = FVector3f(TrajMeta->Extent[0], TrajMeta->Extent[1], TrajMeta->Extent[2]);
 			LoadedTraj.Samples.Reserve((EndTime - StartTime) / Params.SampleRate);
 		}
