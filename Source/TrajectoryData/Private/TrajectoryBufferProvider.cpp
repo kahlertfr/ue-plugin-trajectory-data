@@ -167,8 +167,8 @@ bool UTrajectoryBufferProvider::UpdateFromDataset(int32 DatasetIndex)
 
 	// Update metadata
 	Metadata.NumTrajectories = Dataset.Trajectories.Num();
-	Metadata.FirstTimeStep = Dataset.DatasetInfo.Metadata.FirstTimeStep;
-	Metadata.LastTimeStep = Dataset.DatasetInfo.Metadata.LastTimeStep;
+	Metadata.FirstTimeStep = (Dataset.LoadParams.StartTimeStep < 0) ? Dataset.DatasetInfo.Metadata.FirstTimeStep : Dataset.LoadParams.StartTimeStep;
+	Metadata.LastTimeStep = (Dataset.LoadParams.EndTimeStep < 0) ? Dataset.DatasetInfo.Metadata.LastTimeStep : Dataset.LoadParams.EndTimeStep;
 	Metadata.BoundsMin = FVector(Dataset.DatasetInfo.Metadata.BoundingBoxMin[0],
 								  Dataset.DatasetInfo.Metadata.BoundingBoxMin[1],
 								  Dataset.DatasetInfo.Metadata.BoundingBoxMin[2]);
@@ -348,8 +348,8 @@ void UTrajectoryBufferProvider::UpdateFromDatasetAsync(int32 DatasetIndex, TFunc
 
 	// Update metadata on game thread (fast)
 	Metadata.NumTrajectories = Dataset.Trajectories.Num();
-	Metadata.FirstTimeStep = Dataset.DatasetInfo.Metadata.FirstTimeStep;
-	Metadata.LastTimeStep = Dataset.DatasetInfo.Metadata.LastTimeStep;
+	Metadata.FirstTimeStep = (Dataset.LoadParams.StartTimeStep < 0) ? Dataset.DatasetInfo.Metadata.FirstTimeStep : Dataset.LoadParams.StartTimeStep;
+	Metadata.LastTimeStep = (Dataset.LoadParams.EndTimeStep < 0) ? Dataset.DatasetInfo.Metadata.LastTimeStep : Dataset.LoadParams.EndTimeStep;
 	Metadata.BoundsMin = FVector(Dataset.DatasetInfo.Metadata.BoundingBoxMin[0],
 								  Dataset.DatasetInfo.Metadata.BoundingBoxMin[1],
 								  Dataset.DatasetInfo.Metadata.BoundingBoxMin[2]);

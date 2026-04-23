@@ -62,8 +62,8 @@ bool UTrajectoryTextureProvider::UpdateFromDataset(int32 DatasetIndex)
 	Metadata.NumTextureSlices = NumSlices;
 	Metadata.BoundsMin = Dataset.DatasetInfo.Metadata.BoundingBoxMin;
 	Metadata.BoundsMax = Dataset.DatasetInfo.Metadata.BoundingBoxMax;
-	Metadata.FirstTimeStep = Dataset.DatasetInfo.Metadata.FirstTimeStep;
-	Metadata.LastTimeStep = Dataset.DatasetInfo.Metadata.LastTimeStep;
+	Metadata.FirstTimeStep = (Dataset.LoadParams.StartTimeStep < 0) ? Dataset.DatasetInfo.Metadata.FirstTimeStep : Dataset.LoadParams.StartTimeStep;
+	Metadata.LastTimeStep = (Dataset.LoadParams.EndTimeStep < 0) ? Dataset.DatasetInfo.Metadata.LastTimeStep : Dataset.LoadParams.EndTimeStep;
 
 	// Build trajectory ID mapping
 	TrajectoryIds.SetNum(Dataset.Trajectories.Num());
