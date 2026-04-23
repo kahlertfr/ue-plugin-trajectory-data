@@ -1122,11 +1122,14 @@ TArray<int64> UTrajectoryDataLoader::BuildTrajectoryIdList(const FTrajectoryLoad
 {
 	TArray<int64> TrajectoryIds;
 
+	// Resolve -1 to mean "all available trajectories"
+	const int32 ResolvedNumTrajectories = (Params.NumTrajectories < 0) ? TrajMetas.Num() : Params.NumTrajectories;
+
 	switch (Params.SelectionStrategy)
 	{
 	case ETrajectorySelectionStrategy::FirstN:
 		{
-			int32 NumToLoad = FMath::Min(Params.NumTrajectories, TrajMetas.Num());
+			int32 NumToLoad = FMath::Min(ResolvedNumTrajectories, TrajMetas.Num());
 			for (int32 i = 0; i < NumToLoad; ++i)
 			{
 				TrajectoryIds.Add(TrajMetas[i].TrajectoryId);
@@ -1136,7 +1139,7 @@ TArray<int64> UTrajectoryDataLoader::BuildTrajectoryIdList(const FTrajectoryLoad
 
 	case ETrajectorySelectionStrategy::Distributed:
 		{
-			int32 NumToLoad = FMath::Min(Params.NumTrajectories, TrajMetas.Num());
+			int32 NumToLoad = FMath::Min(ResolvedNumTrajectories, TrajMetas.Num());
 			if (NumToLoad > 0 && TrajMetas.Num() > 0)
 			{
 				// Calculate step as double for better precision with large datasets

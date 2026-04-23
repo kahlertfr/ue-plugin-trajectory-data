@@ -318,7 +318,7 @@ struct TRAJECTORYDATA_API FTrajectoryLoadParams
 	UPROPERTY(BlueprintReadWrite, Category = "Trajectory Data")
 	ETrajectorySelectionStrategy SelectionStrategy;
 
-	/** Number of trajectories to load (when using FirstN or Distributed) */
+	/** Number of trajectories to load (when using FirstN or Distributed). Use -1 to load all available trajectories. */
 	UPROPERTY(BlueprintReadWrite, Category = "Trajectory Data")
 	int32 NumTrajectories;
 
