@@ -60,6 +60,18 @@ public:
 	bool LoadAndBindDataset(int32 DatasetIndex);
 
 	/**
+	 * Load trajectory dataset and bind to Niagara system with trajectory cap.
+	 * If the source dataset contains more trajectories than MaxTrajectories, a
+	 * distributed subset (every i-th trajectory) is loaded.
+	 *
+	 * @param DatasetIndex     Index of dataset to load
+	 * @param MaxTrajectories  Maximum number of trajectories to bind (<= 0 means no cap)
+	 * @return True if successful
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Trajectory Visualization")
+	bool LoadAndBindDatasetWithTrajectoryCap(int32 DatasetIndex, int32 MaxTrajectories);
+
+	/**
 	 * Load trajectory dataset and bind to Niagara system asynchronously (C++ API)
 	 * CPU-heavy data packing runs on a background thread; Niagara binding and the
 	 * OnComplete callback are dispatched on the game thread.

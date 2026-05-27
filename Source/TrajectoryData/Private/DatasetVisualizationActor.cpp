@@ -7,6 +7,11 @@
 #include "NiagaraSystem.h"
 #include "Async/ParallelFor.h"
 
+namespace
+{
+	constexpr int32 DefaultMaxVisualizationTrajectories = 250;
+}
+
 ADatasetVisualizationActor::ADatasetVisualizationActor()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -54,6 +59,11 @@ void ADatasetVisualizationActor::EndPlay(const EEndPlayReason::Type EndPlayReaso
 
 bool ADatasetVisualizationActor::LoadAndBindDataset(int32 DatasetIndex)
 {
+	return LoadAndBindDatasetWithTrajectoryCap(DatasetIndex, DefaultMaxVisualizationTrajectories);
+}
+
+bool ADatasetVisualizationActor::LoadAndBindDatasetWithTrajectoryCap(int32 DatasetIndex, int32 MaxTrajectories)
+{
 	if (!BufferProvider)
 	{
 		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: BufferProvider is null"));
@@ -66,8 +76,8 @@ bool ADatasetVisualizationActor::LoadAndBindDataset(int32 DatasetIndex)
 		return false;
 	}
 
-	// Load data into buffer
-	if (!BufferProvider->UpdateFromDataset(DatasetIndex))
+	// Load data into buffer (with optional trajectory cap)
+	if (!BufferProvider->UpdateFromDatasetWithTrajectoryCap(DatasetIndex, MaxTrajectories))
 	{
 		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: Failed to load dataset %d"), DatasetIndex);
 		return false;
@@ -110,7 +120,8 @@ bool ADatasetVisualizationActor::LoadAndBindDataset(int32 DatasetIndex)
 	bBuffersBound = true;
 	CurrentDatasetIndex = DatasetIndex;
 
-	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully loaded and bound dataset %d using Position Array NDI"), DatasetIndex);
+	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully loaded and bound dataset %d using Position Array NDI (cap: %d)"),
+		DatasetIndex, MaxTrajectories);
 	return true;
 }
 

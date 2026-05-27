@@ -215,6 +215,18 @@ public:
 	bool UpdateFromDataset(int32 DatasetIndex);
 
 	/**
+	 * Update buffers from a loaded dataset with trajectory count cap.
+	 * If the dataset contains more trajectories than MaxTrajectories, a distributed
+	 * subset is used by loading every i-th trajectory across the full range.
+	 *
+	 * @param DatasetIndex    Index into LoadedDatasets array
+	 * @param MaxTrajectories Maximum trajectories to load (<= 0 means no cap)
+	 * @return True if successful
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Trajectory Data")
+	bool UpdateFromDatasetWithTrajectoryCap(int32 DatasetIndex, int32 MaxTrajectories);
+
+	/**
 	 * Get buffer metadata
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data")

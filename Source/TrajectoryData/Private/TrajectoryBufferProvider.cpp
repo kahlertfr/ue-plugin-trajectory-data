@@ -7,6 +7,99 @@
 #include "NiagaraComponent.h"
 #include "Async/Async.h"
 
+namespace
+{
+	void BuildDistributedIndices(const int32 TotalTrajectories, const int32 NumToLoad, TArray<int32>& OutIndices)
+	{
+		OutIndices.Reset();
+
+		if (TotalTrajectories <= 0 || NumToLoad <= 0)
+		{
+			return;
+		}
+
+		OutIndices.Reserve(NumToLoad);
+		const double StepDouble = static_cast<double>(TotalTrajectories) / static_cast<double>(NumToLoad);
+		const int32 MaxIndex = TotalTrajectories - 1;
+
+		for (int32 j = 0; j < NumToLoad; ++j)
+		{
+			int32 Index = FMath::FloorToInt(j * StepDouble);
+			OutIndices.Add(FMath::Min(Index, MaxIndex));
+		}
+	}
+
+	void PackTrajectorySubsetStatic(
+		const FLoadedDataset& Dataset,
+		const TArray<int32>& SelectedIndices,
+		TArray<FVector3f>& OutPositionData,
+		TArray<int32>& OutSampleTimeSteps,
+		TArray<FTrajectoryBufferInfo>& OutTrajectoryInfo)
+	{
+		int32 TotalSamples = 0;
+		for (const int32 TrajectoryIndex : SelectedIndices)
+		{
+			if (Dataset.Trajectories.IsValidIndex(TrajectoryIndex))
+			{
+				TotalSamples += Dataset.Trajectories[TrajectoryIndex].Samples.Num();
+			}
+		}
+
+		OutPositionData.Reset();
+		OutPositionData.Reserve(TotalSamples);
+		OutSampleTimeSteps.Reset();
+		OutSampleTimeSteps.Reserve(TotalSamples);
+		OutTrajectoryInfo.Reset();
+		OutTrajectoryInfo.Reserve(SelectedIndices.Num());
+
+		int32 CurrentIndex = 0;
+		for (const int32 TrajectoryIndex : SelectedIndices)
+		{
+			if (!Dataset.Trajectories.IsValidIndex(TrajectoryIndex))
+			{
+				continue;
+			}
+
+			const FLoadedTrajectory& Traj = Dataset.Trajectories[TrajectoryIndex];
+
+			FTrajectoryBufferInfo Info;
+			Info.TrajectoryId = static_cast<int32>(Traj.TrajectoryId);
+			Info.StartIndex = CurrentIndex;
+			Info.SampleCount = Traj.Samples.Num();
+			Info.StartTimeStep = Traj.StartTimeStep;
+			Info.EndTimeStep = Traj.EndTimeStep;
+			Info.Extent = Traj.Extent;
+			OutTrajectoryInfo.Add(Info);
+
+			OutPositionData.Append(Traj.Samples);
+
+			const int32 NumSamples = Traj.Samples.Num();
+			if (NumSamples > 0)
+			{
+				if (NumSamples == 1)
+				{
+					OutSampleTimeSteps.Add(Traj.StartTimeStep);
+				}
+				else
+				{
+					for (int32 i = 0; i < NumSamples; ++i)
+					{
+						const float t = static_cast<float>(i) / static_cast<float>(NumSamples - 1);
+						const int32 TimeStep = Traj.StartTimeStep + FMath::RoundToInt(t * (Traj.EndTimeStep - Traj.StartTimeStep));
+						OutSampleTimeSteps.Add(TimeStep);
+					}
+				}
+			}
+
+			CurrentIndex += Traj.Samples.Num();
+		}
+
+		check(OutPositionData.Num() == TotalSamples);
+		check(OutSampleTimeSteps.Num() == TotalSamples);
+		check(OutTrajectoryInfo.Num() <= SelectedIndices.Num());
+	}
+}
+
 // ============================================================================
 // FTrajectoryPositionBufferResource Implementation
 // ============================================================================
@@ -201,6 +294,93 @@ bool UTrajectoryBufferProvider::UpdateFromDataset(int32 DatasetIndex)
 
 	UE_LOG(LogTemp, Log, TEXT("TrajectoryBufferProvider: Updated with %d trajectories, %d total samples, %.2f MB"),
 		Metadata.NumTrajectories, Metadata.TotalSampleCount, 
+		(Metadata.TotalSampleCount * sizeof(FVector3f)) / (1024.0f * 1024.0f));
+
+	return true;
+}
+
+bool UTrajectoryBufferProvider::UpdateFromDatasetWithTrajectoryCap(int32 DatasetIndex, int32 MaxTrajectories)
+{
+	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
+	if (!Loader)
+	{
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryBufferProvider: TrajectoryLoader not found"));
+		return false;
+	}
+
+	const TArray<FLoadedDataset>& LoadedDatasets = Loader->GetLoadedDatasets();
+	if (!LoadedDatasets.IsValidIndex(DatasetIndex))
+	{
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryBufferProvider: Invalid dataset index %d"), DatasetIndex);
+		return false;
+	}
+
+	const FLoadedDataset& Dataset = LoadedDatasets[DatasetIndex];
+	if (Dataset.Trajectories.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("TrajectoryBufferProvider: Dataset has no trajectories"));
+		return false;
+	}
+
+	const int32 TotalTrajectoryCount = Dataset.Trajectories.Num();
+	const bool bApplyCap = MaxTrajectories > 0 && TotalTrajectoryCount > MaxTrajectories;
+
+	TArray<int32> SelectedIndices;
+	if (bApplyCap)
+	{
+		const int32 NumToLoad = FMath::Min(MaxTrajectories, TotalTrajectoryCount);
+		BuildDistributedIndices(TotalTrajectoryCount, NumToLoad, SelectedIndices);
+	}
+
+	Metadata.NumTrajectories = bApplyCap ? SelectedIndices.Num() : TotalTrajectoryCount;
+	Metadata.FirstTimeStep = (Dataset.LoadParams.StartTimeStep < 0) ? Dataset.DatasetInfo.Metadata.FirstTimeStep : Dataset.LoadParams.StartTimeStep;
+	Metadata.LastTimeStep = (Dataset.LoadParams.EndTimeStep < 0) ? Dataset.DatasetInfo.Metadata.LastTimeStep : Dataset.LoadParams.EndTimeStep;
+	Metadata.BoundsMin = FVector(Dataset.DatasetInfo.Metadata.BoundingBoxMin[0],
+								  Dataset.DatasetInfo.Metadata.BoundingBoxMin[1],
+								  Dataset.DatasetInfo.Metadata.BoundingBoxMin[2]);
+	Metadata.BoundsMax = FVector(Dataset.DatasetInfo.Metadata.BoundingBoxMax[0],
+								  Dataset.DatasetInfo.Metadata.BoundingBoxMax[1],
+								  Dataset.DatasetInfo.Metadata.BoundingBoxMax[2]);
+
+	Metadata.MaxSamplesPerTrajectory = 0;
+	if (bApplyCap)
+	{
+		for (const int32 TrajectoryIndex : SelectedIndices)
+		{
+			if (Dataset.Trajectories.IsValidIndex(TrajectoryIndex))
+			{
+				Metadata.MaxSamplesPerTrajectory = FMath::Max(Metadata.MaxSamplesPerTrajectory, Dataset.Trajectories[TrajectoryIndex].Samples.Num());
+			}
+		}
+	}
+	else
+	{
+		for (const FLoadedTrajectory& Traj : Dataset.Trajectories)
+		{
+			Metadata.MaxSamplesPerTrajectory = FMath::Max(Metadata.MaxSamplesPerTrajectory, Traj.Samples.Num());
+		}
+	}
+
+	TArray<FVector3f> PositionData;
+	if (bApplyCap)
+	{
+		PackTrajectorySubsetStatic(Dataset, SelectedIndices, PositionData, SampleTimeSteps, TrajectoryInfo);
+	}
+	else
+	{
+		PackTrajectories(Dataset, PositionData);
+	}
+
+	Metadata.TotalSampleCount = PositionData.Num();
+
+	if (PositionBufferResource)
+	{
+		PositionBufferResource->InitializeResource();
+		PositionBufferResource->Initialize(MoveTemp(PositionData));
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("TrajectoryBufferProvider: Updated with %d trajectories (source: %d), %d total samples, %.2f MB"),
+		Metadata.NumTrajectories, TotalTrajectoryCount, Metadata.TotalSampleCount,
 		(Metadata.TotalSampleCount * sizeof(FVector3f)) / (1024.0f * 1024.0f));
 
 	return true;
