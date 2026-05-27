@@ -333,6 +333,20 @@ public:
 	 */
 	void UpdateFromDatasetAsync(int32 DatasetIndex, TFunction<void(bool)> OnComplete);
 
+	/**
+	 * Update buffers from a loaded dataset asynchronously with trajectory count cap.
+	 * If the dataset contains more trajectories than MaxTrajectories, a distributed
+	 * subset is used by loading every i-th trajectory across the full range.
+	 *
+	 * THREADING: This function must be called on the GAME THREAD.
+	 * Do not call UnloadAll() or modify the loaded dataset while this is in progress.
+	 *
+	 * @param DatasetIndex    Index into LoadedDatasets array
+	 * @param MaxTrajectories Maximum trajectories to load (<= 0 means no cap)
+	 * @param OnComplete      Called on the game thread with true on success, false on failure
+	 */
+	void UpdateFromDatasetWithTrajectoryCapAsync(int32 DatasetIndex, int32 MaxTrajectories, TFunction<void(bool)> OnComplete);
+
 protected:
 	virtual void BeginDestroy() override;
 

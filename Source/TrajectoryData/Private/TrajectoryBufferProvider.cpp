@@ -493,6 +493,11 @@ void UTrajectoryBufferProvider::ReleaseCPUPositionData()
 
 void UTrajectoryBufferProvider::UpdateFromDatasetAsync(int32 DatasetIndex, TFunction<void(bool)> OnComplete)
 {
+	UpdateFromDatasetWithTrajectoryCapAsync(DatasetIndex, -1, MoveTemp(OnComplete));
+}
+
+void UTrajectoryBufferProvider::UpdateFromDatasetWithTrajectoryCapAsync(int32 DatasetIndex, int32 MaxTrajectories, TFunction<void(bool)> OnComplete)
+{
 	// NOTE: Must be called on the GAME THREAD
 	check(IsInGameThread());
 
@@ -520,8 +525,17 @@ void UTrajectoryBufferProvider::UpdateFromDatasetAsync(int32 DatasetIndex, TFunc
 		return;
 	}
 
+	const int32 TotalTrajectoryCount = Dataset.Trajectories.Num();
+	const bool bApplyCap = MaxTrajectories > 0 && TotalTrajectoryCount > MaxTrajectories;
+	TArray<int32> SelectedIndices;
+	if (bApplyCap)
+	{
+		const int32 NumToLoad = FMath::Min(MaxTrajectories, TotalTrajectoryCount);
+		BuildDistributedIndices(TotalTrajectoryCount, NumToLoad, SelectedIndices);
+	}
+
 	// Update metadata on game thread (fast)
-	Metadata.NumTrajectories = Dataset.Trajectories.Num();
+	Metadata.NumTrajectories = bApplyCap ? SelectedIndices.Num() : Dataset.Trajectories.Num();
 	Metadata.FirstTimeStep = (Dataset.LoadParams.StartTimeStep < 0) ? Dataset.DatasetInfo.Metadata.FirstTimeStep : Dataset.LoadParams.StartTimeStep;
 	Metadata.LastTimeStep = (Dataset.LoadParams.EndTimeStep < 0) ? Dataset.DatasetInfo.Metadata.LastTimeStep : Dataset.LoadParams.EndTimeStep;
 	Metadata.BoundsMin = FVector(Dataset.DatasetInfo.Metadata.BoundingBoxMin[0],
@@ -532,9 +546,22 @@ void UTrajectoryBufferProvider::UpdateFromDatasetAsync(int32 DatasetIndex, TFunc
 								  Dataset.DatasetInfo.Metadata.BoundingBoxMax[2]);
 
 	Metadata.MaxSamplesPerTrajectory = 0;
-	for (const FLoadedTrajectory& Traj : Dataset.Trajectories)
+	if (bApplyCap)
 	{
-		Metadata.MaxSamplesPerTrajectory = FMath::Max(Metadata.MaxSamplesPerTrajectory, Traj.Samples.Num());
+		for (const int32 TrajectoryIndex : SelectedIndices)
+		{
+			if (Dataset.Trajectories.IsValidIndex(TrajectoryIndex))
+			{
+				Metadata.MaxSamplesPerTrajectory = FMath::Max(Metadata.MaxSamplesPerTrajectory, Dataset.Trajectories[TrajectoryIndex].Samples.Num());
+			}
+		}
+	}
+	else
+	{
+		for (const FLoadedTrajectory& Traj : Dataset.Trajectories)
+		{
+			Metadata.MaxSamplesPerTrajectory = FMath::Max(Metadata.MaxSamplesPerTrajectory, Traj.Samples.Num());
+		}
 	}
 
 	// Capture a const pointer to the dataset for the background thread.
@@ -547,7 +574,7 @@ void UTrajectoryBufferProvider::UpdateFromDatasetAsync(int32 DatasetIndex, TFunc
 	TWeakObjectPtr<UTrajectoryDataLoader> WeakLoader(Loader);
 
 	// Offload CPU-heavy data packing to a background thread
-	Async(EAsyncExecution::ThreadPool, [WeakThis, WeakLoader, DatasetPtr, OnComplete]()
+	Async(EAsyncExecution::ThreadPool, [WeakThis, WeakLoader, DatasetPtr, bApplyCap, SelectedIndices = MoveTemp(SelectedIndices), TotalTrajectoryCount, OnComplete]()
 	{
 		// Guard: if the loader has been GC'd the DatasetPtr is no longer safe to use
 		if (!WeakLoader.IsValid())
@@ -565,7 +592,14 @@ void UTrajectoryBufferProvider::UpdateFromDatasetAsync(int32 DatasetIndex, TFunc
 		TArray<int32> NewSampleTimeSteps;
 		TArray<FTrajectoryBufferInfo> NewTrajectoryInfo;
 
-		PackTrajectoriesStatic(*DatasetPtr, PositionData, NewSampleTimeSteps, NewTrajectoryInfo);
+		if (bApplyCap)
+		{
+			PackTrajectorySubsetStatic(*DatasetPtr, SelectedIndices, PositionData, NewSampleTimeSteps, NewTrajectoryInfo);
+		}
+		else
+		{
+			PackTrajectoriesStatic(*DatasetPtr, PositionData, NewSampleTimeSteps, NewTrajectoryInfo);
+		}
 
 		// Return to game thread to update class members and initialise GPU buffer
 		Async(EAsyncExecution::TaskGraphMainThread,
@@ -594,8 +628,8 @@ void UTrajectoryBufferProvider::UpdateFromDatasetAsync(int32 DatasetIndex, TFunc
 				WeakThis->PositionBufferResource->Initialize(MoveTemp(Positions));
 			}
 
-			UE_LOG(LogTemp, Log, TEXT("TrajectoryBufferProvider: Async update complete – %d trajectories, %d total samples, %.2f MB"),
-				WeakThis->Metadata.NumTrajectories, WeakThis->Metadata.TotalSampleCount,
+			UE_LOG(LogTemp, Log, TEXT("TrajectoryBufferProvider: Async update complete – %d trajectories (source: %d), %d total samples, %.2f MB"),
+				WeakThis->Metadata.NumTrajectories, TotalTrajectoryCount, WeakThis->Metadata.TotalSampleCount,
 				(WeakThis->Metadata.TotalSampleCount * sizeof(FVector3f)) / (1024.0f * 1024.0f));
 
 			OnComplete(true);

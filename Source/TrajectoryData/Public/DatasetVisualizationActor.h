@@ -84,6 +84,17 @@ public:
 	void LoadAndBindDatasetAsync(int32 DatasetIndex, TFunction<void(bool)> OnComplete);
 
 	/**
+	 * Load trajectory dataset and bind to Niagara system asynchronously (C++ API) with trajectory cap.
+	 * CPU-heavy data packing runs on a background thread; Niagara binding and the
+	 * OnComplete callback are dispatched on the game thread.
+	 *
+	 * @param DatasetIndex     Index of dataset to load
+	 * @param MaxTrajectories  Maximum number of trajectories to bind (<= 0 means no cap)
+	 * @param OnComplete       Called on the game thread with true on success, false on failure
+	 */
+	void LoadAndBindDatasetWithTrajectoryCapAsync(int32 DatasetIndex, int32 MaxTrajectories, TFunction<void(bool)> OnComplete);
+
+	/**
 	 * Update visualization to a different dataset
 	 * Can be called at runtime to switch datasets
 	 * 

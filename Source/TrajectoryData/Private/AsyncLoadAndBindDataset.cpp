@@ -15,6 +15,21 @@ UAsyncLoadAndBindDataset* UAsyncLoadAndBindDataset::LoadAndBindDataset(
 	return Action;
 }
 
+UAsyncLoadAndBindDataset* UAsyncLoadAndBindDataset::LoadAndBindDatasetWithTrajectoryCap(
+	ADatasetVisualizationActor* InVisualizationActor,
+	int32 InDatasetIndex,
+	int32 InMaxTrajectories)
+{
+	UAsyncLoadAndBindDataset* Action = NewObject<UAsyncLoadAndBindDataset>();
+	Action->VisualizationActor = InVisualizationActor;
+	Action->DatasetIndex = InDatasetIndex;
+	Action->MaxTrajectories = InMaxTrajectories;
+	Action->bUseTrajectoryCap = true;
+	// Prevent the action from being garbage-collected before it completes
+	Action->RegisterWithGameInstance(InVisualizationActor);
+	return Action;
+}
+
 void UAsyncLoadAndBindDataset::Activate()
 {
 	TWeakObjectPtr<ADatasetVisualizationActor> WeakActor(VisualizationActor.Get());
@@ -29,22 +44,30 @@ void UAsyncLoadAndBindDataset::Activate()
 
 	// Delegate to the actor's internal async method which manages background packing
 	// and game-thread Niagara binding.
-	WeakActor->LoadAndBindDatasetAsync(DatasetIndex,
-		[WeakThis](bool bSuccess)
+	auto CompletionCallback = [WeakThis](bool bSuccess)
+	{
+		// Runs on the game thread
+		if (!WeakThis.IsValid())
 		{
-			// Runs on the game thread
-			if (!WeakThis.IsValid())
-			{
-				return;
-			}
+			return;
+		}
 
-			if (bSuccess)
-			{
-				WeakThis->OnSuccess.Broadcast();
-			}
-			else
-			{
-				WeakThis->OnFailure.Broadcast();
-			}
-		});
+		if (bSuccess)
+		{
+			WeakThis->OnSuccess.Broadcast();
+		}
+		else
+		{
+			WeakThis->OnFailure.Broadcast();
+		}
+	};
+
+	if (bUseTrajectoryCap)
+	{
+		WeakActor->LoadAndBindDatasetWithTrajectoryCapAsync(DatasetIndex, MaxTrajectories, MoveTemp(CompletionCallback));
+	}
+	else
+	{
+		WeakActor->LoadAndBindDatasetAsync(DatasetIndex, MoveTemp(CompletionCallback));
+	}
 }
