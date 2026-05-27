@@ -7,6 +7,12 @@
 #include "NiagaraSystem.h"
 #include "Async/ParallelFor.h"
 
+namespace
+{
+	// Requirement: visualization load-and-bind should use at most 250 trajectories.
+	constexpr int32 DefaultMaxVisualizationTrajectories = 250;
+}
+
 ADatasetVisualizationActor::ADatasetVisualizationActor()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -54,6 +60,11 @@ void ADatasetVisualizationActor::EndPlay(const EEndPlayReason::Type EndPlayReaso
 
 bool ADatasetVisualizationActor::LoadAndBindDataset(int32 DatasetIndex)
 {
+	return LoadAndBindDatasetWithTrajectoryCap(DatasetIndex, DefaultMaxVisualizationTrajectories);
+}
+
+bool ADatasetVisualizationActor::LoadAndBindDatasetWithTrajectoryCap(int32 DatasetIndex, int32 MaxTrajectories)
+{
 	if (!BufferProvider)
 	{
 		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: BufferProvider is null"));
@@ -66,8 +77,8 @@ bool ADatasetVisualizationActor::LoadAndBindDataset(int32 DatasetIndex)
 		return false;
 	}
 
-	// Load data into buffer
-	if (!BufferProvider->UpdateFromDataset(DatasetIndex))
+	// Load data into buffer (with optional trajectory cap)
+	if (!BufferProvider->UpdateFromDatasetWithTrajectoryCap(DatasetIndex, MaxTrajectories))
 	{
 		UE_LOG(LogTemp, Error, TEXT("DatasetVisualizationActor: Failed to load dataset %d"), DatasetIndex);
 		return false;
@@ -110,11 +121,17 @@ bool ADatasetVisualizationActor::LoadAndBindDataset(int32 DatasetIndex)
 	bBuffersBound = true;
 	CurrentDatasetIndex = DatasetIndex;
 
-	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully loaded and bound dataset %d using Position Array NDI"), DatasetIndex);
+	UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully loaded and bound dataset %d using Position Array NDI (cap: %d)"),
+		DatasetIndex, MaxTrajectories);
 	return true;
 }
 
 void ADatasetVisualizationActor::LoadAndBindDatasetAsync(int32 DatasetIndex, TFunction<void(bool)> OnComplete)
+{
+	LoadAndBindDatasetWithTrajectoryCapAsync(DatasetIndex, DefaultMaxVisualizationTrajectories, MoveTemp(OnComplete));
+}
+
+void ADatasetVisualizationActor::LoadAndBindDatasetWithTrajectoryCapAsync(int32 DatasetIndex, int32 MaxTrajectories, TFunction<void(bool)> OnComplete)
 {
 	if (!BufferProvider)
 	{
@@ -133,8 +150,8 @@ void ADatasetVisualizationActor::LoadAndBindDatasetAsync(int32 DatasetIndex, TFu
 	TWeakObjectPtr<ADatasetVisualizationActor> WeakThis(this);
 
 	// UpdateFromDatasetAsync packs data on a background thread and calls back on the game thread
-	BufferProvider->UpdateFromDatasetAsync(DatasetIndex,
-		[WeakThis, DatasetIndex, OnComplete](bool bUpdateSuccess)
+	BufferProvider->UpdateFromDatasetWithTrajectoryCapAsync(DatasetIndex, MaxTrajectories,
+		[WeakThis, DatasetIndex, MaxTrajectories, OnComplete](bool bUpdateSuccess)
 		{
 			// Runs on game thread
 			if (!bUpdateSuccess)
@@ -190,7 +207,8 @@ void ADatasetVisualizationActor::LoadAndBindDatasetAsync(int32 DatasetIndex, TFu
 			This->bBuffersBound = true;
 			This->CurrentDatasetIndex = DatasetIndex;
 
-			UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully loaded and bound dataset %d asynchronously"), DatasetIndex);
+			UE_LOG(LogTemp, Log, TEXT("DatasetVisualizationActor: Successfully loaded and bound dataset %d asynchronously (cap: %d)"),
+				DatasetIndex, MaxTrajectories);
 
 			OnComplete(true);
 		});

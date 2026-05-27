@@ -53,6 +53,21 @@ public:
 		ADatasetVisualizationActor* VisualizationActor,
 		int32 DatasetIndex);
 
+	/**
+	 * Load a trajectory dataset and bind it to a DatasetVisualizationActor asynchronously
+	 * using a trajectory cap.
+	 *
+	 * @param VisualizationActor  The actor that owns the Niagara system to bind the data to
+	 * @param DatasetIndex        Index of the dataset to load (from the loaded datasets list)
+	 * @param MaxTrajectories     Maximum number of trajectories to bind (<= 0 means no cap)
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Trajectory Visualization",
+		meta = (BlueprintInternalUseOnly = "true", DisplayName = "Load And Bind Dataset With Trajectory Cap"))
+	static UAsyncLoadAndBindDataset* LoadAndBindDatasetWithTrajectoryCap(
+		ADatasetVisualizationActor* VisualizationActor,
+		int32 DatasetIndex,
+		int32 MaxTrajectories);
+
 	// UBlueprintAsyncActionBase interface
 	virtual void Activate() override;
 
@@ -61,4 +76,6 @@ private:
 	TObjectPtr<ADatasetVisualizationActor> VisualizationActor;
 
 	int32 DatasetIndex = 0;
+	int32 MaxTrajectories = -1;
+	bool bUseTrajectoryCap = false;
 };
