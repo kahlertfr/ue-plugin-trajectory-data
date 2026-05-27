@@ -574,7 +574,8 @@ void UTrajectoryBufferProvider::UpdateFromDatasetWithTrajectoryCapAsync(int32 Da
 	TWeakObjectPtr<UTrajectoryDataLoader> WeakLoader(Loader);
 
 	// Offload CPU-heavy data packing to a background thread
-	Async(EAsyncExecution::ThreadPool, [WeakThis, WeakLoader, DatasetPtr, bApplyCap, SelectedIndices = MoveTemp(SelectedIndices), TotalTrajectoryCount, OnComplete]()
+	TArray<int32> CapturedIndices(MoveTemp(SelectedIndices));
+	Async(EAsyncExecution::ThreadPool, [WeakThis, WeakLoader, DatasetPtr, bApplyCap, CapturedIndices, TotalTrajectoryCount, OnComplete]()
 	{
 		// Guard: if the loader has been GC'd the DatasetPtr is no longer safe to use
 		if (!WeakLoader.IsValid())
@@ -594,7 +595,7 @@ void UTrajectoryBufferProvider::UpdateFromDatasetWithTrajectoryCapAsync(int32 Da
 
 		if (bApplyCap)
 		{
-			PackTrajectorySubsetStatic(*DatasetPtr, SelectedIndices, PositionData, NewSampleTimeSteps, NewTrajectoryInfo);
+			PackTrajectorySubsetStatic(*DatasetPtr, CapturedIndices, PositionData, NewSampleTimeSteps, NewTrajectoryInfo);
 		}
 		else
 		{
