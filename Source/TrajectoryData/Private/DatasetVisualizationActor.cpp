@@ -9,6 +9,7 @@
 
 namespace
 {
+	// Requirement: visualization load-and-bind should use at most 250 trajectories.
 	constexpr int32 DefaultMaxVisualizationTrajectories = 250;
 }
 

@@ -22,9 +22,9 @@ namespace
 		const double StepDouble = static_cast<double>(TotalTrajectories) / static_cast<double>(NumToLoad);
 		const int32 MaxIndex = TotalTrajectories - 1;
 
-		for (int32 j = 0; j < NumToLoad; ++j)
+		for (int32 OutputIndex = 0; OutputIndex < NumToLoad; ++OutputIndex)
 		{
-			int32 Index = FMath::FloorToInt(j * StepDouble);
+			int32 Index = FMath::FloorToInt(OutputIndex * StepDouble);
 			OutIndices.Add(FMath::Min(Index, MaxIndex));
 		}
 	}
@@ -39,10 +39,8 @@ namespace
 		int32 TotalSamples = 0;
 		for (const int32 TrajectoryIndex : SelectedIndices)
 		{
-			if (Dataset.Trajectories.IsValidIndex(TrajectoryIndex))
-			{
-				TotalSamples += Dataset.Trajectories[TrajectoryIndex].Samples.Num();
-			}
+			check(Dataset.Trajectories.IsValidIndex(TrajectoryIndex));
+			TotalSamples += Dataset.Trajectories[TrajectoryIndex].Samples.Num();
 		}
 
 		OutPositionData.Reset();
@@ -55,11 +53,7 @@ namespace
 		int32 CurrentIndex = 0;
 		for (const int32 TrajectoryIndex : SelectedIndices)
 		{
-			if (!Dataset.Trajectories.IsValidIndex(TrajectoryIndex))
-			{
-				continue;
-			}
-
+			check(Dataset.Trajectories.IsValidIndex(TrajectoryIndex));
 			const FLoadedTrajectory& Traj = Dataset.Trajectories[TrajectoryIndex];
 
 			FTrajectoryBufferInfo Info;
@@ -96,7 +90,7 @@ namespace
 
 		check(OutPositionData.Num() == TotalSamples);
 		check(OutSampleTimeSteps.Num() == TotalSamples);
-		check(OutTrajectoryInfo.Num() <= SelectedIndices.Num());
+		check(OutTrajectoryInfo.Num() == SelectedIndices.Num());
 	}
 }
 
