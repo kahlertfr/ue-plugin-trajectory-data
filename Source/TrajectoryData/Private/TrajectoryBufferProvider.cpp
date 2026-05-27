@@ -629,9 +629,9 @@ void UTrajectoryBufferProvider::UpdateFromDatasetWithTrajectoryCapAsync(int32 Da
 				WeakThis->PositionBufferResource->Initialize(MoveTemp(Positions));
 			}
 
-			UE_LOG(LogTemp, Log, TEXT("TrajectoryBufferProvider: Async update complete – %d trajectories (source: %d), %d total samples, %.2f MB"),
-				WeakThis->Metadata.NumTrajectories, TotalTrajectoryCount, WeakThis->Metadata.TotalSampleCount,
-				(WeakThis->Metadata.TotalSampleCount * sizeof(FVector3f)) / (1024.0f * 1024.0f));
+//			UE_LOG(LogTemp, Log, TEXT("TrajectoryBufferProvider: Async update complete – %d trajectories (source: %d), %d total samples, %.2f MB"),
+//				WeakThis->Metadata.NumTrajectories, TotalTrajectoryCount, WeakThis->Metadata.TotalSampleCount,
+//				(WeakThis->Metadata.TotalSampleCount * sizeof(FVector3f)) / (1024.0f * 1024.0f));
 
 			OnComplete(true);
 		});
