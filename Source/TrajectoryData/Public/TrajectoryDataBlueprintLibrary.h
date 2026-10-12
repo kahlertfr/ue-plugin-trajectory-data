@@ -36,7 +36,7 @@ public:
 
 	/**
 	 * Get information about a specific dataset by name
-	 * @param DatasetName Name of the dataset to retrieve
+	 * @param DatasetName Unique domain/scenario/dataset ID to retrieve
 	 * @param OutDatasetInfo Output parameter containing the dataset information
 	 * @return True if dataset was found, false otherwise
 	 */
@@ -57,17 +57,17 @@ public:
 	static void ClearDatasets();
 
 	/**
-	 * Get the configured scenarios directory path
-	 * @return Path to the scenarios directory
+	 * Get the configured dataset root path (legacy property name)
+	 * @return Path to the dataset root containing domain folders
 	 */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data", meta = (DisplayName = "Get Scenarios Directory"))
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Data", meta = (DisplayName = "Get Dataset Root Directory"))
 	static FString GetScenariosDirectory();
 
 	/**
-	 * Set the scenarios directory path
-	 * @param NewPath New path to the scenarios directory
+	 * Set the dataset root path (legacy property name)
+	 * @param NewPath New path to the dataset root containing domain folders
 	 */
-	UFUNCTION(BlueprintCallable, Category = "Trajectory Data", meta = (DisplayName = "Set Scenarios Directory"))
+	UFUNCTION(BlueprintCallable, Category = "Trajectory Data", meta = (DisplayName = "Set Dataset Root Directory"))
 	static void SetScenariosDirectory(const FString& NewPath);
 
 	/**

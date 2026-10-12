@@ -161,7 +161,7 @@ void ExampleIntegratedUsage()
 	
 	// Get dataset information
 	FTrajectoryDatasetInfo DatasetInfo;
-	if (!Manager->GetDatasetInfo(TEXT("my_dataset"), DatasetInfo))
+	if (!Manager->GetDatasetInfo(TEXT("sample_domain/sample_scenario/my_dataset"), DatasetInfo))
 	{
 		UE_LOG(LogTemp, Error, TEXT("Dataset not found"));
 		return;

@@ -1,10 +1,12 @@
+For domain/scenario/dataset discovery and migration, see [the plugin README](../README.md#data-structure). Configure the shared root above domain folders; dataset lookup IDs use domain/scenario/dataset.
+
 # Example Trajectory Dataset
 
 This directory contains example metadata files for a sample trajectory dataset. These files demonstrate the expected format for trajectory datasets according to the Trajectory Dataset specification.
 
 ## Directory Structure
 
-The plugin uses a two-level hierarchy: **Scenario → Dataset**
+The plugin uses a two-level hierarchy: **Domain → Scenario → Dataset**
 
 ## Contents
 
@@ -25,23 +27,24 @@ According to the specification, each dataset directory contains files directly (
 
 To use this example with the plugin:
 
-1. Create a scenario directory in your configured scenarios root directory (e.g., `C:/Data/TrajectoryScenarios/sample_scenario/`)
+1. Create a scenario directory in your configured dataset root under a domain folder (e.g., `C:/Data/output/sample_domain/sample_scenario/`)
 2. Copy the `sample_dataset` directory into the scenario folder
-3. Your final structure should be: `ScenariosDirectory/sample_scenario/sample_dataset/dataset-manifest.json`
+3. Your final structure should be: `ScenariosDirectory/sample_domain/sample_scenario/sample_dataset/dataset-manifest.json`
 4. Run the plugin's scan function to discover the dataset
 5. The plugin will read the `dataset-manifest.json` file from the dataset directory
 
 Example directory structure:
 ```
-C:/Data/TrajectoryScenarios/          ← ScenariosDirectory (root)
-└── sample_scenario/                   ← Scenario
-    └── sample_dataset/                ← Dataset
-        ├── dataset-manifest.json
-        ├── dataset-meta.bin
-        ├── dataset-trajmeta.bin
-        ├── shard-0.bin                ← Time interval 0
-        ├── shard-1.bin                ← Time interval 1
-        └── shard-2.bin                ← Time interval 2
+C:/Data/output/                      # ScenariosDirectory
+└── sample_domain/                   # Domain
+    └── sample_scenario/                   ← Scenario
+        └── sample_dataset/                ← Dataset
+            ├── dataset-manifest.json
+            ├── dataset-meta.bin
+            ├── dataset-trajmeta.bin
+            ├── shard-0.bin                ← Time interval 0
+            ├── shard-1.bin                ← Time interval 1
+            └── shard-2.bin                ← Time interval 2
 ```
 
 ## Testing Without Binary Data

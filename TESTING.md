@@ -414,3 +414,12 @@ void TestPerformance()
 - Use Unreal Insights or similar tools to check for thread safety issues
 - Test in both Development and Shipping builds
 - Verify that callbacks are executed on the game thread (use `IsInGameThread()`)
+
+## Domain discovery regression
+
+Run `TrajectoryData.Discovery.Domains` in Unreal's Automation test window after
+building the editor. The test creates temporary manifests across multiple domains
+and scenarios, checks duplicate dataset names remain independently addressable,
+checks leaf paths and folder-derived names, and skips folders without manifests.
+Binary files are not required for discovery; this test does not validate binary
+loading. Existing saved lookup IDs must migrate to `domain/scenario/dataset`.
