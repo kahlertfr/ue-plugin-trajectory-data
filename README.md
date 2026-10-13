@@ -46,38 +46,69 @@ Create or edit `YourProject/Config/DefaultTrajectoryData.ini`:
 
 ```ini
 [/Script/TrajectoryData.TrajectoryDataSettings]
-ScenariosDirectory=C:/Data/TrajectoryScenarios
+ScenariosDirectory=C:/Data/output
 bAutoScanOnStartup=True
 bDebugLogging=False
 ```
 
 ## Data Structure
 
-The plugin uses a **Scenario → Dataset** hierarchy:
+Organize external data using a **Domain → Scenario → Dataset** hierarchy below a
+shared dataset directory. The domain level groups different sources of data;
+the existing scenario and dataset folders remain inside each domain.
 
+```text
+dataset-dir/                         # e.g. output/
+└── domain-name/                     # e.g. flotation/
+    └── scenario-name/               # e.g. my_simulation/
+        ├── dataset-name/            # e.g. particles/
+        │   ├── dataset-manifest.json
+        │   ├── dataset-meta.bin
+        │   ├── dataset-trajmeta.bin
+        │   └── shard-<N>.bin
+        └── another-dataset/         # e.g. bubbles/
+            ├── dataset-manifest.json
+            ├── dataset-meta.bin
+            ├── dataset-trajmeta.bin
+            └── shard-<N>.bin
 ```
-ScenariosDirectory/
-└── my_scenario/                ← Scenario (simulation run)
-    ├── bubbles/                ← Dataset 1
-    │   ├── dataset-manifest.json
-    │   ├── dataset-meta.bin
-    │   ├── dataset-trajmeta.bin
-    │   └── shard-0.bin
-    └── particles/              ← Dataset 2 (spatially related)
-        ├── dataset-manifest.json
-        ├── dataset-meta.bin
-        ├── dataset-trajmeta.bin
-        ├── shard-0.bin
-        └── shard-1.bin
-```
 
-**Key points:**
-- **Scenario** = simulation run or experiment
-- **Dataset** = related trajectory data (e.g., bubbles, particles)
-- **Shards** = time-interval data files (shard-0.bin, shard-1.bin, etc.)
+Folder names are placeholders. The shared root can contain multiple domains,
+each domain multiple scenarios, and each scenario multiple datasets.
 
-See [NAMING_CONVENTION.md](NAMING_CONVENTION.md) for details.
+- **Domain** = source or application domain (e.g. flotation).
+- **Scenario** = simulation run or experiment (e.g. my_simulation).
+- **Dataset** = related trajectory data (e.g. particles or bubbles).
+- **Shards** = time-interval data files (shard-0.bin, shard-1.bin, etc.).
 
+Each dataset folder contains its own manifest, metadata, and shards. Spatial
+hashing data, when present, also stays inside that dataset folder under
+`spatial_hashing/cellsize_<X.XXX>/timestep_XXXXX.bin`. External datasets are
+filesystem data, separate from Unreal's `Content/` assets.
+
+### Configuration and dataset identity
+
+Set `ScenariosDirectory` to the shared dataset root, e.g. `C:/Data/output`.
+The config key and Blueprint accessor function names retain their legacy names;
+the editor label is **Dataset Root Directory**. Discovery scans domain folders,
+then scenarios, then datasets with readable manifests.
+
+Each discovered dataset exposes `DomainName`, `ScenarioName`, `DatasetName`, and
+its leaf `DatasetPath`. `UniqueDSName` is the slash-separated relative path
+`domain/scenario/dataset`, e.g. `flotation/my_simulation/particles`.
+Pass this full ID to `GetDatasetInfo`; matching is case-insensitive. Including the
+domain prevents identical scenario/dataset names in different sources from
+selecting the wrong dataset.
+
+For existing installations, move the configured root up to the shared directory
+containing domains. Update saved IDs and Blueprint lookup strings from the old
+`dataset-scenario` form to `domain/scenario/dataset`. Runtime list indices can
+change after a rescan and should not be saved as stable identities.
+
+The binary loader resolves metadata and shards relative to `DatasetInfo.DatasetPath`.
+Manifest fields and binary formats are unchanged.
+
+See [NAMING_CONVENTION.md](NAMING_CONVENTION.md) for naming and migration details.
 ## Quick Start
 
 ### 1. Scan for Datasets

@@ -39,7 +39,7 @@ bool UTrajectoryDataManager::ScanDatasets()
 	FString ScenariosDir = Settings->ScenariosDirectory;
 	if (ScenariosDir.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataManager: Scenarios directory is not configured"));
+		UE_LOG(LogTemp, Warning, TEXT("TrajectoryDataManager: Dataset root directory is not configured"));
 		return false;
 	}
 
@@ -47,48 +47,38 @@ bool UTrajectoryDataManager::ScanDatasets()
 	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
 	if (!PlatformFile.DirectoryExists(*ScenariosDir))
 	{
-		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataManager: Scenarios directory does not exist: %s"), *ScenariosDir);
+		UE_LOG(LogTemp, Error, TEXT("TrajectoryDataManager: Dataset root directory does not exist: %s"), *ScenariosDir);
 		return false;
 	}
 
 	if (Settings->bDebugLogging)
 	{
-		UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Scanning scenarios directory: %s"), *ScenariosDir);
+		UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Scanning dataset root directory: %s"), *ScenariosDir);
 	}
 
-	// Get all scenario subdirectories
-	TArray<FString> ScenarioDirectories;
-	PlatformFile.IterateDirectory(*ScenariosDir, [&ScenarioDirectories](const TCHAR* FilenameOrDirectory, bool bIsDirectory) -> bool
+	// Scan domain/scenario/dataset beneath the configured root.
+	PlatformFile.IterateDirectory(*ScenariosDir, [this, &PlatformFile](const TCHAR* DomainPath, bool bIsDomain) -> bool
 	{
-		if (bIsDirectory)
+		if (bIsDomain)
 		{
-			ScenarioDirectories.Add(FilenameOrDirectory);
+			const FString DomainName = FPaths::GetCleanFilename(DomainPath);
+			PlatformFile.IterateDirectory(DomainPath, [this, &DomainName](const TCHAR* ScenarioPath, bool bIsScenario) -> bool
+			{
+				if (bIsScenario)
+				{
+					ScanScenarioDirectory(ScenarioPath, DomainName, Datasets);
+				}
+				return true;
+			});
 		}
-		return true; // Continue iteration
+		return true;
 	});
-
-	// Scan each scenario directory for datasets
-	for (const FString& ScenarioDir : ScenarioDirectories)
-	{
-		int32 DatasetsFound = ScanScenarioDirectory(ScenarioDir, Datasets);
-		
-		if (Settings->bDebugLogging && DatasetsFound > 0)
-		{
-			FString ScenarioName = FPaths::GetCleanFilename(ScenarioDir);
-			UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Found %d dataset(s) in scenario '%s'"),
-				DatasetsFound, *ScenarioName);
-		}
-	}
-
-	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Scan complete. Found %d datasets across all scenarios"), Datasets.Num());
+	UE_LOG(LogTemp, Log, TEXT("TrajectoryDataManager: Scan complete. Found %d datasets across all domains"), Datasets.Num());
 	return true;
 }
-
-int32 UTrajectoryDataManager::ScanScenarioDirectory(const FString& ScenarioDirectory, TArray<FTrajectoryDatasetInfo>& OutDatasets)
+int32 UTrajectoryDataManager::ScanScenarioDirectory(const FString& ScenarioDirectory, const FString& DomainName, TArray<FTrajectoryDatasetInfo>& OutDatasets)
 {
 	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
-	UTrajectoryDataSettings* Settings = UTrajectoryDataSettings::Get();
-	
 	FString ScenarioName = FPaths::GetCleanFilename(ScenarioDirectory);
 	int32 InitialCount = OutDatasets.Num();
 
@@ -104,32 +94,31 @@ int32 UTrajectoryDataManager::ScanScenarioDirectory(const FString& ScenarioDirec
 	});
 
 	// Scan each dataset directory
-	bool bDebugLogging = Settings && Settings->bDebugLogging;
 	for (const FString& DatasetDir : DatasetDirectories)
 	{
 		FTrajectoryDatasetInfo DatasetInfo;
-		if (ScanDatasetDirectory(DatasetDir, ScenarioName, DatasetInfo))
+		if (ScanDatasetDirectory(DatasetDir, DomainName, ScenarioName, DatasetInfo))
 		{
 			OutDatasets.Add(DatasetInfo);
 			
-			// Logging moved to ScanDatasetDirectory
 		}
 	}
 
 	return OutDatasets.Num() - InitialCount;
 }
 
-bool UTrajectoryDataManager::ScanDatasetDirectory(const FString& DatasetDirectory, const FString& ScenarioName, FTrajectoryDatasetInfo& OutDatasetInfo)
+bool UTrajectoryDataManager::ScanDatasetDirectory(const FString& DatasetDirectory, const FString& DomainName, const FString& ScenarioName, FTrajectoryDatasetInfo& OutDatasetInfo)
 {
 	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
 	
 	// Extract dataset name from directory path
 	FString DatasetName = FPaths::GetCleanFilename(DatasetDirectory);
+	OutDatasetInfo.DomainName = DomainName;
 	OutDatasetInfo.DatasetName = DatasetName;
 	OutDatasetInfo.DatasetPath = DatasetDirectory;
 	OutDatasetInfo.ScenarioName = ScenarioName;
 	OutDatasetInfo.TotalTrajectories = 0;
-	OutDatasetInfo.UniqueDSName = DatasetName + "-" + ScenarioName;
+	OutDatasetInfo.UniqueDSName = DomainName + TEXT("/") + ScenarioName + TEXT("/") + DatasetName;
 
 	// Look for dataset-manifest.json directly in the dataset directory
 	FString ManifestPath = FPaths::Combine(DatasetDirectory, TEXT("dataset-manifest.json"));
@@ -149,8 +138,8 @@ bool UTrajectoryDataManager::ScanDatasetDirectory(const FString& DatasetDirector
 
 		if (Settings && Settings->bDebugLogging)
 		{
-			UE_LOG(LogTemp, Log, TEXT("  Dataset '%s' in scenario '%s': %lld trajectories"),
-				*DatasetName, *ScenarioName, DatasetMetadata.TrajectoryCount);
+			UE_LOG(LogTemp, Log, TEXT("  Dataset '%s' in domain '%s', scenario '%s': %lld trajectories"),
+				*DatasetName, *DomainName, *ScenarioName, DatasetMetadata.TrajectoryCount);
 		}
 		return true;
 	}

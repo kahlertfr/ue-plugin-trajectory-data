@@ -18,8 +18,8 @@ class TRAJECTORYDATA_API UTrajectoryDataSettings : public UObject
 public:
 	UTrajectoryDataSettings();
 
-	/** Root directory containing scenario folders */
-	UPROPERTY(config, EditAnywhere, Category = "Trajectory Data", meta = (DisplayName = "Scenarios Directory"))
+	/** Dataset root containing domain/scenario/dataset folders; legacy property name retained for config compatibility */
+	UPROPERTY(config, EditAnywhere, Category = "Trajectory Data", meta = (DisplayName = "Dataset Root Directory"))
 	FString ScenariosDirectory;
 
 	/** Enable automatic scanning of datasets on startup */

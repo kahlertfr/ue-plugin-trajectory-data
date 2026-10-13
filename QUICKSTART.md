@@ -1,3 +1,5 @@
+For domain/scenario/dataset discovery and migration, see [the plugin README](README.md#data-structure). Configure the shared root above domain folders; dataset lookup IDs use domain/scenario/dataset.
+
 # Quick Start Guide
 
 Get started with the Trajectory Data plugin for Unreal Engine in 5 minutes.
@@ -25,25 +27,26 @@ Create or edit `YourProject/Config/DefaultTrajectoryData.ini`:
 
 ```ini
 [/Script/TrajectoryData.TrajectoryDataSettings]
-ScenariosDirectory=C:/Data/TrajectoryScenarios
+ScenariosDirectory=C:/Data/output
 bAutoScanOnStartup=True
 bDebugLogging=False
 ```
 
-**Important:** `ScenariosDirectory` points to the root directory containing scenario folders.
+**Important:** `ScenariosDirectory` points to the shared root directory containing domain folders.
 
 ## Step 3: Prepare Test Data
 
-Organize your trajectory data following the **Scenario → Dataset** hierarchy:
+Organize your trajectory data following the **Domain → Scenario → Dataset** hierarchy:
 
 ```
-C:/Data/TrajectoryScenarios/        ← ScenariosDirectory
-└── my_scenario/                     ← Scenario folder
-    └── my_dataset/                  ← Dataset folder
-        ├── dataset-manifest.json
-        ├── dataset-meta.bin
-        ├── dataset-trajmeta.bin
-        └── shard-0.bin              ← One or more shard files
+C:/Data/output/                      # ScenariosDirectory
+└── sample_domain/                   # Domain
+    └── my_scenario/                     ← Scenario folder
+        └── my_dataset/                  ← Dataset folder
+            ├── dataset-manifest.json
+            ├── dataset-meta.bin
+            ├── dataset-trajmeta.bin
+            └── shard-0.bin              ← One or more shard files
 ```
 
 Each dataset directory must contain:
@@ -106,7 +109,7 @@ Use `ADatasetVisualizationActor` for one-function visualization:
 Event Begin Play
   → Get Trajectory Loader
      → Create Load Params
-        - Dataset Path: "C:/Data/TrajectoryScenarios/my_scenario/my_dataset"
+        - Dataset Path: "C:/Data/output/sample_domain/my_scenario/my_dataset"
         - Selection Strategy: First N
         - Num Trajectories: 100
         - Start Time Step: -1 (dataset start)

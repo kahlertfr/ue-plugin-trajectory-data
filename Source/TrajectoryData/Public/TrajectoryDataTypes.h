@@ -140,9 +140,13 @@ struct TRAJECTORYDATA_API FTrajectoryDatasetInfo
 {
 	GENERATED_BODY()
 
-	/** Name of the scenario this dataset belongs to */
+	/** Unique folder-derived ID: domain/scenario/dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	FString UniqueDSName;
+
+	/** Source domain this dataset belongs to */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	FString DomainName;
 
 	/** Name of the dataset */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
@@ -166,6 +170,7 @@ struct TRAJECTORYDATA_API FTrajectoryDatasetInfo
 
 	FTrajectoryDatasetInfo()
 		: UniqueDSName(TEXT(""))
+		, DomainName(TEXT(""))
 		, DatasetName(TEXT(""))
 		, DatasetPath(TEXT(""))
 		, ScenarioName(TEXT(""))

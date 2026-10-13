@@ -20,7 +20,7 @@ public:
 	UTrajectoryDataManager();
 
 	/**
-	 * Scan the configured scenarios directory and gather all available datasets from all scenarios
+	 * Scan the configured dataset root and gather datasets from all domains and scenarios
 	 * @return True if scanning succeeded, false otherwise
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Trajectory Data")
@@ -46,7 +46,7 @@ public:
 
 	/**
 	 * Get information about a specific dataset by name
-	 * @param DatasetName Name of the dataset to retrieve
+	 * @param DatasetName Unique domain/scenario/dataset ID to retrieve
 	 * @param OutDatasetInfo Output parameter containing the dataset information
 	 * @return True if dataset was found, false otherwise
 	 */
@@ -77,19 +77,21 @@ private:
 	/**
 	 * Scan a single scenario directory for datasets
 	 * @param ScenarioDirectory Path to the scenario directory
+	 * @param DomainName Name of the parent domain
 	 * @param OutDatasets Output array to append discovered datasets to
 	 * @return Number of datasets found in the scenario
 	 */
-	int32 ScanScenarioDirectory(const FString& ScenarioDirectory, TArray<FTrajectoryDatasetInfo>& OutDatasets);
+	int32 ScanScenarioDirectory(const FString& ScenarioDirectory, const FString& DomainName, TArray<FTrajectoryDatasetInfo>& OutDatasets);
 
 	/**
 	 * Scan a single dataset directory for trajectory data shards
 	 * @param DatasetDirectory Path to the dataset directory
+	 * @param DomainName Name of the parent domain
 	 * @param ScenarioName Name of the parent scenario
 	 * @param OutDatasetInfo Output parameter containing the scanned dataset info
 	 * @return True if scanning succeeded and shards were found
 	 */
-	bool ScanDatasetDirectory(const FString& DatasetDirectory, const FString& ScenarioName, FTrajectoryDatasetInfo& OutDatasetInfo);
+	bool ScanDatasetDirectory(const FString& DatasetDirectory, const FString& DomainName, const FString& ScenarioName, FTrajectoryDatasetInfo& OutDatasetInfo);
 
 	/**
 	 * Parse a metadata JSON file

@@ -36,7 +36,7 @@ void ExampleLoadFirstN()
 	// Get dataset info
 	UTrajectoryDataManager* Manager = UTrajectoryDataManager::Get();
 	FTrajectoryDatasetInfo DatasetInfo;
-	if (!Manager->GetDatasetInfo(TEXT("sample_dataset"), DatasetInfo))
+	if (!Manager->GetDatasetInfo(TEXT("sample_domain/sample_scenario/sample_dataset"), DatasetInfo))
 	{
 		UE_LOG(LogTemp, Error, TEXT("Dataset not found"));
 		return;
@@ -102,7 +102,7 @@ void ExampleLoadFirstN()
 void ExampleLoadDistributed()
 {
 	FTrajectoryDatasetInfo DatasetInfo;
-	if (!UTrajectoryDataManager::Get()->GetDatasetInfo(TEXT("sample_dataset"), DatasetInfo))
+	if (!UTrajectoryDataManager::Get()->GetDatasetInfo(TEXT("sample_domain/sample_scenario/sample_dataset"), DatasetInfo))
 	{
 		return;
 	}
@@ -128,7 +128,7 @@ void ExampleLoadDistributed()
 void ExampleLoadExplicitList()
 {
 	FTrajectoryDatasetInfo DatasetInfo;
-	if (!UTrajectoryDataManager::Get()->GetDatasetInfo(TEXT("sample_dataset"), DatasetInfo))
+	if (!UTrajectoryDataManager::Get()->GetDatasetInfo(TEXT("sample_domain/sample_scenario/sample_dataset"), DatasetInfo))
 	{
 		return;
 	}
@@ -176,7 +176,7 @@ public:
 	void StartAsyncLoad()
 	{
 		FTrajectoryDatasetInfo DatasetInfo;
-		if (!UTrajectoryDataManager::Get()->GetDatasetInfo(TEXT("sample_dataset"), DatasetInfo))
+		if (!UTrajectoryDataManager::Get()->GetDatasetInfo(TEXT("sample_domain/sample_scenario/sample_dataset"), DatasetInfo))
 		{
 			return;
 		}
@@ -265,7 +265,7 @@ void ExampleDataStreaming()
 {
 	UTrajectoryDataLoader* Loader = UTrajectoryDataLoader::Get();
 	FTrajectoryDatasetInfo DatasetInfo;
-	if (!UTrajectoryDataManager::Get()->GetDatasetInfo(TEXT("sample_dataset"), DatasetInfo))
+	if (!UTrajectoryDataManager::Get()->GetDatasetInfo(TEXT("sample_domain/sample_scenario/sample_dataset"), DatasetInfo))
 	{
 		return;
 	}
@@ -382,7 +382,7 @@ void ExampleMultipleDatasets()
 	
 	// Load trajectories from first dataset
 	FTrajectoryDatasetInfo Dataset1;
-	if (Manager->GetDatasetInfo(TEXT("bubbles"), Dataset1))
+	if (Manager->GetDatasetInfo(TEXT("sample_domain/sample_scenario/bubbles"), Dataset1))
 	{
 		FTrajectoryLoadParams Params1;
 		Params1.StartTimeStep = -1;
@@ -401,7 +401,7 @@ void ExampleMultipleDatasets()
 	
 	// Load trajectories from second dataset (appends to the first)
 	FTrajectoryDatasetInfo Dataset2;
-	if (Manager->GetDatasetInfo(TEXT("particles"), Dataset2))
+	if (Manager->GetDatasetInfo(TEXT("sample_domain/sample_scenario/particles"), Dataset2))
 	{
 		FTrajectoryLoadParams Params2;
 		Params2.StartTimeStep = -1;
