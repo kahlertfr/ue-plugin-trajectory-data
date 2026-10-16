@@ -19,6 +19,22 @@ class TRAJECTORYDATA_API UTrajectoryDataBlueprintLibrary : public UBlueprintFunc
 	GENERATED_BODY()
 
 public:
+	/** Resolve a loaded-array index without copying sample buffers. Invalid selections return false and ID -1. */
+	UFUNCTION(BlueprintPure, Category = "Trajectory Data|Selection")
+	static bool TryGetTrajectoryIdByIndex(const TArray<FLoadedTrajectory>& Trajectories, int32 TrajectoryIndex, int64& TrajectoryId);
+
+	/** Label for an index-based slider, using the original source ID. */
+	UFUNCTION(BlueprintPure, Category = "Trajectory Data|Selection")
+	static FText GetTrajectorySelectionLabel(const TArray<FLoadedTrajectory>& Trajectories, int32 TrajectoryIndex);
+
+	UFUNCTION(BlueprintPure, Category = "Trajectory Data|Selection")
+	static int32 ResolveTrajectorySliderIndex(const TArray<FLoadedTrajectory>& Trajectories, float SliderValue);
+
+	UFUNCTION(BlueprintPure, Category = "Trajectory Data|Selection")
+	static float GetTrajectorySliderMaximum(const TArray<FLoadedTrajectory>& Trajectories);
+
+	UFUNCTION(BlueprintPure, Category = "Trajectory Data|Selection")
+	static bool HasLoadedTrajectories(const TArray<FLoadedTrajectory>& Trajectories);
 	/**
 	 * Scan the configured scenarios directory and gather all available datasets from all scenarios
 	 * Call this before accessing dataset information

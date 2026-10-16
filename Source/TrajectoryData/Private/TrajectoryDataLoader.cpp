@@ -855,9 +855,13 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 
 	// Convert map to array
 	TArray<FLoadedTrajectory> NewTrajectories;
-	for (auto& TrajEntry : TrajectoryMap)
+	// Preserve the selection strategy's order, not TMap storage order.
+	for (const int64 TrajectoryId : TrajectoryIds)
 	{
-		FLoadedTrajectory& Traj = TrajEntry.Value;
+		FLoadedTrajectory* Found = TrajectoryMap.Find(TrajectoryId);
+		if (!Found) continue;
+		FLoadedTrajectory& Traj = *Found;
+		Traj.TrajectoryIndex = NewTrajectories.Num();
 		
 		// Note: Samples are already in temporal order because:
 		// 1. Shards are merged sequentially in chronological order (sorted by time)
@@ -869,6 +873,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 		MemoryUsed += TrajMemory;
 		
 		NewTrajectories.Add(MoveTemp(Traj));
+		TrajectoryMap.Remove(TrajectoryId); // Also deduplicate repeated requested IDs.
 	}
 
 	// Create a new loaded dataset entry
@@ -937,6 +942,7 @@ FTrajectoryLoadResult UTrajectoryDataLoader::LoadTrajectoriesInternal(const FTra
 			const FLoadedTrajectory& Traj = Result.Trajectories[TrajIdx];
 			DebugOutput += FString::Printf(TEXT("--- Trajectory %d ---\n"), TrajIdx);
 			DebugOutput += FString::Printf(TEXT("Trajectory ID: %lld\n"), Traj.TrajectoryId);
+			DebugOutput += FString::Printf(TEXT("Loaded trajectory index: %d\n"), Traj.TrajectoryIndex);
 			DebugOutput += FString::Printf(TEXT("Start Time Step: %d\n"), Traj.StartTimeStep);
 			DebugOutput += FString::Printf(TEXT("End Time Step: %d\n"), Traj.EndTimeStep);
 			DebugOutput += FString::Printf(TEXT("Extent: (%.3f, %.3f, %.3f)\n"), Traj.Extent.X, Traj.Extent.Y, Traj.Extent.Z);

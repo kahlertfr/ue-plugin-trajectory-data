@@ -218,9 +218,13 @@ struct TRAJECTORYDATA_API FLoadedTrajectory
 {
 	GENERATED_BODY()
 
-	/** Unique trajectory ID */
+	/** Original source dataset ID, independent of the loaded-array index. */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
 	int64 TrajectoryId;
+
+	/** Zero-based position in the owning loaded dataset's Trajectories array; never a source ID. */
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
+	int32 TrajectoryIndex;
 
 	/** Start time step (from metadata) */
 	UPROPERTY(BlueprintReadOnly, Category = "Trajectory Data")
@@ -243,6 +247,7 @@ struct TRAJECTORYDATA_API FLoadedTrajectory
 
 	FLoadedTrajectory()
 		: TrajectoryId(0)
+		, TrajectoryIndex(INDEX_NONE)
 		, StartTimeStep(0)
 		, EndTimeStep(0)
 		, Extent(FVector3f(DefaultExtentMeters, DefaultExtentMeters, DefaultExtentMeters))

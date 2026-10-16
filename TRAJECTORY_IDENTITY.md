@@ -1,0 +1,39 @@
+# Loaded trajectory index and source ID
+
+`FLoadedTrajectory` exposes two Blueprint-readable fields:
+
+| Field | Meaning |
+| --- | --- |
+| `TrajectoryIndex` (`int32`) | Zero-based position in this loaded dataset's `Trajectories` array |
+| `TrajectoryId` (`int64`) | Original source dataset identifier |
+
+For example, loading IDs `[518, 7, 3000000001]` yields indices `[0, 1, 2]`.
+Loading the explicit subset `[3000000001, 518]` yields indices `[0, 1]`, while the
+IDs remain unchanged. Repeated requested IDs are included once. The loader
+preserves selection order rather than depending on map iteration. Both sync
+and async loading use this assembly path. A default/unassigned trajectory has
+index `INDEX_NONE`.
+
+Indices are local to a loaded array and can change after reloading or changing
+the subset. If application code reorders a copied array, it must update its
+indices too. Source identity across datasets is `(dataset, TrajectoryId)`.
+
+Use an index for array access. Use the resolved ID for selection lookup, query
+exclusion, and display. `TryGetTrajectoryIdByIndex` validates an index without
+copying position buffers, and resets its output ID to `-1` on failure.
+`ResolveTrajectorySliderIndex` rounds/clamps a slider value and returns
+`INDEX_NONE` when no trajectory can be selected. `GetTrajectorySliderMaximum`
+returns `max(0, count - 1)`; `HasLoadedTrajectories` controls the empty state.
+
+`GetTrajectorySelectionLabel` displays a human-facing ordinal and the original
+integer ID, for example `Trajectory 2 of 3 · ID 7`. IDs never pass through the
+slider's floating-point value. Loaded samples and binary file layouts are
+unchanged by the new index field.
+
+The overview's existing GPU buffers still use the 32-bit binary ID representation.
+Their packed particle indices are separate from loaded-array indices, especially
+when visualization sampling selects a subset. No GPU buffer layout is changed.
+
+Run `TrajectoryData.Identity` in Unreal automation for loaded subset order,
+index assignment, duplicate IDs, 64-bit identity, selection lookup, slider
+bounds, and empty-state regression tests.

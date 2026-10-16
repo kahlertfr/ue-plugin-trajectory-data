@@ -6,6 +6,43 @@
 #include "TrajectoryDataMemoryEstimator.h"
 #include "TrajectoryDataLoader.h"
 
+bool UTrajectoryDataBlueprintLibrary::TryGetTrajectoryIdByIndex(const TArray<FLoadedTrajectory>& Trajectories, int32 TrajectoryIndex, int64& TrajectoryId)
+{
+	TrajectoryId = -1;
+	if (!Trajectories.IsValidIndex(TrajectoryIndex)) return false;
+	TrajectoryId = Trajectories[TrajectoryIndex].TrajectoryId;
+	return true;
+}
+
+int32 UTrajectoryDataBlueprintLibrary::ResolveTrajectorySliderIndex(const TArray<FLoadedTrajectory>& Trajectories, float SliderValue)
+{
+	if (Trajectories.IsEmpty() || !FMath::IsFinite(SliderValue)) return INDEX_NONE;
+	return FMath::RoundToInt(FMath::Clamp(SliderValue, 0.0f, static_cast<float>(Trajectories.Num() - 1)));
+}
+
+float UTrajectoryDataBlueprintLibrary::GetTrajectorySliderMaximum(const TArray<FLoadedTrajectory>& Trajectories)
+{
+	return static_cast<float>(FMath::Max(0, Trajectories.Num() - 1));
+}
+
+bool UTrajectoryDataBlueprintLibrary::HasLoadedTrajectories(const TArray<FLoadedTrajectory>& Trajectories)
+{
+	return !Trajectories.IsEmpty();
+}
+
+FText UTrajectoryDataBlueprintLibrary::GetTrajectorySelectionLabel(const TArray<FLoadedTrajectory>& Trajectories, int32 TrajectoryIndex)
+{
+	int64 Id;
+	if (!TryGetTrajectoryIdByIndex(Trajectories, TrajectoryIndex, Id))
+	{
+		return NSLOCTEXT("TrajectoryData", "NoTrajectory", "No trajectory selected");
+	}
+	FNumberFormattingOptions NumberFormat;
+	NumberFormat.SetUseGrouping(false);
+	return FText::Format(NSLOCTEXT("TrajectoryData", "TrajectorySelection", "Trajectory {0} of {1} · ID {2}"),
+		FText::AsNumber(TrajectoryIndex + 1, &NumberFormat), FText::AsNumber(Trajectories.Num(), &NumberFormat), FText::AsNumber(Id, &NumberFormat));
+}
+
 bool UTrajectoryDataBlueprintLibrary::ScanTrajectoryDatasets()
 {
 	UTrajectoryDataManager* Manager = UTrajectoryDataManager::Get();
