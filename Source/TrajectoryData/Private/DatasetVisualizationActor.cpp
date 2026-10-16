@@ -6,12 +6,72 @@
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
 #include "Async/ParallelFor.h"
+#include "Components/BoxComponent.h"
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Misc/AutomationTest.h"
+#endif
 
 namespace
 {
 	// Requirement: visualization load-and-bind should use at most 250 trajectories.
 	constexpr int32 DefaultMaxVisualizationTrajectories = 250;
+
+	FBox DatasetDisplayBounds(const FBox& Samples, const FBox& MetadataBounds, const FMatrix& Matrix)
+	{
+		if (!Samples.IsValid) return FBox(ForceInit);
+		const double Scale = Matrix.M[0][0];
+		const FVector Center = MetadataBounds.GetCenter();
+		const FVector Translation(Matrix.M[0][3], Matrix.M[1][3],
+			Matrix.M[2][3] + Scale * MetadataBounds.GetSize().Y * 0.5);
+		FBox Display(ForceInit);
+		for (int32 Corner = 0; Corner < 8; ++Corner)
+		{
+			const FVector P = FVector(Corner & 1 ? Samples.Max.X : Samples.Min.X,
+				Corner & 2 ? Samples.Max.Y : Samples.Min.Y, Corner & 4 ? Samples.Max.Z : Samples.Min.Z) - Center;
+			Display += FVector(P.X, -P.Z, P.Y) * Scale + Translation;
+		}
+		return Display;
+	}
+
+	FBox CenterDatasetCollisionXY(const FBox& Display, const FVector& VisualizationOrigin)
+	{
+		FVector Center = Display.GetCenter();
+		// The matrix translation includes dataset-centering terms; those are not
+		// the visualization's world origin. Keep horizontal placement at the actor.
+		Center.X = VisualizationOrigin.X;
+		Center.Y = VisualizationOrigin.Y;
+		return FBox(Center - Display.GetExtent(), Center + Display.GetExtent());
+	}
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDatasetDisplayBoundsTest, "TrajectoryBLab.Dataset.DisplayBounds",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FDatasetDisplayBoundsTest::RunTest(const FString& Parameters)
+{
+	FMatrix Matrix = FMatrix::Identity;
+	Matrix.M[0][0] = 2;
+	Matrix.M[0][3] = 100;
+	Matrix.M[1][3] = 200;
+	Matrix.M[2][3] = 300;
+	const FBox Metadata(FVector(10,20,30), FVector(20,60,50));
+	const FBox Samples(FVector(12,30,35), FVector(18,50,45));
+	const FBox Display = DatasetDisplayBounds(Samples, Metadata, Matrix);
+	TestTrue(TEXT("Extent follows sample bounds with Y/Z conversion"), Display.GetExtent().Equals(FVector(6,10,20)));
+	TestTrue(TEXT("Nonzero dataset origin and placement match Niagara"), Display.GetCenter().Equals(FVector(100,200,340)));
+	const FBox Flat = DatasetDisplayBounds(FBox(FVector(12,30,35), FVector(18,30,45)), Metadata, Matrix);
+	TestEqual(TEXT("Planar data has finite zero height"), Flat.GetExtent().Z, 0.0);
+	TestFalse(TEXT("Empty data does not produce a box"), DatasetDisplayBounds(FBox(ForceInit), Metadata, Matrix).IsValid != 0);
+	const FVector Origin(500, -120, 40);
+	const FBox Collision = CenterDatasetCollisionXY(Display, Origin);
+	TestTrue(TEXT("Collision is centered on visualization origin in X and Y"),
+		Collision.GetCenter().Equals(FVector(500, -120, 340)));
+	TestTrue(TEXT("Centering preserves the fitted data extent"), Collision.GetExtent().Equals(Display.GetExtent()));
+	TestEqual(TEXT("Centering preserves vertical placement"), Collision.Min.Z, Display.Min.Z);
+	TestTrue(TEXT("Axes corner follows the centered collision box"), Collision.Min.Equals(FVector(494, -130, 320)));
+	return true;
+}
+#endif
 
 ADatasetVisualizationActor::ADatasetVisualizationActor()
 {
@@ -262,6 +322,23 @@ TArray<FTrajectoryBufferInfo> ADatasetVisualizationActor::GetTrajectoryInfoArray
 	return TArray<FTrajectoryBufferInfo>();
 }
 
+void ADatasetVisualizationActor::FitDatasetCollisionBox(UBoxComponent* Box, USceneComponent* Axes, const FMatrix& TransformationMatrix)
+{
+	if (!Box || !VisualizedSampleBounds.IsValid) return;
+	const auto Metadata = GetDatasetMetadata();
+	const FBox Display = CenterDatasetCollisionXY(
+		DatasetDisplayBounds(VisualizedSampleBounds, FBox(Metadata.BoundsMin, Metadata.BoundsMax), TransformationMatrix),
+		GetActorLocation());
+	const FVector WorldScale = Box->GetComponentScale().GetAbs();
+	const FVector Extent = Display.GetExtent();
+	const FVector LocalExtent(Extent.X / FMath::Max(WorldScale.X, UE_SMALL_NUMBER),
+		Extent.Y / FMath::Max(WorldScale.Y, UE_SMALL_NUMBER), Extent.Z / FMath::Max(WorldScale.Z, UE_SMALL_NUMBER));
+	Box->SetWorldRotation(FQuat::Identity);
+	Box->SetWorldLocation(Display.GetCenter());
+	Box->SetBoxExtent(LocalExtent, true);
+	if (Axes) Axes->SetWorldLocation(Display.Min);
+}
+
 void ADatasetVisualizationActor::SetVisualizationActive(bool bActivate)
 {
 	if (!NiagaraComponent)
@@ -321,10 +398,22 @@ bool ADatasetVisualizationActor::PopulatePositionArrayNDI()
 	
 	// Use parallel processing to convert millions of positions without stalling the frame
 	// This distributes the work across multiple threads
-	ParallelFor(AllPositions3f.Num(), [&AllPositions, &AllPositions3f](int32 Index)
+	constexpr int32 ChunkSize = 4096;
+	TArray<FBox> ChunkBounds;
+	ChunkBounds.SetNum(FMath::DivideAndRoundUp(AllPositions3f.Num(), ChunkSize));
+	ParallelFor(ChunkBounds.Num(), [&AllPositions, &AllPositions3f, &ChunkBounds](int32 Chunk)
 	{
-		AllPositions[Index] = FVector(AllPositions3f[Index]);
+		FBox Bounds(ForceInit);
+		const int32 End = FMath::Min((Chunk + 1) * ChunkSize, AllPositions3f.Num());
+		for (int32 Index = Chunk * ChunkSize; Index < End; ++Index)
+		{
+			AllPositions[Index] = FVector(AllPositions3f[Index]);
+			Bounds += AllPositions[Index];
+		}
+		ChunkBounds[Chunk] = Bounds;
 	});
+	VisualizedSampleBounds = FBox(ForceInit);
+	for (const FBox& Bounds : ChunkBounds) VisualizedSampleBounds += Bounds;
 
 	// GAME THREAD: Transfer to Niagara
 	// SetNiagaraArrayPosition runs on the game thread and handles internal Niagara updates

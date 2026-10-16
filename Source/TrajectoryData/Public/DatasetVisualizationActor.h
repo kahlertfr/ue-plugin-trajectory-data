@@ -8,6 +8,8 @@
 #include "TrajectoryBufferProvider.h"
 #include "DatasetVisualizationActor.generated.h"
 
+class UBoxComponent;
+
 /**
  * Actor for visualizing trajectory datasets in Niagara using built-in Position Array NDI
  * Provides complete GPU buffer access for rendering trajectories as ribbons
@@ -144,6 +146,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Visualization")
 	UNiagaraComponent* GetNiagaraComponent() const { return NiagaraComponent; }
 
+	/** Fit collision and corner axes to uploaded samples using Niagara's display matrix. */
+	UFUNCTION(BlueprintCallable, Category = "Trajectory Visualization")
+	void FitDatasetCollisionBox(UBoxComponent* Box, USceneComponent* Axes, const FMatrix& TransformationMatrix);
+
 protected:
 	/**
 	 * Populate Position Array NDI with trajectory data
@@ -224,4 +230,7 @@ protected:
 
 	/** Current dataset index */
 	int32 CurrentDatasetIndex = -1;
+
+	/** Retained after the uploaded CPU position buffer is released. */
+	FBox VisualizedSampleBounds{ForceInit};
 };
