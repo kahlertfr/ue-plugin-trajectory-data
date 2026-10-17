@@ -76,3 +76,5 @@ DerivedDataCache/*
 
 # ignore config init
 Config/*
+# Local AI development scripts and commandlets
+/codex/
