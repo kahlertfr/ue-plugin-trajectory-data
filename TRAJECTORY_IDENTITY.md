@@ -1,5 +1,16 @@
 # Loaded trajectory index and source ID
 
+## Overview dataset identity
+
+`ADatasetVisualizationActor::GetVisualizedDatasetInfo` returns the dataset identity
+snapshot taken when its last synchronous/asynchronous bind succeeded. It refers
+to `UTrajectoryDataLoader::GetLoadedDatasets()[DatasetIndex].DatasetInfo`, not to
+the discovery manager's dataset array. The two indices are unrelated. The snapshot
+survives discovery rescans, source dataset cache unloading and CPU position-buffer
+release. The getter returns false with a reset output before a successful bind
+and after EndPlay. Failed binds do not replace the last successful snapshot.
+Use this Blueprint getter for saving presets rather than reconstructing folder IDs.
+
 `FLoadedTrajectory` exposes two Blueprint-readable fields:
 
 | Field | Meaning |
