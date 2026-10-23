@@ -4,6 +4,9 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "HAL/FileManager.h"
+#include "DatasetVisualizationActor.h"
+#include "Engine/World.h"
+#include "Misc/ScopeExit.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 namespace
@@ -112,6 +115,44 @@ bool FTrajectoryLoadedIdentityTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Empty selector has no valid index"), UTrajectoryDataBlueprintLibrary::ResolveTrajectorySliderIndex(Empty, 0), INDEX_NONE);
     Loader->UnloadAll();
     IFileManager::Get().DeleteDirectory(*Directory, false, true);
+    return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVisualizedDatasetIdentityTest, "TrajectoryData.Identity.VisualizedDatasetSnapshot",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FVisualizedDatasetIdentityTest::RunTest(const FString& Parameters)
+{
+    auto* Loader = UTrajectoryDataLoader::Get();
+    if (!Loader->GetLoadedDatasets().IsEmpty() || Loader->IsLoadingAsync())
+    { AddError(TEXT("Run dataset snapshot test in an isolated editor with no loaded datasets.")); return false; }
+    const FString Directory = FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectDir(),
+        TEXT("codex/Automation/VisualizationIdentity"), FGuid::NewGuid().ToString()));
+    ON_SCOPE_EXIT { Loader->UnloadAll(); IFileManager::Get().DeleteDirectory(*Directory, false, true); };
+    if (!WriteIdentityFixture(Directory)) { AddError(TEXT("Could not write local fixture")); return false; }
+    UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+    if (!World) return false;
+    ON_SCOPE_EXIT { World->DestroyWorld(false); };
+    auto* Actor = World->SpawnActor<ADatasetVisualizationActor>();
+    if (!Actor) return false;
+    Actor->bAutoActivate = false;
+    FTrajectoryDatasetInfo Snapshot;
+    TestFalse(TEXT("No identity before first bind"), Actor->GetVisualizedDatasetInfo(Snapshot));
+    FTrajectoryDatasetInfo Dataset;
+    Dataset.UniqueDSName = TEXT("fixture/scenario/overview");
+    Dataset.DatasetPath = Directory;
+    Dataset.Metadata.LastTimeStep = 2;
+    FTrajectoryLoadParams Params;
+    Params.SelectionStrategy = ETrajectorySelectionStrategy::FirstN;
+    Params.NumTrajectories = 2;
+    const auto Result = Loader->LoadTrajectoriesSync(Dataset, Params);
+    if (!TestTrue(TEXT("Load fixture"), Result.bSuccess)) return false;
+    if (!TestTrue(TEXT("Bind loaded dataset"), Actor->LoadAndBindDatasetWithTrajectoryCap(0, 1))) return false;
+    TestTrue(TEXT("Bound identity exposed"), Actor->GetVisualizedDatasetInfo(Snapshot));
+    TestEqual(TEXT("Original stable ID"), Snapshot.UniqueDSName, Dataset.UniqueDSName);
+    TestEqual(TEXT("Original source path"), Snapshot.DatasetPath, Directory);
+    TestFalse(TEXT("Invalid index fails"), Actor->LoadAndBindDatasetWithTrajectoryCap(123456, 1));
+    Loader->UnloadAll();
+    TestTrue(TEXT("Identity survives cache unload and failed bind"), Actor->GetVisualizedDatasetInfo(Snapshot));
+    TestEqual(TEXT("Snapshot retains original identity"), Snapshot.UniqueDSName, Dataset.UniqueDSName);
     return true;
 }
 #endif

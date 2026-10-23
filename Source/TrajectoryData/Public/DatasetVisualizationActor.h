@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "NiagaraComponent.h"
 #include "TrajectoryBufferProvider.h"
+#include "TrajectoryDataTypes.h"
 #include "DatasetVisualizationActor.generated.h"
 
 class UBoxComponent;
@@ -122,6 +123,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Trajectory Visualization")
 	FTrajectoryBufferMetadata GetDatasetMetadata() const;
 
+	/** Identity snapshot from the last successful bind, independent of discovery rescans or CPU-cache release. */
+	UFUNCTION(BlueprintPure, Category = "Trajectory Visualization")
+	bool GetVisualizedDatasetInfo(FTrajectoryDatasetInfo& OutDatasetInfo) const;
+
 	/**
 	 * Get trajectory information array
 	 * 
@@ -230,6 +235,9 @@ protected:
 
 	/** Current dataset index */
 	int32 CurrentDatasetIndex = -1;
+
+	UPROPERTY(Transient)
+	FTrajectoryDatasetInfo VisualizedDatasetInfo;
 
 	/** Retained after the uploaded CPU position buffer is released. */
 	FBox VisualizedSampleBounds{ForceInit};
