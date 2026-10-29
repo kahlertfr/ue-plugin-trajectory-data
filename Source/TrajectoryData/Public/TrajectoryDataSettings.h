@@ -8,7 +8,8 @@
 
 /**
  * Settings for the Trajectory Data plugin
- * These settings are read from Config/DefaultTrajectoryData.ini
+ * These settings are read from Config/DefaultTrajectoryData.ini. Packaged runtimes
+ * optionally override the dataset root from a loose TrajectoryData.ini at the package root.
  */
 UCLASS(config=TrajectoryData, defaultconfig)
 class TRAJECTORYDATA_API UTrajectoryDataSettings : public UObject
@@ -32,4 +33,10 @@ public:
 
 	/** Get the singleton instance of the settings */
 	static UTrajectoryDataSettings* Get();
+
+	/** Read a loose runtime override. Relative dataset paths use the INI's directory.
+	 * Returns false with a diagnostic for an unreadable file, missing/empty key or
+	 * nonexistent directory. On failure the settings object is left unchanged.
+	 */
+	bool LoadExternalConfiguration(const FString& Filename, FString& Error);
 };

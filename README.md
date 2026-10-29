@@ -51,6 +51,21 @@ bAutoScanOnStartup=True
 bDebugLogging=False
 ```
 
+Packaged (non-editor, non-commandlet) applications also read a loose
+`TrajectoryData.ini` from `FPaths::RootDir()` on first settings access. On Windows
+this is the distribution root beside the top-level launcher, not `Binaries/Win64`.
+Use the same section and `ScenariosDirectory` key shown above; this override only
+changes the dataset root. Relative paths resolve against the INI directory. A
+missing file retains normal Unreal settings; an invalid present file disables
+discovery with a diagnostic instead of silently falling back. The override is
+read once per process and never rewritten; restart after editing. Editor, PIE and
+commandlets retain their normal settings. Consuming projects must distribute the
+loose file outside pak/IoStore containers (TrajectoryBLab stages a template).
+
+`LoadExternalConfiguration(Filename, Error)` is also available to C++ callers.
+It validates the path and leaves the settings unchanged on failure; the packaged
+startup caller clears the root after such a failure to prevent fallback.
+
 ## Data Structure
 
 Organize external data using a **Domain → Scenario → Dataset** hierarchy below a
